@@ -1,0 +1,41 @@
+# Sync Streams: what each device receives. MUST mirror the RLS policies in
+# packages/db/migrations (docs/fachkonzept/01-rollen-rechte.md). Changing one means changing both.
+config:
+  edition: 3
+
+streams:
+  # Project structure for every member.
+  projekt:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM project WHERE id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id())
+      - SELECT * FROM project_member WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id())
+      - SELECT * FROM location WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id())
+      - SELECT * FROM gewerk WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id())
+      - SELECT * FROM gewerk_company WHERE gewerk_id IN (SELECT id FROM gewerk WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id()))
+      - SELECT * FROM company WHERE id IN (SELECT company_id FROM project_member WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id()))
+      - SELECT * FROM sync_conflict WHERE actor_id = auth.user_id() AND resolved_at IS NULL
+
+  # Internal side (Bauleitung, Polier): all Mängel, all plans, internal notes.
+  intern:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM plan WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM mangel_note WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+
+  # Nachunternehmer: confirmed assignments to the own company + own reports. Never notes.
+  nachunternehmer:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM mangel WHERE deleted_at IS NULL AND assignment_confirmed = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND assigned_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
+      - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
+      - SELECT * FROM plan WHERE visible_to_nu = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
+
+  # Bauherr: released Mängel + own reports, released plan types.
+  bauherr:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM mangel WHERE deleted_at IS NULL AND visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')
+      - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr') AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')
+      - SELECT * FROM plan WHERE visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')

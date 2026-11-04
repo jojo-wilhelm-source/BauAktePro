@@ -1,0 +1,48 @@
+# Local development: Postgres (source), Postgres (PowerSync bucket storage), PowerSync service.
+# Start: pnpm db:up   (uses docker-compose; Colima must be running: `colima start`)
+name: bau-akte-pro
+services:
+  db:
+    image: postgres:17
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bap
+    ports: ["54329:5432"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bap"]
+      interval: 3s
+      retries: 20
+
+  ps-storage:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: powersync_storage
+      POSTGRES_PASSWORD: powersync_storage
+      POSTGRES_DB: powersync_storage
+    volumes: [ps_storage_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U powersync_storage"]
+      interval: 3s
+      retries: 20
+
+  powersync:
+    image: journeyapps/powersync-service:latest
+    command: ["start", "-r", "unified"]
+    depends_on:
+      db: { condition: service_healthy }
+      ps-storage: { condition: service_healthy }
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      NODE_OPTIONS: --max-old-space-size=1000
+    volumes: [./powersync:/config:ro]
+    ports: ["8080:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+volumes:
+  db_data:
+  ps_storage_data:

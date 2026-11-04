@@ -1,0 +1,23 @@
+{
+  "name": "bau-akte-pro",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "dev:api": "pnpm --filter @bap/api dev",
+    "dev:web": "pnpm --filter @bap/web dev",
+    "db:up": "docker-compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker-compose -f infra/docker-compose.yml down",
+    "db:migrate": "pnpm --filter @bap/db migrate",
+    "db:seed": "pnpm --filter @bap/db seed"
+  },
+  "devDependencies": {
+    "turbo": "^2",
+    "typescript": "^5.8"
+  },
+  "op-sqlite": {
+    "sqlcipher": true
+  }
+}

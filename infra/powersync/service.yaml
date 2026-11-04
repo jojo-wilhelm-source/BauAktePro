@@ -1,0 +1,25 @@
+replication:
+  connections:
+    - type: postgresql
+      uri: postgresql://powersync_role:powersync@db:5432/bap
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: postgresql://powersync_storage:powersync_storage@ps-storage:5432/powersync_storage
+  sslmode: disable
+
+port: 8080
+
+sync_config:
+  path: sync-config.yaml
+
+client_auth:
+  # JWKS of our API (apps/api) running on the host.
+  jwks_uri: http://host.docker.internal:3000/auth/jwks
+  audience: ['powersync']
+
+system:
+  logging:
+    level: info
+    format: text

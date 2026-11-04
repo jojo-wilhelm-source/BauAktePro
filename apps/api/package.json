@@ -1,0 +1,21 @@
+{
+  "name": "@bap/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bap/db": "workspace:*",
+    "@bap/domain": "workspace:*",
+    "@fastify/cors": "^11",
+    "fastify": "^5",
+    "jose": "^6",
+    "zod": "^3.25"
+  },
+  "devDependencies": { "tsx": "^4", "typescript": "^5.8", "vitest": "^3", "@types/node": "^24" }
+}
