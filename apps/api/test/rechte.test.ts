@@ -239,3 +239,122 @@ describe('Mangelanzeige', () => {
     expect(res.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
   });
 });
+
+describe('Pläne: Index, Freigabe, QR-Prüfung', () => {
+  const plaene = async (user: keyof typeof ID) => (await call(user, 'GET', `/projects/${ID.project}/plaene`)).body.plans as any[];
+  const upload = async (user: keyof typeof ID, fields: Record<string, string>) => {
+    const { PDFDocument } = await import('pdf-lib');
+    const doc = await PDFDocument.create();
+    doc.addPage([600, 400]);
+    const pdf = Buffer.from(await doc.save());
+    const b = '----bap' + randomUUID();
+    const parts = Object.entries(fields).map(([k, v]) => `--${b}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`).join('');
+    const payload = Buffer.concat([Buffer.from(parts + `--${b}\r\nContent-Disposition: form-data; name="file"; filename="plan.pdf"\r\nContent-Type: application/pdf\r\n\r\n`), pdf, Buffer.from(`\r\n--${b}--\r\n`)]);
+    const res = await app.inject({ method: 'POST', url: '/plan-revisions', payload, headers: { authorization: `Bearer ${tokens[user]}`, 'content-type': `multipart/form-data; boundary=${b}` } });
+    return { status: res.statusCode, body: res.json() as any };
+  };
+
+  it('NU sieht nur den freigegebenen Stand, nicht den Eingang', async () => {
+    const nu = await plaene('uElektro');
+    expect(nu[0].revisions.map((r: any) => r.plan_index)).toEqual(['A']);
+    const intern = await plaene('uPolier');
+    expect(intern[0].revisions.map((r: any) => `${r.plan_index}:${r.status}`).sort()).toEqual(['A:freigegeben', 'B:zur_pruefung']);
+  });
+
+  it('nur die Bauleitung gibt frei; alter Index wird „Ersetzt“, QR-Prüfung meldet „veraltet“', async () => {
+    expect((await call('uPolier', 'POST', `/plan-revisions/${ID.revEgB}/decision`, { decision: 'freigeben', base_version: 1 })).status).toBe(403);
+    const ok = await call('uBauleitung', 'POST', `/plan-revisions/${ID.revEgB}/decision`, { decision: 'freigeben', base_version: 1 });
+    expect(ok.status).toBe(200);
+    const p = (await plaene('uBauleitung'))[0];
+    expect(p.plan_index).toBe('B');
+    expect(p.revisions.find((r: any) => r.plan_index === 'A').status).toBe('ersetzt');
+    expect((await plaene('uElektro'))[0].revisions.map((r: any) => r.plan_index)).toEqual(['B']);
+    const check = await call('uPolier', 'GET', `/plan-revisions/${ID.revEgA}/check`);
+    expect(check.body.is_current).toBe(false);
+    expect(check.body.current_index).toBe('B');
+    expect((await call('uPolier', 'GET', `/plan-revisions/${ID.revEgB}/check`)).body.is_current).toBe(true);
+  });
+
+  it('Ablehnen braucht einen Grund', async () => {
+    expect((await call('uBauleitung', 'POST', `/plan-revisions/${ID.revEgB}/decision`, { decision: 'ablehnen', base_version: 1 })).status).toBe(422);
+  });
+
+  it('Upload landet immer in „Zur Prüfung“ mit nächstem Index; NU darf nicht hochladen', async () => {
+    const up = await upload('uPolier', { project_id: ID.project, plan_id: ID.planEg, comment: 'Test' });
+    expect(up.status).toBe(200);
+    expect(up.body.plan_index).toBe('C');
+    expect((await upload('uElektro', { project_id: ID.project, plan_id: ID.planEg })).status).toBe(403);
+  });
+
+  it('Ausdruck mit QR-Code als PDF', async () => {
+    const res = await app.inject({ method: 'GET', url: `/plan-revisions/${ID.revEgA}/pdf`, headers: { authorization: `Bearer ${tokens.uPolier}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+  });
+});
+
+describe('NU-Besprechung', () => {
+  const nextMeeting = (user: keyof typeof ID, extra: object = {}) =>
+    call(user, 'POST', '/besprechungen', { id: randomUUID(), project_id: ID.project, held_at: '2026-11-10T09:00:00+01:00', previous_id: ID.bespr1, ...extra });
+  const nums = (d: any) => d.punkte.map((p: any) => p.number).sort((a: number, b: number) => a - b);
+
+  it('NU sieht nur eigene, nicht interne Punkte der versendeten Besprechung', async () => {
+    expect(nums((await call('uElektro', 'GET', `/besprechungen/${ID.bespr1}`)).body)).toEqual([1, 2]); // P-001 Zuarbeit, P-002 verantwortlich
+    expect(nums((await call('uFliesen', 'GET', `/besprechungen/${ID.bespr1}`)).body)).toEqual([1]);
+    expect(nums((await call('uPolier', 'GET', `/besprechungen/${ID.bespr1}`)).body)).toEqual([1, 2, 3, 4, 5]);
+    expect((await call('uBauherr', 'GET', `/besprechungen/${ID.bespr1}`)).status).toBe(404); // not a participant
+  });
+
+  it('Folgesitzung: Offen und In Arbeit wandern mit, Erledigt und Info nicht; Teilnehmer übernommen', async () => {
+    expect((await nextMeeting('uElektro')).status).toBe(403);
+    const r = await nextMeeting('uPolier');
+    expect(r.status).toBe(200);
+    expect(r.body.number).toBe(2);
+    const d = (await call('uPolier', 'GET', `/besprechungen/${r.body.id}`)).body;
+    expect(nums(d)).toEqual([1, 2, 5]);
+    expect(d.punkte.every((p: any) => p.carried)).toBe(true);
+    expect(d.teilnehmer).toHaveLength(3);
+  });
+
+  it('Entwurf ist für NU unsichtbar; nach Versand sieht der NU neue Punkte; nur Bauleitung versendet', async () => {
+    const r = await nextMeeting('uPolier');
+    const id = randomUUID();
+    await call('uPolier', 'POST', '/punkte', { id, besprechung_id: r.body.id, location_id: ID.eg, gewerk_id: ID.gwElektro, text: 'Steckdosen Bad versetzen', responsible_company_id: ID.coElektro });
+    expect((await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).status).toBe(404);
+    expect((await call('uPolier', 'POST', `/besprechungen/${r.body.id}/send`, { base_version: 1 })).status).toBe(403);
+    const sent = await call('uBauleitung', 'POST', `/besprechungen/${r.body.id}/send`, { base_version: 1 });
+    expect(sent.status).toBe(200);
+    expect(sent.body.mails.map((m: any) => m.company).sort()).toEqual(['Elektro Blitz GmbH', 'Fliesen Fuchs GmbH']);
+    expect(nums((await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).body)).toEqual([1, 2, 6]);
+    expect(nums((await call('uFliesen', 'GET', `/besprechungen/${r.body.id}`)).body)).toEqual([1]);
+  });
+
+  it('versendete Besprechung ist gesperrt (API und Datenbank)', async () => {
+    const add = await call('uPolier', 'POST', '/punkte', { id: randomUUID(), besprechung_id: ID.bespr1, text: 'zu spät' });
+    expect(add.status).toBe(409);
+    const changed = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${ID.uBauleitung}, true)`;
+      await tx`SET LOCAL ROLE bap_app`;
+      return tx`UPDATE besprechung SET title = 'still geändert' WHERE id = ${ID.bespr1}`;
+    });
+    expect(changed.count).toBe(0);
+  });
+
+  it('Status-Chip offline vom iPad: veralteter Stand erzeugt Konflikt statt still zu überschreiben', async () => {
+    const ok = await call('uBauleitung', 'PATCH', `/punkte/${ID.p2}`, { base_version: 1, status: 'in_arbeit' });
+    expect(ok.status).toBe(200);
+    const up = await call('uPolier', 'POST', '/sync/upload', { ops: [{ op: 'PUT', table: 'punkt_action', id: randomUUID(), data: {
+      punkt_id: ID.p2, payload: JSON.stringify({ status: 'erledigt' }), base_version: 1, occurred_at: '2026-11-10T08:00:00Z' } }] });
+    expect(up.body.results[0].ok).toBe(false);
+    expect(up.body.results[0].kind).toBe('conflict');
+    const fresh = await call('uPolier', 'POST', '/sync/upload', { ops: [{ op: 'PUT', table: 'punkt_action', id: randomUUID(), data: {
+      punkt_id: ID.p2, payload: JSON.stringify({ status: 'erledigt' }), base_version: 2 } }] });
+    expect(fresh.body.results[0].ok).toBe(true);
+  });
+
+  it('NU bekommt als PDF nur die eigene Aufgabenliste', async () => {
+    const res = await app.inject({ method: 'GET', url: `/besprechungen/${ID.bespr1}/pdf`, headers: { authorization: `Bearer ${tokens.uFliesen}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+  });
+});

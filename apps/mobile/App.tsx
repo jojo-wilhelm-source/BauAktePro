@@ -22,6 +22,7 @@ import {
   type ProjectRole,
 } from '@bap/domain';
 import { Connector, openDatabase } from './src/db';
+import { BesprechungTab } from './src/BesprechungTab';
 import { PlanScreen } from './src/PlanScreen';
 import { clearPlanFiles, usePlanFiles, type PlanFiles } from './src/planStore';
 import type { MangelRow } from './src/schema';
@@ -44,9 +45,7 @@ const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal
 
 /** Modules of the full product that are not built yet (CLAUDE.md, Umsetzungsreihenfolge). */
 const COMING: [SFSymbol, Tint, string][] = [
-  ['doc.text', 'red', 'Mangelanzeigen'],
   ['folder', 'blue', 'Dokumente'],
-  ['person.2', 'indigo', 'Besprechungen'],
   ['building.2', 'gray', 'Nachunternehmer'],
   ['doc.plaintext', 'teal', 'Rechnungen'],
   ['chart.bar', 'green', 'Kosten'],
@@ -197,10 +196,11 @@ function LargeHeader({ eyebrow, title, right, children }: { eyebrow?: string; ti
   );
 }
 
-type Tab = 'maengel' | 'plaene' | 'hinweise' | 'mehr';
+type Tab = 'maengel' | 'plaene' | 'besprechung' | 'hinweise' | 'mehr';
 const TABS: [Tab, SFSymbol, string][] = [
   ['maengel', 'exclamationmark.triangle', 'Mängel'],
   ['plaene', 'map', 'Pläne'],
+  ['besprechung', 'person.2', 'Besprechung'],
   ['hinweise', 'bell', 'Hinweise'],
   ['mehr', 'ellipsis.circle', 'Mehr'],
 ];
@@ -291,6 +291,14 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {tab === 'maengel' && <MaengelTab project={membership.name} maengel={maengel} pending={pending} onSelect={setSelected} />}
       {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} files={planFiles} downloading={plansLoading} onSelect={setSelected} onPick={setDraft} />}
+      {tab === 'besprechung' && (
+        <BesprechungTab
+          projectId={pid}
+          role={membership.role}
+          userId={session.userId}
+          header={(eyebrow) => <LargeHeader eyebrow={eyebrow} title="Besprechung" right={<SyncPill />} />}
+        />
+      )}
       {tab === 'hinweise' && <HinweiseTab project={membership.name} conflicts={conflicts} />}
       {tab === 'mehr' && (
         <MehrTab

@@ -28,3 +28,15 @@ Diese Funktionen sind übernommen, aber noch nicht im Detail beschrieben. **Vor 
 - Mangelfoto vorkategorisieren
 - Rechnungsdaten auslesen
 - Rechnung gegen den Auftrag abgleichen
+
+
+## Aus dem Plattform-Konzept des Nutzers (10.11.2026) – eingeordnet
+| Idee | Einordnung |
+|---|---|
+| Sprachaufnahme mit KI (Whisper) → strukturierte Felder | Stufe 4 (KI). Datenschutz: Verarbeitung in der EU oder auf dem Gerät (Apple-Spracherkennung). Diktieren über die iOS-Tastatur geht schon jetzt |
+| Foto mit Pfeil/Kreis | steht in 04 (Mängel), kommt mit der Foto-Funktion |
+| Bedenkenanzeige, Behinderungsanzeige | gleicher Ablauf wie die Mangelanzeige (Entwurf → PDF → Versand → gesperrt); mit Bautagebuch (Stufe 2) |
+| Gantt / Taktplanung, 2-Wochen-Vorschau | Bauzeitenplan, Modul 5 |
+| Abnahme per Unterschrift auf dem Tablet | nach Klärung C1 (Rechtssicherheit) |
+| 3D/BIM (IFC) | später; Datenmodell hängt am Ort, nicht am Plan, das passt |
+| PWA mit IndexedDB | **nicht übernommen**: die native iOS-App mit verschlüsselter SQLite-Datenbank ist offline zuverlässiger (große Pläne, Kamera, Hintergrund-Sync). Die Web-App bleibt für Büro und Portale |

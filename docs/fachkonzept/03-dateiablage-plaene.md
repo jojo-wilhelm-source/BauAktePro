@@ -25,6 +25,13 @@ Entwurf → Zur Prüfung → In Prüfung → Freigegeben | Freigegeben mit Anmer
 - Bei Plänen mit Bemusterungsbezug kommt die Bauherr-Freigabe automatisch in die Kette, **aber erst nach der Bemusterungsentscheidung**. Ändert sich die Bemusterung nachträglich, gehen die betroffenen Pläne auf „Prüfung erforderlich“.
 - Lesebestätigung, Verteiler, Warnhinweis bei veraltetem Stand („aktueller Stand: Index C“), Planvergleich zwischen Indizes (Stufe 4), Planlauf mit Soll-Terminen.
 
+## Planstand per QR-Code prüfen (entschieden 10.11.2026)
+- Jeder ausgegebene Plan (Download/Druck) bekommt unten rechts einen **QR-Code** mit Index und Freigabedatum.
+- Scannt der Polier den Code mit der iPhone-Kamera, öffnet sich die Prüfseite: **grüner Haken „Aktueller Stand“** oder **rote Warnung „Veraltet – neuer Index C seit …“**. Anmeldung erforderlich, damit Planinformationen nicht öffentlich sind.
+
+## PIN-Farben im Plan (entschieden 10.11.2026)
+Rot = offen, Orange = in Arbeit, Grün = erledigt, Blau = Info/Besprechungspunkt. Die Fristen-Ampel bleibt in den Listen.
+
 ## Upload / Download / Druck
 - **Upload:** App, Drag & Drop im Browser, Teilen aus iOS, E-Mail an die Projektadresse; mehrere Dateien und Ordner. Ordner, Gewerk, Index und Status werden aus dem Dateinamen vorgeschlagen, die Namenskonvention ist prüfbar.
 - **Download:** einzeln und als ZIP.

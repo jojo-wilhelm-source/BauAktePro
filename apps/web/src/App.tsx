@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, type MangelStatus, type Priority } from '@bap/domain';
-import { api, ApiError, getToken, setToken, type Conflict, type Mangel, type Me, type ProjectInfo } from './api';
+import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, type MangelStatus, type Priority } from '@bap/domain';
+import { api, ApiError, getToken, setToken, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
 import { AnzeigenPage, type AnzeigeStart } from './Anzeigen';
+import { BesprechungenPage } from './Besprechungen';
+import { CheckPage, Planregister } from './Planregister';
+import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
@@ -17,12 +20,11 @@ const TEST_USERS = [
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'maengel' | 'anzeigen' | 'plaene' | 'hinweise';
+type Module = 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'hinweise';
 
 /** Modules of the full product (CLAUDE.md, Umsetzungsreihenfolge) that are not built yet. */
 const COMING: { icon: IconName; label: string }[] = [
   { icon: 'ordner', label: 'Dokumente' },
-  { icon: 'besprechung', label: 'Besprechungen' },
   { icon: 'firmen', label: 'Nachunternehmer' },
   { icon: 'rechnung', label: 'Rechnungen' },
   { icon: 'kosten', label: 'Kosten' },
@@ -60,6 +62,9 @@ export function App() {
 
   if (!checked) return null;
   if (!me) return <Login onLogin={loadMe} />;
+  // QR code on a printed plan → /check/<revision id> (docs/fachkonzept/03). Login first, then the check.
+  const check = window.location.pathname.match(/^\/check\/([0-9a-f-]{36})$/);
+  if (check) return <CheckPage revisionId={check[1]!} />;
   const logout = () => {
     setToken(null);
     setMe(null);
@@ -115,6 +120,11 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
   const [draft, setDraft] = useState<{ page: number; x: number; y: number } | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [anzeigeStart, setAnzeigeStart] = useState<AnzeigeStart | null>(null);
+  const [besprechungId, setBesprechungId] = useState<string | null>(null);
+  // Placing a pin for a Besprechungspunkt: the plan opens in pick mode, then we return to the meeting.
+  const [pinFor, setPinFor] = useState<{ punkt: Punkt; besprechungId: string } | null>(null);
+  const [planFocus, setPlanFocus] = useState<{ meeting: number | null; punktId: string | null }>({ meeting: null, punktId: null });
+  const [planVersion, setPlanVersion] = useState(0);
   const startAnzeige = (s: AnzeigeStart) => {
     setAnzeigeStart(s);
     setModule('anzeigen');
@@ -178,6 +188,7 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
         <div className="side-section">Baustelle</div>
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
+        {nav('besprechungen', 'besprechung', 'Besprechungen')}
         {nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
         <div className="side-section">In Vorbereitung</div>
@@ -219,8 +230,58 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
                 }}
               />
             )}
+            {module === 'besprechungen' && (
+              <BesprechungenPage
+                info={info}
+                maengel={maengel}
+                run={run}
+                openId={besprechungId}
+                onOpen={setBesprechungId}
+                onShowOnPlan={(meeting, punktId) => {
+                  setPlanFocus({ meeting, punktId });
+                  setModule('plaene');
+                }}
+                onPlacePin={(punkt, bId) => {
+                  setPinFor({ punkt, besprechungId: bId });
+                  setModule('plaene');
+                }}
+              />
+            )}
             {module === 'plaene' && (
-              <PlanPage info={info} maengel={maengel} selected={selected} onSelect={setSelected} draft={draft} onPick={setDraft} run={run} />
+              <PlanPage
+                key={planVersion}
+                info={info}
+                maengel={maengel}
+                selected={selected}
+                onSelect={setSelected}
+                draft={draft}
+                onPick={(pos) => {
+                  if (!pinFor) return setDraft(pos);
+                  const { punkt, besprechungId: bId } = pinFor;
+                  void run(async () => {
+                    await api(`/punkte/${punkt.id}`, {
+                      method: 'PATCH',
+                      body: { base_version: punkt.version, plan_id: info.plans[0]?.id, pin_page: pos.page, pin_x: pos.x, pin_y: pos.y },
+                    });
+                    setPinFor(null);
+                    setBesprechungId(bId);
+                    setModule('besprechungen');
+                  }, `PIN für ${punkt.number ? `P-${String(punkt.number).padStart(3, '0')}` : 'Punkt'} gesetzt`);
+                }}
+                pinFor={pinFor?.punkt ?? null}
+                onCancelPin={() => {
+                  if (pinFor) setBesprechungId(pinFor.besprechungId);
+                  setPinFor(null);
+                  setModule('besprechungen');
+                }}
+                focus={planFocus}
+                onPlanChanged={() => {
+                  void reload();
+                  setPlanVersion((v) => v + 1);
+                }}
+                onOpenPunkt={() => setModule('besprechungen')}
+                run={run}
+              />
             )}
             {module === 'hinweise' && <HinweisePage info={info} conflicts={conflicts} run={run} />}
           </>
@@ -378,36 +439,130 @@ function PlanPage(props: {
   onSelect: (id: string) => void;
   draft: { page: number; x: number; y: number } | null;
   onPick: (p: { page: number; x: number; y: number }) => void;
+  pinFor: Punkt | null;
+  onCancelPin: () => void;
+  focus: { meeting: number | null; punktId: string | null };
+  onPlanChanged: () => void;
+  onOpenPunkt: () => void;
   run: Run;
 }) {
   const { info, maengel, selected } = props;
+  const [view, setView] = useState<'plan' | 'register'>('plan');
   const [planId, setPlanId] = useState(info.plans[0]?.id ?? '');
+  const [punkte, setPunkte] = useState<(PunktPin & { besprechungen: number[] })[]>([]);
+  // Filter: everything, only Mängel, only Punkte, or Punkte of one meeting ("Zeige alle PINs aus Besprechung Nr. 42").
+  const [filter, setFilter] = useState<string>(props.focus.meeting ? `b${props.focus.meeting}` : 'alle');
+  const [punktSel, setPunktSel] = useState<string | null>(props.focus.punktId);
+  useEffect(() => {
+    void api<(PunktPin & { besprechungen: number[] })[]>(`/projects/${info.project.id}/punkte-pins`).then(setPunkte, () => setPunkte([]));
+  }, [info.project.id]);
   const plan = info.plans.find((p) => p.id === planId);
   const current = maengel.find((m) => m.id === selected) ?? null;
+  const meetings = [...new Set(punkte.flatMap((p) => p.besprechungen))].sort((a, b) => a - b);
+  const shownMaengel = filter === 'alle' || filter === 'maengel' ? maengel : [];
+  const shownPunkte = filter === 'maengel' ? [] : filter.startsWith('b') ? punkte.filter((p) => p.besprechungen.includes(Number(filter.slice(1)))) : punkte;
+  const selPunkt = punkte.find((p) => p.id === punktSel);
   return (
     <>
       <PageHeader eyebrow={info.project.name} title="Pläne">
-        <select className="popup" value={planId} onChange={(e) => setPlanId(e.target.value)} aria-label="Plan">
-          {info.plans.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · Index {p.plan_index}
-            </option>
-          ))}
-        </select>
-        <span className="sub" style={{ color: 'var(--label-2)', fontSize: 13 }}>
-          Auf eine freie Stelle klicken, um einen Mangel zu erfassen
-        </span>
+        <div className="segmented">
+          <button className={view === 'plan' ? 'on' : ''} onClick={() => setView('plan')}>
+            Plan
+          </button>
+          <button className={view === 'register' ? 'on' : ''} onClick={() => setView('register')}>
+            Planregister
+          </button>
+        </div>
+        {view === 'plan' && (
+          <>
+            <select className="popup" value={planId} onChange={(e) => setPlanId(e.target.value)} aria-label="Plan">
+              {info.plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · Index {p.plan_index}
+                </option>
+              ))}
+            </select>
+            <select className="popup" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Anzeigen">
+              <option value="alle">Mängel und Punkte</option>
+              <option value="maengel">Nur Mängel</option>
+              <option value="punkte">Nur Besprechungspunkte</option>
+              {meetings.map((n) => (
+                <option key={n} value={`b${n}`}>
+                  Punkte aus Besprechung Nr. {n}
+                </option>
+              ))}
+            </select>
+            <span className="tokens" style={{ fontSize: 12 }}>
+              <span className="chip c-red"><span className="dot" />Offen</span>
+              <span className="chip c-orange"><span className="dot" />In Arbeit</span>
+              <span className="chip c-green"><span className="dot" />Erledigt</span>
+              <span className="chip c-blue"><span className="dot" />Info</span>
+            </span>
+          </>
+        )}
       </PageHeader>
-      <div className="split">
-        <div className="card plan-card">
-          {plan ? (
-            <PlanView planId={plan.id} maengel={maengel} selectedId={selected} draft={props.draft} onSelect={props.onSelect} onPick={props.onPick} />
+      {view === 'register' ? (
+        <Planregister info={info} run={props.run} onChanged={props.onPlanChanged} />
+      ) : (
+        <div className="split">
+          <div className="card plan-card">
+            {props.pinFor && (
+              <div className="row" style={{ background: 'var(--selection)', borderRadius: 10, marginBottom: 10 }}>
+                <span>
+                  <strong>PIN setzen:</strong> P-{String(props.pinFor.number ?? 0).padStart(3, '0')} {props.pinFor.text} – auf die Stelle im Plan klicken
+                </span>
+                <button className="btn small" onClick={props.onCancelPin}>
+                  Abbrechen
+                </button>
+              </div>
+            )}
+            {plan ? (
+              <PlanView
+                planId={plan.id}
+                planIndex={plan.plan_index}
+                maengel={shownMaengel}
+                punkte={shownPunkte}
+                selectedId={punktSel ?? selected}
+                draft={props.draft}
+                onSelect={(id) => {
+                  setPunktSel(null);
+                  props.onSelect(id);
+                }}
+                onSelectPunkt={setPunktSel}
+                onPick={props.onPick}
+              />
+            ) : (
+              <div className="empty">Kein Plan vorhanden</div>
+            )}
+          </div>
+          {selPunkt ? (
+            <div className="inspector">
+              <div>
+                <div className="head">
+                  <span className="num">P-{String(selPunkt.number ?? 0).padStart(3, '0')}</span>
+                  <span className={`chip c-${PUNKT_TONE_WEB[selPunkt.status]}`}>
+                    <span className="dot" />
+                    {PUNKT_LABELS_WEB[selPunkt.status]}
+                  </span>
+                </div>
+                <h2>{selPunkt.text}</h2>
+              </div>
+              <div className="group">
+                <div className="row">
+                  <span className="k">Besprechungen</span>
+                  <span className="v">{selPunkt.besprechungen.map((n) => `Nr. ${n}`).join(', ')}</span>
+                </div>
+                <button className="row action" onClick={props.onOpenPunkt}>
+                  Zu den Besprechungen
+                  <Icon name="chevron" size={16} />
+                </button>
+              </div>
+            </div>
           ) : (
-            <div className="empty">Kein Plan vorhanden</div>
+            <Inspector m={current} info={info} run={props.run} />
           )}
         </div>
-        <Inspector m={current} info={info} run={props.run} />
-      </div>
+      )}
     </>
   );
 }

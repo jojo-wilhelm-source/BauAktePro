@@ -19,6 +19,25 @@ Die Tagesordnung wird vorbefüllt mit: offenen Punkten der letzten Besprechung, 
 - Ansichten nach Geschoss, nach NU und nach Kategorie, jeweils als PDF.
 - Offene Punkte erscheinen im Folgeprotokoll automatisch im richtigen Geschoss (als „Wiederholt“), erledigte entfallen.
 
+## NU-Besprechung: Aufbau eines Punkts (entschieden 10.11.2026, nach Vorlage des Nutzers)
+Jeder Punkt hat: **fortlaufende Nummer** (`P-014`, pro Projekt), **Ort** (Geschoss/Bauteil oder „Allgemein“), **Gewerk**, **Aufgabe** (Text), **Verantwortlich** (ein NU oder die eigene Firma), **Zuarbeit** (weitere NU), **Frist**, **Status**, optional **Plan-PIN** und „nur intern“.
+
+**Status** (Farben wie die PINs im Plan):
+| Status | Farbe | Bedeutung |
+|---|---|---|
+| Offen | Rot | noch nicht begonnen |
+| In Arbeit | Orange | läuft |
+| Erledigt | Grün | wird in der Folgesitzung archiviert |
+| Info | Blau | Information/Vorleistung, keine Aufgabe |
+
+- Ein Punkt lebt über mehrere Sitzungen. Jede Sitzung hält fest, welche Punkte mit welchem Status darin standen (Momentaufnahme beim Versand, danach gesperrt).
+- **„Folgesitzung vorbereiten“ (1 Klick):** neue Sitzung, alle Punkte mit „Offen“ und „In Arbeit“ wandern mit, „Erledigt“ wird archiviert. ANNAHME: „Info“-Punkte wandern nicht automatisch mit, man kann sie bewusst übernehmen.
+- **Auf Plan anzeigen / PIN setzen:** Ein Punkt kann einen PIN im Plan bekommen. Im Planviewer lässt sich filtern: „nur Punkte aus Besprechung Nr. 42“.
+- **Am Tablet während der Besprechung**, auch offline: Status-Chips antippen (Rot → Orange → Grün), neue Punkte anlegen. Der Abgleich läuft wie bei den Mängeln.
+- **Versand:** Protokoll als PDF an alle Teilnehmerfirmen; zusätzlich bekommt jeder NU seine **persönliche Aufgabenliste** (nur seine Punkte als Verantwortlicher oder Zuarbeit) als eigenes PDF.
+- **Überfällige Mängel** der teilnehmenden NU werden in der Sitzung und im Protokoll mit aufgeführt.
+- **Rechte:** Protokoll führen Bauleitung und Polier; versenden nur die Bauleitung (ANNAHME). Der NU sieht nur versendete Sitzungen, an denen er teilnimmt, und nur seine eigenen, nicht internen Punkte.
+
 ## Personalisierbar
 Reihenfolge der Blöcke, Überschriften, Zusatzfelder je Punkt, Kopfzeile/Logo; Vorlagen pro Firma, Projekt und persönlich; Blöcke lassen sich während der Besprechung hinzufügen, verschieben und ausblenden.
 

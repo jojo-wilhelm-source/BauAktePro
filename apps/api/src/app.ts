@@ -1,11 +1,14 @@
 import { createReadStream } from 'node:fs';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { ZodError, z } from 'zod';
 import { asUser, ADMIN_URL, connect, type Sql } from '@bap/db';
 import { allowedTransitions, escalation, type MangelStatus, type Priority, type ProjectRole } from '@bap/domain';
 import { issueToken, jwks, verifyToken } from './auth';
 import { anzeigeDetails, anzeigePdf, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import { addPunkt, besprechungDetails, createBesprechung, listBesprechungen, patchPunkt, protokollPdf, sendBesprechung, setTeilnehmer } from './besprechung-service';
+import { checkRevision, decideRevision, listPlans, stampedRevisionPdf, uploadRevision } from './plan-service';
 import { actorFor, createMangel, HttpError, patchMangel, setNachfrist, transitionMangel, type WriteMeta } from './mangel-service';
 
 
@@ -23,6 +26,7 @@ const meta = (req: FastifyRequest, occurredAt?: string | null): WriteMeta => ({
 export function buildApp(sql: Sql) {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
   app.register(cors, { origin: true, allowedHeaders: ['authorization', 'content-type', 'x-device-id'] });
+  app.register(multipart, { limits: { fileSize: 300 * 1024 * 1024, files: 1 } }); // A0 plans can be large
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send({ error: err.message });
@@ -188,6 +192,70 @@ export function buildApp(sql: Sql) {
     return reply.send(typeof pdf.bytes === 'string' ? createReadStream(pdf.bytes) : Buffer.from(pdf.bytes));
   });
 
+  // --- Pläne: register, revisions, approval, QR check (docs/fachkonzept/03) -------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/plaene', async (req) => asUser(sql, req.userId, (tx) => listPlans(tx, req.userId, req.params.projectId)));
+  app.post('/plan-revisions', async (req) => {
+    const file = await req.file();
+    if (!file) throw new HttpError(422, 'Keine Datei');
+    const bytes = await file.toBuffer();
+    const fields = Object.fromEntries(Object.entries(file.fields).flatMap(([k, v]) => (v && 'value' in (v as object) ? [[k, (v as { value: string }).value]] : [])));
+    return asUser(sql, req.userId, (tx) => uploadRevision(tx, req.userId, fields, bytes, meta(req)));
+  });
+  app.post<{ Params: { id: string } }>('/plan-revisions/:id/decision', async (req) =>
+    asUser(sql, req.userId, (tx) => decideRevision(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/plan-revisions/:id/check', async (req) => asUser(sql, req.userId, (tx) => checkRevision(tx, req.params.id)));
+  app.get<{ Params: { id: string } }>('/plan-revisions/:id/pdf', async (req, reply) => {
+    const pdf = await asUser(sql, req.userId, async (tx) => {
+      const [r] = await tx`SELECT id FROM plan_revision WHERE id = ${req.params.id}`; // RLS: NU/Bauherr only the released one
+      if (!r) throw new HttpError(404, 'Planstand nicht gefunden');
+      return stampedRevisionPdf(tx, req.params.id);
+    });
+    reply.header('content-type', 'application/pdf').header('content-disposition', `inline; filename="${encodeURIComponent(pdf.name)}"`);
+    return reply.send(Buffer.from(pdf.bytes));
+  });
+
+  // --- Besprechungen (docs/fachkonzept/09) ------------------------------------------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/besprechungen', async (req) =>
+    asUser(sql, req.userId, (tx) => listBesprechungen(tx, req.userId, req.params.projectId)));
+  app.post('/besprechungen', async (req) => asUser(sql, req.userId, (tx) => createBesprechung(tx, req.userId, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/besprechungen/:id', async (req) => asUser(sql, req.userId, (tx) => besprechungDetails(tx, req.userId, req.params.id)));
+  app.put<{ Params: { id: string } }>('/besprechungen/:id/teilnehmer', async (req) => {
+    const { company_ids } = z.object({ company_ids: z.array(z.string().uuid()) }).parse(req.body);
+    await asUser(sql, req.userId, (tx) => setTeilnehmer(tx, req.userId, req.params.id, company_ids, meta(req)));
+    return { ok: true };
+  });
+  /** Punkte with a plan pin, for the plan view; besprechungen = numbers of the meetings they appeared in (filter). */
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/punkte-pins', async (req) =>
+    asUser(sql, req.userId, async (tx) => {
+      await actorFor(tx, req.userId, req.params.projectId);
+      return tx`
+        SELECT p.id, p.number, p.text, p.status, p.plan_id, p.pin_page, p.pin_x, p.pin_y,
+               coalesce(array_agg(b.number ORDER BY b.number) FILTER (WHERE b.id IS NOT NULL), '{}') AS besprechungen
+        FROM besprechung_punkt p
+        LEFT JOIN besprechung_eintrag e ON e.punkt_id = p.id LEFT JOIN besprechung b ON b.id = e.besprechung_id
+        WHERE p.project_id = ${req.params.projectId} AND p.plan_id IS NOT NULL
+        GROUP BY p.id`;
+    }),
+  );
+  app.post('/punkte', async (req, reply) => {
+    const r = await asUser(sql, req.userId, (tx) => addPunkt(tx, req.userId, req.body, meta(req)));
+    return r.ok ? r.punkt : reply.status(409).send(r);
+  });
+  app.patch<{ Params: { id: string } }>('/punkte/:id', async (req, reply) => {
+    const { base_version, ...fields } = z.object({ base_version: z.number().int() }).passthrough().parse(req.body);
+    const r = await asUser(sql, req.userId, (tx) => patchPunkt(tx, req.userId, req.params.id, base_version, fields, meta(req)));
+    return r.ok ? r.punkt : reply.status(409).send(r);
+  });
+  app.post<{ Params: { id: string } }>('/besprechungen/:id/send', async (req) => {
+    const { base_version } = z.object({ base_version: z.number().int() }).parse(req.body);
+    return asUser(sql, req.userId, (tx) => sendBesprechung(tx, req.userId, req.params.id, base_version, meta(req)));
+  });
+  app.get<{ Params: { id: string }; Querystring: { company?: string } }>('/besprechungen/:id/pdf', async (req, reply) => {
+    const bytes = await asUser(sql, req.userId, (tx) => protokollPdf(tx, req.userId, req.params.id, req.query.company));
+    reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="Protokoll.pdf"');
+    return reply.send(Buffer.from(bytes));
+  });
+
   /**
    * Upload endpoint for the PowerSync client (offline queue). Business rejections never throw:
    * otherwise the device queue would retry forever. They are recorded as sync_conflict and the
@@ -220,6 +288,19 @@ export function buildApp(sql: Sql) {
             if (a.action === 'transition') return transitionMangel(tx, req.userId, a.mangel_id, { ...payload, base_version: a.base_version }, m);
             if (a.action === 'nachfrist') return setNachfrist(tx, req.userId, a.mangel_id, payload.date as string, a.base_version, m);
             return patchMangel(tx, req.userId, a.mangel_id, a.base_version, payload, m);
+          }
+          // NU-Besprechung on the tablet (offline): new Punkte and status chips.
+          if (op.table === 'besprechung_punkt' && op.op === 'PUT') {
+            const rest = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== null));
+            if (typeof rest.internal === 'number') rest.internal = rest.internal === 1;
+            if (typeof rest.support_company_ids === 'string') rest.support_company_ids = JSON.parse(rest.support_company_ids as string);
+            rest.besprechung_id ??= rest.first_besprechung_id; // local column name on the device
+            const created = meta(req, (data.occurred_at ?? data.created_at) as string | undefined);
+            return addPunkt(tx, req.userId, { ...rest, id: op.id }, created);
+          }
+          if (op.table === 'punkt_action' && op.op === 'PUT') {
+            const a = z.object({ punkt_id: z.string().uuid(), payload: z.string(), base_version: z.coerce.number().int() }).parse(data);
+            return patchPunkt(tx, req.userId, a.punkt_id, a.base_version, JSON.parse(a.payload), m);
           }
           throw new HttpError(422, `Nicht unterstützt: ${op.op} ${op.table}`);
         });

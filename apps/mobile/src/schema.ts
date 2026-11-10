@@ -40,6 +40,34 @@ const location_area = new Table({ project_id: column.text, location_id: column.t
 /** Mangelanzeigen: readable offline (internal: all; NU: only those sent to the own company). Written via the API. */
 const mangelanzeige = new Table({ project_id: column.text, number: column.integer, company_id: column.text, status: column.text, deadline: column.text, sent_at: column.text });
 const mangelanzeige_position = new Table({ anzeige_id: column.text, project_id: column.text, pos: column.integer, mangel_id: column.text }, { indexes: { mangel: ['mangel_id'] } });
+/** NU-Besprechung on the tablet (docs/fachkonzept/09): readable and editable offline (internal roles). */
+const besprechung = new Table({ project_id: column.text, number: column.integer, kind: column.text, title: column.text, held_at: column.text, place: column.text, status: column.text, previous_id: column.text, version: column.integer });
+const besprechung_punkt = new Table(
+  {
+    project_id: column.text,
+    number: column.integer,
+    first_besprechung_id: column.text,
+    location_id: column.text,
+    gewerk_id: column.text,
+    text: column.text,
+    responsible_company_id: column.text,
+    support_company_ids: column.text, // JSON array
+    status: column.text,
+    due_date: column.text,
+    internal: column.integer,
+    plan_id: column.text,
+    pin_x: column.real,
+    pin_y: column.real,
+    version: column.integer,
+    created_by: column.text,
+    created_at: column.text,
+  },
+  { indexes: { project: ['project_id'] } },
+);
+const besprechung_eintrag = new Table({ besprechung_id: column.text, punkt_id: column.text, project_id: column.text, carried: column.integer, status_snapshot: column.text }, { indexes: { b: ['besprechung_id'] } });
+/** Status chips tapped in the meeting: upload queue, applied only if the Punkt is unchanged (like mangel_action). */
+const punkt_action = new Table({ punkt_id: column.text, payload: column.text, base_version: column.integer, occurred_at: column.text }, { insertOnly: true });
+const pending_punkt = new Table({ punkt_id: column.text, status: column.text, base_version: column.integer, occurred_at: column.text }, { localOnly: true });
 const sync_conflict = new Table({ project_id: column.text, entity_id: column.text, kind: column.text, reason: column.text, created_at: column.text });
 
 /**
@@ -58,7 +86,7 @@ const pending_action = new Table(
 );
 
 export const AppSchema = new Schema({
-  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangelanzeige, mangelanzeige_position, sync_conflict, mangel_action, pending_action,
+  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
 });
 export type Database = (typeof AppSchema)['types'];
 export type MangelRow = Database['mangel'];

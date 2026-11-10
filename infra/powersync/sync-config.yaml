@@ -1,5 +1,6 @@
 # Sync Streams: what each device receives. MUST mirror the RLS policies in
 # packages/db/migrations (docs/fachkonzept/01-rollen-rechte.md). Changing one means changing both.
+# Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
 config:
   edition: 3
 
@@ -25,6 +26,12 @@ streams:
       - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
       - SELECT * FROM plan WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
       - SELECT * FROM mangel_note WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      # Besprechungen incl. drafts and internal Punkte: the Polier keeps the meeting on the tablet, also offline.
+      # NU devices get none for now (NU uses the web portal) – a subset of RLS, never more.
+      - SELECT * FROM besprechung WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_teilnehmer WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_punkt WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_eintrag WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
       # Mangelanzeigen incl. drafts (RLS: read for internal roles).
       - SELECT * FROM mangelanzeige WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
       - SELECT * FROM mangelanzeige_position WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))

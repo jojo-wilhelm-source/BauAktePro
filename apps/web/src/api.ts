@@ -1,4 +1,4 @@
-import type { AnzeigeStatus, LocationArea, MangelStatus, Priority, ProjectRole } from '@bap/domain';
+import type { AnzeigeStatus, LocationArea, MangelStatus, PlanRevisionStatus, Priority, ProjectRole, PunktStatus } from '@bap/domain';
 
 const TOKEN_KEY = 'bap.token';
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -119,4 +119,76 @@ export interface Conflict {
   actor_name: string;
   client_change: Record<string, unknown>;
   created_at: string;
+}
+
+// --- Pläne (register) ---------------------------------------------------------
+export interface PlanRevision {
+  id: string;
+  plan_id: string;
+  plan_index: string;
+  status: PlanRevisionStatus;
+  comment: string | null;
+  uploaded_at: string;
+  decided_at: string | null;
+  uploaded_by_name: string;
+  decided_by_name: string | null;
+  version: number;
+}
+export interface PlanEntry {
+  id: string;
+  name: string;
+  plan_index: string;
+  location_id: string;
+  location_name: string;
+  released_at: string | null;
+  current_revision_id: string | null;
+  revisions: PlanRevision[];
+}
+
+// --- Besprechungen --------------------------------------------------------------
+export interface BesprechungListItem {
+  id: string;
+  number: number;
+  kind: 'nu' | 'bau';
+  title: string;
+  held_at: string;
+  place: string | null;
+  status: 'entwurf' | 'versendet';
+  sent_at: string | null;
+  previous_id: string | null;
+  version: number;
+  punkte: number;
+  offen: number;
+  has_next: boolean;
+}
+export interface Punkt {
+  id: string;
+  number: number | null;
+  location_id: string | null;
+  location_name: string | null;
+  gewerk_id: string | null;
+  gewerk_name: string | null;
+  text: string;
+  responsible_company_id: string | null;
+  responsible_name: string | null;
+  support_company_ids: string[];
+  support_names: string[];
+  status: PunktStatus;
+  due_date: string | null;
+  internal: boolean;
+  carried: boolean;
+  status_snapshot: PunktStatus | null;
+  text_snapshot: string | null;
+  plan_id: string | null;
+  pin_page: number | null;
+  pin_x: number | null;
+  pin_y: number | null;
+  version: number;
+}
+export interface BesprechungDetail extends Omit<BesprechungListItem, 'punkte' | 'offen' | 'has_next'> {
+  teilnehmer: { id: string; name: string; kind: string; email: string | null }[];
+  punkte: Punkt[];
+  maengel: { id: string; number: number; description: string; company_name: string; escalation: { label: string } }[];
+  can_edit: boolean;
+  can_send: boolean;
 }

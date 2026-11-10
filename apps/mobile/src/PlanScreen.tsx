@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Pdf from 'react-native-pdf';
 import type { MangelRow } from './schema';
-import { AMPEL_TINT, C, TINT } from './theme';
+import { MANGEL_TONE, type MangelStatus } from '@bap/domain';
+import { C, TINT } from './theme';
+
+// Pin colours by status (docs/fachkonzept/03): red open, orange in progress, green done.
+const TONE_HEX = { red: TINT.red, orange: TINT.orange, green: TINT.green, blue: TINT.blue, gray: TINT.gray } as const;
 
 interface Props {
   planId: string;
@@ -79,7 +83,7 @@ export function PlanScreen({ planId, fileUri, downloading, maengel, ampel, onSel
                     // Tip of the rotated pin sits PIN·√2/2 below its centre.
                     style={{ position: 'absolute', left: m.pin_x! * width - PIN / 2, top: m.pin_y! * height - PIN * 1.2 }}
                   >
-                    <Pin color={TINT[AMPEL_TINT[ampel(m)]]} label={m.number ? String(m.number) : '•'} />
+                    <Pin color={TONE_HEX[MANGEL_TONE[(m.status ?? 'neu') as MangelStatus]]} label={m.number ? String(m.number) : '•'} />
                   </Pressable>
                 ))}
             </Pressable>

@@ -196,3 +196,34 @@ button { cursor: pointer; }
   .sidebar { display: none; }
   .page-header, .split, .list-pad { padding-left: 16px; padding-right: 16px; }
 }
+
+/* --- status pins & chips (docs/fachkonzept/03: red open, orange in progress, green done, blue info) --- */
+.pin.c-blue svg path { fill: var(--accent); }
+.pin.punkt span { top: -6px; font-size: 11px; }
+.chip { border: 0; border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;
+  background: color-mix(in srgb, var(--c, var(--gray)) 15%, transparent); color: var(--c, var(--gray)); white-space: nowrap; }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+button.chip { cursor: pointer; transition: transform .1s; }
+button.chip:hover { filter: brightness(0.95); }
+button.chip:active { transform: scale(0.94); }
+.c-red { --c: var(--red); }
+.badge-w { font-size: 10px; font-weight: 700; color: var(--label-2); background: var(--fill); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+
+/* --- protocol (full-width table, grouped) --- */
+.protocol { padding: 8px 32px 40px; display: flex; flex-direction: column; gap: 22px; }
+.protocol .group-head { display: flex; align-items: baseline; gap: 10px; padding: 0 4px 8px; }
+.protocol .group-head h3 { margin: 0; font-size: 17px; }
+.protocol .group-head .sub { font-size: 13px; }
+.protocol .table td { vertical-align: top; }
+.protocol .table .who { font-weight: 500; }
+.protocol .add-row { color: var(--accent); cursor: pointer; padding: 10px 12px; font-weight: 500; border-top: 0.5px solid var(--separator); }
+.protocol .add-row:hover { background: var(--fill); }
+.meta-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tokens { display: flex; gap: 6px; flex-wrap: wrap; }
+.token { background: var(--fill); border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+.token.on { background: var(--accent); color: #fff; }
+button.token { border: 0; cursor: pointer; }
+.drop { border: 2px dashed var(--separator); border-radius: var(--radius); padding: 22px; text-align: center; color: var(--label-2); cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--selection); }
+.check-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; text-align: center; }
+.check-page .big { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 16px; color: #fff; font-size: 52px; font-weight: 700; }

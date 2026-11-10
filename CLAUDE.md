@@ -39,7 +39,7 @@ Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Li
 | **3 Geld und Beschaffung** | 9. Verträge, Nachträge, Rechnungsprüfung, Abschläge, Freigabe an die Buchhaltung, Budget · 10. Lieferanmeldung, Einkauf, Wareneingang, Mengenabgleich |
 | **4 Ausbau** | 11. Sync-Ordner (Windows, iOS-Dateien-App) · 12. Anfragen und Angebotsvergleich, Bewertungen, KI-Funktionen, Planvergleich, weitere Schnittstellen |
 
-**Stand 10.11.2026:** Durchstich fertig. Nächste Reihenfolge (vom Nutzer gewählt): Apple-Design für Web und iOS → Mangelanzeige mit Positionen (PDF, Versand) und genaue Verortung (Zoom, Raum aus Pin) → Dateiablage mit freigegebenem Plan → Besprechungen (Bau- und NU-Besprechung) → Rechnungen (Einreichung, Prüfung, Freigabe) und Kostenübersicht → Fahrtenbuch und Baustellen-Einkäufe ([14](docs/fachkonzept/14-fahrtenbuch-auslagen.md)).
+**Stand 10.11.2026 (abends):** Fertig sind Apple-Design, Mangelanzeige, Raum aus Pin, Planregister mit Index/Freigabe/QR-Prüfung, NU-Besprechung (Web + offline am iPad/iPhone). Davor: Durchstich fertig. Nächste Reihenfolge (vom Nutzer gewählt): Apple-Design für Web und iOS → Mangelanzeige mit Positionen (PDF, Versand) und genaue Verortung (Zoom, Raum aus Pin) → Dateiablage mit freigegebenem Plan → Besprechungen (Bau- und NU-Besprechung) → Rechnungen (Einreichung, Prüfung, Freigabe) und Kostenübersicht → Fahrtenbuch und Baustellen-Einkäufe ([14](docs/fachkonzept/14-fahrtenbuch-auslagen.md)).
 
 **Start mit einem schmalen Durchstich** (vor der vollen Stufe 1): Projekte/Orte/Rollen → Mängel mit Plan-Pin → offline auf dem iPad erfassen → Abgleich mit dem Server → Web-Ansicht für die Bauleitung. Damit wird das Schwierigste (Offline-Abgleich) zuerst geprüft. Danach die volle Dateiablage mit Prüfketten und der Rest von Stufe 1.
 
@@ -83,3 +83,6 @@ infra/           docker-compose (Postgres, PowerSync), Sync-Regeln
 - Die App schreibt Entscheidungen in `mangel_action` (Upload-Warteschlange), nicht direkt in `mangel`.
 - Design nach [15-design.md](docs/fachkonzept/15-design.md): Web nutzt die CSS-Variablen in `apps/web/src/styles.css` und `apps/web/src/ui/`, iOS nutzt `apps/mobile/src/theme.ts` und `apps/mobile/src/ui.tsx` (Systemfarben, SF Symbols). Keine fest eingebauten Farben in Bildschirmen.
 - Web und iOS müssen dieselbe React-Version haben (sonst zwei React-Kopien im Monorepo).
+- Jede synchronisierte Tabelle braucht eine eigene Spalte `id` (PowerSync). Verknüpfungstabellen also nicht nur mit zusammengesetztem Schlüssel.
+- Testdaten nur mit `DELETE` löschen, nie `TRUNCATE`: TRUNCATE wird nicht repliziert, alte Daten blieben auf den Geräten.
+- RLS-Policies für „Entwurf bearbeiten, danach gesperrt“ brauchen ein eigenes `WITH CHECK`, sonst lässt sich der Status nie auf „versendet“ setzen.
