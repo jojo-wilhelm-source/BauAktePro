@@ -24,7 +24,15 @@
     },
     "plugins": [
       "react-native-blob-util",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Bau Akte Pro nutzt die Kamera, um Mängel auf der Baustelle zu fotografieren.",
+          "photosPermission": "Bau Akte Pro nutzt deine Fotos, um sie an Mängel anzuhängen.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

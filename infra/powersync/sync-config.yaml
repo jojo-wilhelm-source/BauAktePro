@@ -19,22 +19,34 @@ streams:
       # Room areas on plans: lets the device derive the room from a pin while offline.
       - SELECT * FROM location_area WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id())
 
+  # Own entries recorded on the phone (offline): purchases, trips, refuelling. Subset of RLS (RLS also lets the Leitung see all).
+  eigenes:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM einkauf WHERE created_by = auth.user_id()
+      - SELECT * FROM fahrt WHERE fahrer_id = auth.user_id()
+      - SELECT * FROM tankvorgang WHERE fahrer_id = auth.user_id()
+      # Vehicles of the own company (only for staff of the own company, like RLS).
+      - SELECT * FROM fahrzeug WHERE aktiv = true AND tenant_id IN (SELECT tenant_id FROM company WHERE kind = 'own' AND id IN (SELECT company_id FROM app_user WHERE id = auth.user_id()))
+
   # Internal side (Bauleitung, Polier): all Mängel, all plans, internal notes.
   intern:
     auto_subscribe: true
     queries:
-      - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
-      - SELECT * FROM plan WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
-      - SELECT * FROM mangel_note WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM plan WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM mangel_note WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      # Photo metadata (the image files are loaded via the API). Same visibility as the Mangel.
+      - SELECT * FROM mangel_foto WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       # Besprechungen incl. drafts and internal Punkte: the Polier keeps the meeting on the tablet, also offline.
       # NU devices get none for now (NU uses the web portal) – a subset of RLS, never more.
-      - SELECT * FROM besprechung WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
-      - SELECT * FROM besprechung_teilnehmer WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
-      - SELECT * FROM besprechung_punkt WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
-      - SELECT * FROM besprechung_eintrag WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_teilnehmer WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_punkt WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_eintrag WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       # Mangelanzeigen incl. drafts (RLS: read for internal roles).
-      - SELECT * FROM mangelanzeige WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
-      - SELECT * FROM mangelanzeige_position WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'polier'))
+      - SELECT * FROM mangelanzeige WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM mangelanzeige_position WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
 
   # Nachunternehmer: confirmed assignments to the own company + own reports. Never notes.
   nachunternehmer:
@@ -42,6 +54,8 @@ streams:
     queries:
       - SELECT * FROM mangel WHERE deleted_at IS NULL AND assignment_confirmed = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND assigned_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
       - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
+      - SELECT * FROM mangel_foto WHERE mangel_id IN (SELECT id FROM mangel WHERE deleted_at IS NULL AND assignment_confirmed = true AND assigned_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu'))
+      - SELECT * FROM mangel_foto WHERE mangel_id IN (SELECT id FROM mangel WHERE deleted_at IS NULL AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu'))
       # Only Mangelanzeigen SENT to the own company, never drafts.
       - SELECT * FROM mangelanzeige WHERE status = 'versendet' AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
       - SELECT * FROM mangelanzeige_position WHERE anzeige_id IN (SELECT id FROM mangelanzeige WHERE status = 'versendet') AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
@@ -53,4 +67,6 @@ streams:
     queries:
       - SELECT * FROM mangel WHERE deleted_at IS NULL AND visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')
       - SELECT * FROM mangel WHERE deleted_at IS NULL AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr') AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')
+      - SELECT * FROM mangel_foto WHERE mangel_id IN (SELECT id FROM mangel WHERE deleted_at IS NULL AND visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr'))
+      - SELECT * FROM mangel_foto WHERE mangel_id IN (SELECT id FROM mangel WHERE deleted_at IS NULL AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr'))
       - SELECT * FROM plan WHERE visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')

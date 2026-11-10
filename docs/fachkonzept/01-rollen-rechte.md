@@ -1,5 +1,7 @@
 # Rollen und Rechte
 
+**Projektleitung (entschieden 10.11.2026):** eigene Projektrolle mit **denselben Rechten wie die Bauleitung** (sieht und entscheidet alles, was die Bauleitung sieht und entscheidet).
+
 Rollen gelten **pro Projekt**. Zusätzlich gibt es **Firmenrollen** für die projektübergreifende Sicht (Einkauf, Geschäftsführung). Rechte werden immer serverseitig geprüft.
 
 | Rolle | Darf | Sieht nicht |

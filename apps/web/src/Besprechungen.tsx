@@ -1,7 +1,7 @@
-/** NU-Besprechung (docs/fachkonzept/09): list, protocol view, status chips, new Punkte, send, follow-up meeting. */
+/** Bau- und NU-Besprechung (docs/fachkonzept/09): list, protocol view, attendance, remarks, next date, status chips, send, follow-up. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { besprechungNo, formatDate, nextPunktStatus, punktNo, PUNKT_STATUS, PUNKT_STATUS_LABELS, PUNKT_TONE, type PunktStatus } from '@bap/domain';
-import { api, openPdf, type BesprechungDetail, type BesprechungListItem, type Mangel, type ProjectInfo, type Punkt } from './api';
+import { api, downloadFile, openPdf, type BesprechungDetail, type BesprechungListItem, type Mangel, type ProjectInfo, type Punkt } from './api';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 import { mNo } from './ui/status';
@@ -25,6 +25,13 @@ export function StatusChip({ status, onClick }: { status: PunktStatus; onClick?:
   );
 }
 
+const KIND_LABEL = { bau: 'Baubesprechung', nu: 'NU-Besprechung' } as const;
+/** ISO → value of <input type="datetime-local"> (local time). */
+const toLocalInput = (iso: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
 const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export function BesprechungenPage(props: {
@@ -39,6 +46,7 @@ export function BesprechungenPage(props: {
   const { info, run } = props;
   const [list, setList] = useState<BesprechungListItem[]>([]);
   const [creating, setCreating] = useState(false);
+  const [kind, setKind] = useState<'alle' | 'bau' | 'nu'>('alle');
   const internal = info.role === 'bauleitung' || info.role === 'polier';
   const reload = useCallback(async () => setList(await api<BesprechungListItem[]>(`/projects/${info.project.id}/besprechungen`)), [info.project.id]);
   useEffect(() => void reload(), [reload, props.openId]);
@@ -57,7 +65,21 @@ export function BesprechungenPage(props: {
             </button>
           )
         }
-      />
+      >
+        <div className="segmented">
+          {(
+            [
+              ['alle', 'Alle'],
+              ['bau', 'Baubesprechung'],
+              ['nu', 'NU-Besprechung'],
+            ] as const
+          ).map(([k, l]) => (
+            <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </PageHeader>
       <div className="list-pad" style={{ maxWidth: 1000 }}>
         <div className="card">
           <table className="table">
@@ -70,14 +92,15 @@ export function BesprechungenPage(props: {
               </tr>
             </thead>
             <tbody>
-              {list.map((b) => (
+              {list.filter((b) => kind === 'alle' || b.kind === kind).map((b) => (
                 <tr key={b.id} onClick={() => props.onOpen(b.id)}>
                   <td className="num">{besprechungNo(b.number)}</td>
                   <td>
                     <div className="desc">{b.title}</div>
                     <div className="sub">
-                      {fmtDateTime(b.held_at)}
+                      {KIND_LABEL[b.kind]} · {fmtDateTime(b.held_at)}
                       {b.place ? ` · ${b.place}` : ''}
+                      {b.next_at && !b.has_next ? ` · nächster Termin ${fmtDateTime(b.next_at)}` : ''}
                     </div>
                   </td>
                   <td className="tabular">
@@ -91,7 +114,7 @@ export function BesprechungenPage(props: {
               ))}
             </tbody>
           </table>
-          {list.length === 0 && <div className="empty">Noch keine Besprechungen</div>}
+          {list.filter((b) => kind === 'alle' || b.kind === kind).length === 0 && <div className="empty">Noch keine Besprechungen</div>}
         </div>
       </div>
       {creating && (
@@ -175,7 +198,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                   run(async () => {
                     const r = await api<{ id: string }>('/besprechungen', {
                       method: 'POST',
-                      body: { id: crypto.randomUUID(), project_id: info.project.id, kind: d.kind, title: d.title, held_at: new Date(Date.now() + 7 * 86400000).toISOString(), place: d.place, previous_id: d.id },
+                      body: { id: crypto.randomUUID(), project_id: info.project.id, kind: d.kind, title: d.title, held_at: d.next_at ?? new Date(Date.now() + 7 * 86400000).toISOString(), place: d.place, previous_id: d.id },
                     });
                     props.onOpen(r.id);
                   }, 'Folgesitzung vorbereitet: offene Punkte übernommen, erledigte archiviert')
@@ -249,6 +272,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
       </PageHeader>
 
       <div className="protocol">
+        <KopfCard d={d} id={id} run={runAndLoad} />
         {groups.map(([name, punkte]) => (
           <div key={name}>
             <div className="group-head">
@@ -541,7 +565,15 @@ function NewBesprechungSheet({ info, onCancel, onSave }: { info: ProjectInfo; on
   const now = new Date();
   now.setMinutes(0, 0, 0);
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  const [f, setF] = useState({ title: 'NU-Besprechung', held_at: local, place: 'Baucontainer', companies: info.companies.filter((c) => c.kind !== 'bauherr').map((c) => c.id) });
+  const [f, setF] = useState({ kind: 'nu' as 'nu' | 'bau', title: 'NU-Besprechung', held_at: local, place: 'Baucontainer', companies: info.companies.filter((c) => c.kind !== 'bauherr').map((c) => c.id) });
+  // Baubesprechung: with the Bauherr and the planners; NU-Besprechung: the NU only (ANNAHME, docs/fachkonzept/09).
+  const setKind = (kind: 'nu' | 'bau') =>
+    setF({
+      ...f,
+      kind,
+      title: f.title === KIND_LABEL[f.kind] ? KIND_LABEL[kind] : f.title,
+      companies: info.companies.filter((c) => (kind === 'bau' ? c.kind !== 'nu' : c.kind !== 'bauherr')).map((c) => c.id),
+    });
   return (
     <Sheet
       title="Neue Besprechung"
@@ -549,9 +581,16 @@ function NewBesprechungSheet({ info, onCancel, onSave }: { info: ProjectInfo; on
       primaryDisabled={!f.title.trim()}
       onCancel={onCancel}
       onPrimary={() =>
-        onSave({ id: crypto.randomUUID(), project_id: info.project.id, kind: 'nu', title: f.title, held_at: new Date(f.held_at).toISOString(), place: f.place || null, company_ids: f.companies })
+        onSave({ id: crypto.randomUUID(), project_id: info.project.id, kind: f.kind, title: f.title, held_at: new Date(f.held_at).toISOString(), place: f.place || null, company_ids: f.companies })
       }
     >
+      <div className="segmented">
+        {(['bau', 'nu'] as const).map((k) => (
+          <button key={k} className={f.kind === k ? 'on' : ''} onClick={() => setKind(k)}>
+            {KIND_LABEL[k]}
+          </button>
+        ))}
+      </div>
       <div className="group">
         <div className="row">
           <span className="k">Titel</span>
@@ -584,5 +623,95 @@ function NewBesprechungSheet({ info, onCancel, onSave }: { info: ProjectInfo; on
         <div className="footnote">Für die wöchentliche Runde besser „Folgesitzung vorbereiten“ in der letzten Besprechung nutzen: dann wandern offene Punkte mit.</div>
       </div>
     </Sheet>
+  );
+}
+
+/** Attendance, remarks and next date. Editable while the protocol is a draft, printed in the PDF. */
+function KopfCard({ d, id, run }: { d: BesprechungDetail; id: string; run: Run }) {
+  const [bemerkung, setBemerkung] = useState(d.bemerkung ?? '');
+  const [next, setNext] = useState(toLocalInput(d.next_at));
+  useEffect(() => {
+    setBemerkung(d.bemerkung ?? '');
+    setNext(toLocalInput(d.next_at));
+  }, [d.bemerkung, d.next_at]);
+  const patch = (body: Record<string, unknown>, ok: string) => run(() => api(`/besprechungen/${id}`, { method: 'PATCH', body: { base_version: d.version, ...body } }), ok);
+  const extern = d.teilnehmer.filter((t) => t.kind !== 'own');
+  const present = extern.filter((t) => t.anwesend === true).length;
+  return (
+    <div className="kopf">
+      <div>
+        <div className="group-head">
+          <h3>Teilnehmer</h3>
+          <span className="sub">{present} von {extern.length} anwesend</span>
+        </div>
+        <div className="card">
+          {d.teilnehmer.map((t) => (
+            <div key={t.id} className="row">
+              <span className="k">
+                {t.name}
+                <div className="sub">{t.kind === 'own' ? 'eigene Firma' : t.kind === 'bauherr' ? 'Bauherr' : t.kind === 'nu' ? 'Nachunternehmer' : t.kind}</div>
+              </span>
+              {d.can_edit ? (
+                <div className="segmented small">
+                  {(
+                    [
+                      [true, 'anwesend'],
+                      [false, 'entschuldigt'],
+                      [null, '–'],
+                    ] as const
+                  ).map(([v, l]) => (
+                    <button
+                      key={String(v)}
+                      className={t.anwesend === v ? 'on' : ''}
+                      onClick={() => run(() => api(`/besprechungen/${id}/teilnehmer/${t.id}/anwesenheit`, { method: 'PUT', body: { anwesend: v } }), `${t.name}: ${l}`)}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <span className={`pill ${t.anwesend === true ? 'c-green' : t.anwesend === false ? 'c-orange' : 'c-gray'}`}>{t.anwesend === true ? 'anwesend' : t.anwesend === false ? 'entschuldigt' : 'nicht erfasst'}</span>
+              )}
+            </div>
+          ))}
+          {d.teilnehmer.length === 0 && <div className="empty">Keine Teilnehmer</div>}
+        </div>
+      </div>
+      <div>
+        <div className="group-head">
+          <h3>Bemerkungen und nächster Termin</h3>
+        </div>
+        <div className="card">
+          <div className="row stack">
+            <textarea
+              rows={4}
+              placeholder={d.can_edit ? 'Allgemeines, z. B. Baustellenordnung, Zufahrt, Witterung …' : 'Keine Bemerkungen'}
+              value={bemerkung}
+              readOnly={!d.can_edit}
+              onChange={(e) => setBemerkung(e.target.value)}
+              onBlur={() => d.can_edit && bemerkung !== (d.bemerkung ?? '') && void patch({ bemerkung: bemerkung.trim() || null }, 'Bemerkungen gespeichert')}
+            />
+          </div>
+          <div className="row">
+            <span className="k">Nächster Termin</span>
+            {d.can_edit ? (
+              <input
+                type="datetime-local"
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                onBlur={() => next !== toLocalInput(d.next_at) && void patch({ next_at: next ? new Date(next).toISOString() : null }, next ? 'Nächster Termin gespeichert' : 'Nächster Termin entfernt')}
+              />
+            ) : (
+              <span className="v">{d.next_at ? fmtDateTime(d.next_at) : '–'}</span>
+            )}
+          </div>
+          {d.next_at && (
+            <button className="row action" onClick={() => run(() => downloadFile(`/besprechungen/${id}/naechster-termin.ics`, 'Naechster-Termin.ics'), 'Kalendereintrag geladen')}>
+              In den Kalender (iPhone, Outlook) <Icon name="kalender" size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

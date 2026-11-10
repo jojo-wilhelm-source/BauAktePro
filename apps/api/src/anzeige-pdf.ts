@@ -25,7 +25,155 @@ export interface AnzeigePdfData {
     gewerk: string;
     dueDate: string | null;
     plan: { file: string; name: string; index: string; page: number; x: number; y: number } | null;
+    /** Photo of the Mangel (first "mangel" photo), JPEG or PNG bytes. */
+    photo?: { bytes: Uint8Array; takenAt: string } | null;
   }[];
+}
+
+type Block = AnzeigePdfData['positions'][number] & { status?: string; company?: string | null };
+
+interface BlockCtx {
+  doc: PDFDocument;
+  font: PDFFont;
+  bold: PDFFont;
+  planDir: string;
+  planCache: Map<string, PDFDocument>;
+  page: PDFPage;
+  y: number;
+}
+
+const IMG_W = (A4_W() - 2 * 56 - 14) / 2; // two images side by side
+const IMG_H = IMG_W * 0.75;
+function A4_W() {
+  return 595.28;
+}
+
+/**
+ * One Mangel: header line, description, Ort/Gewerk/Plan, then the photo (left) and the plan crop with
+ * the pin marked (right). So the PDF shows not only "Bad" but exactly where in the Bad.
+ */
+async function drawMangelBlock(c: BlockCtx, p: Block, label: string) {
+  const { doc, font, bold } = c;
+  const width = A4[0] - 2 * M;
+  const descLines = wrap(p.description, bold, 11, width).slice(0, 4);
+  const need = 18 + descLines.length * 15 + 3 * 13 + 10 + IMG_H + 22;
+  if (c.y - need < M + 30) {
+    c.page = doc.addPage(A4);
+    c.y = A4[1] - M;
+  }
+  const text = (s: string, x: number, yy: number, size = 10, f = font, color = INK) => c.page.drawText(safe(s), { x, y: yy, size, font: f, color });
+  c.page.drawLine({ start: { x: M, y: c.y + 6 }, end: { x: A4[0] - M, y: c.y + 6 }, thickness: 0.6, color: LINE });
+  c.y -= 12;
+  text(label, M, c.y, 12, bold);
+  text(`M-${String(p.number).padStart(3, '0')}`, M + font.widthOfTextAtSize(label, 12) + 14, c.y, 12, font, GREY);
+  if (p.status) text(p.status, A4[0] - M - bold.widthOfTextAtSize(p.status, 9.5), c.y + 1, 9.5, bold, GREY);
+  c.y -= 18;
+  for (const l of descLines) {
+    text(l, M, c.y, 11, bold);
+    c.y -= 15;
+  }
+  c.y -= 2;
+  const meta: [string, string][] = [
+    ['Ort', p.location],
+    ['Gewerk', p.company ? `${p.gewerk} · ${p.company}` : p.gewerk],
+    ['Plan', p.plan ? `${p.plan.name}, Index ${p.plan.index}` : '–'],
+  ];
+  for (const [k, v] of meta) {
+    text(k, M, c.y, 9.5, font, GREY);
+    text(v, M + 52, c.y, 9.5);
+    c.y -= 13;
+  }
+  c.y -= 6;
+
+  const by = c.y - IMG_H;
+  const lx = M;
+  const rx = M + IMG_W + 14;
+  // Photo
+  c.page.drawRectangle({ x: lx, y: by, width: IMG_W, height: IMG_H, borderColor: LINE, borderWidth: 0.8, color: rgb(0.97, 0.97, 0.98) });
+  if (p.photo) {
+    try {
+      const b = p.photo.bytes;
+      const img = b[0] === 0x89 && b[1] === 0x50 ? await doc.embedPng(b) : await doc.embedJpg(b);
+      const sc = Math.min(IMG_W / img.width, IMG_H / img.height);
+      const w = img.width * sc;
+      const h = img.height * sc;
+      c.page.drawImage(img, { x: lx + (IMG_W - w) / 2, y: by + (IMG_H - h) / 2, width: w, height: h });
+      const cap = `Foto ${formatDate(p.photo.takenAt)}`;
+      c.page.drawRectangle({ x: lx, y: by, width: font.widthOfTextAtSize(cap, 8) + 10, height: 14, color: rgb(0, 0, 0), opacity: 0.55 });
+      c.page.drawText(cap, { x: lx + 5, y: by + 4, size: 8, font, color: rgb(1, 1, 1) });
+    } catch {
+      text('Foto nicht lesbar', lx + 12, by + IMG_H / 2, 9, font, GREY);
+    }
+  } else {
+    text('Kein Foto', lx + IMG_W / 2 - 20, by + IMG_H / 2, 9, font, GREY);
+  }
+  // Plan crop around the pin (vector, stays sharp)
+  c.page.drawRectangle({ x: rx, y: by, width: IMG_W, height: IMG_H, borderColor: LINE, borderWidth: 0.8 });
+  if (p.plan) {
+    try {
+      let src = c.planCache.get(p.plan.file);
+      if (!src) {
+        src = await PDFDocument.load(await readFile(c.planDir + p.plan.file.replace(/[^a-z0-9._-]/gi, '')));
+        c.planCache.set(p.plan.file, src);
+      }
+      const sp = src.getPage(p.plan.page - 1);
+      const { width: W, height: H } = sp.getSize();
+      const cw = Math.min(W, W * 0.35);
+      const ch = Math.min(H, (cw * IMG_H) / IMG_W);
+      const px = p.plan.x * W;
+      const py = (1 - p.plan.y) * H;
+      const left = Math.max(0, Math.min(W - cw, px - cw / 2));
+      const bottom = Math.max(0, Math.min(H - ch, py - ch / 2));
+      const embedded = await doc.embedPage(sp, { left, bottom, right: left + cw, top: bottom + ch });
+      const scale = IMG_W / cw;
+      c.page.drawPage(embedded, { x: rx, y: by, width: IMG_W, height: ch * scale });
+      const mx = rx + (px - left) * scale;
+      const my = by + (py - bottom) * scale;
+      c.page.drawCircle({ x: mx, y: my, size: 10, borderColor: RED, borderWidth: 2.4 });
+      c.page.drawCircle({ x: mx, y: my, size: 2.8, color: RED });
+      const cap = 'Planausschnitt';
+      c.page.drawRectangle({ x: rx, y: by, width: font.widthOfTextAtSize(cap, 8) + 10, height: 14, color: rgb(0, 0, 0), opacity: 0.55 });
+      c.page.drawText(cap, { x: rx + 5, y: by + 4, size: 8, font, color: rgb(1, 1, 1) });
+    } catch {
+      text('Plan nicht verfügbar', rx + 12, by + IMG_H / 2, 9, font, GREY);
+    }
+  } else {
+    text('Kein Plan-Pin', rx + IMG_W / 2 - 25, by + IMG_H / 2, 9, font, GREY);
+  }
+  c.y = by - 22;
+}
+
+export interface BerichtData {
+  title: string;
+  subtitle: string;
+  ownCompany: string;
+  items: Block[];
+}
+
+/** Mängelbericht: one or more Mängel, each with photo and plan crop (no letter, no deadline request). */
+export async function renderMaengelbericht(d: BerichtData, planDir: string): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.setTitle(`${d.title} – ${d.subtitle}`);
+  doc.setCreator('Bau Akte Pro');
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const page = doc.addPage(A4);
+  let y = A4[1] - M;
+  page.drawText(safe(d.ownCompany), { x: M, y, size: 9.5, font, color: GREY });
+  const dateStr = formatDate(new Date().toISOString());
+  page.drawText(dateStr, { x: A4[0] - M - font.widthOfTextAtSize(dateStr, 9.5), y, size: 9.5, font, color: GREY });
+  y -= 26;
+  page.drawText(safe(d.title), { x: M, y, size: 18, font: bold, color: INK });
+  y -= 17;
+  page.drawText(safe(d.subtitle), { x: M, y, size: 10.5, font, color: GREY });
+  y -= 26;
+  const ctx: BlockCtx = { doc, font, bold, planDir, planCache: new Map(), page, y };
+  for (const it of d.items) await drawMangelBlock(ctx, it, `Mangel`);
+  const pages = doc.getPages();
+  pages.forEach((pg, i) =>
+    pg.drawText(safe(`${d.title} · ${d.subtitle} · Seite ${i + 1} von ${pages.length}`), { x: M, y: 30, size: 8.5, font, color: GREY }),
+  );
+  return doc.save();
 }
 
 const A4: [number, number] = [595.28, 841.89];
@@ -100,73 +248,11 @@ export async function renderAnzeigePdf(d: AnzeigePdfData, planDir: string): Prom
   }
   y -= 14;
 
-  // Positions
-  const BLOCK = 168;
-  const IMG_W = 210;
-  const IMG_H = 150;
-  const planCache = new Map<string, PDFDocument>();
-  for (const p of d.positions) {
-    if (y - BLOCK < M + 90) {
-      page = doc.addPage(A4);
-      y = A4[1] - M;
-    }
-    page.drawLine({ start: { x: M, y: y + 6 }, end: { x: A4[0] - M, y: y + 6 }, thickness: 0.6, color: LINE });
-    y -= 12;
-    const top = y;
-    text(`Pos. ${p.pos}`, M, y, 12, bold);
-    text(`M-${String(p.number).padStart(3, '0')}`, M + 52, y, 12, font, GREY);
-    y -= 18;
-    const textWidth = width - IMG_W - 16;
-    for (const l of wrap(p.description, bold, 11, textWidth).slice(0, 4)) {
-      text(l, M, y, 11, bold);
-      y -= 15;
-    }
-    y -= 4;
-    for (const [k, v] of [
-      ['Ort', p.location],
-      ['Gewerk', p.gewerk],
-      ['Plan', p.plan ? `${p.plan.name}, Index ${p.plan.index}` : '–'],
-    ] as const) {
-      text(k, M, y, 9.5, font, GREY);
-      text(v, M + 52, y, 9.5);
-      y -= 13;
-    }
-
-    // Plan crop around the pin
-    const bx = A4[0] - M - IMG_W;
-    const by = top - IMG_H + 10;
-    page.drawRectangle({ x: bx, y: by, width: IMG_W, height: IMG_H, borderColor: LINE, borderWidth: 0.8 });
-    if (p.plan) {
-      try {
-        let src = planCache.get(p.plan.file);
-        if (!src) {
-          src = await PDFDocument.load(await readFile(planDir + p.plan.file.replace(/[^a-z0-9._-]/gi, '')));
-          planCache.set(p.plan.file, src);
-        }
-        const sp = src.getPage(p.plan.page - 1);
-        const { width: W, height: H } = sp.getSize();
-        // Crop: 35 % of the page width, same aspect as the frame, kept inside the page.
-        const cw = Math.min(W, W * 0.35);
-        const ch = Math.min(H, (cw * IMG_H) / IMG_W);
-        const px = p.plan.x * W;
-        const py = (1 - p.plan.y) * H;
-        const left = Math.max(0, Math.min(W - cw, px - cw / 2));
-        const bottom = Math.max(0, Math.min(H - ch, py - ch / 2));
-        const embedded = await doc.embedPage(sp, { left, bottom, right: left + cw, top: bottom + ch });
-        const scale = IMG_W / cw;
-        page.drawPage(embedded, { x: bx, y: by, width: IMG_W, height: ch * scale });
-        const mx = bx + (px - left) * scale;
-        const my = by + (py - bottom) * scale;
-        page.drawCircle({ x: mx, y: my, size: 9, borderColor: RED, borderWidth: 2.2 });
-        page.drawCircle({ x: mx, y: my, size: 2.5, color: RED });
-      } catch {
-        text('Plan nicht verfügbar', bx + 12, by + IMG_H / 2, 9, font, GREY);
-      }
-    } else {
-      text('Kein Plan-Pin', bx + 12, by + IMG_H / 2, 9, font, GREY);
-    }
-    y = Math.min(y, by) - 18;
-  }
+  // Positions: description, location, then photo and plan crop side by side.
+  const ctx: BlockCtx = { doc, font, bold, planDir, planCache: new Map(), page, y };
+  for (const p of d.positions) await drawMangelBlock(ctx, p, `Pos. ${p.pos}`);
+  page = ctx.page;
+  y = ctx.y;
 
   // Closing
   if (y < M + 90) {

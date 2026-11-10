@@ -43,11 +43,12 @@ export function Row(props: {
           <SymbolView name={icon} size={17} tintColor="#fff" />
         </View>
       )}
-      <View style={{ flex: 1 }}>
+      {/* With a value: the label keeps its width (no broken words), the value wraps instead. */}
+      <View style={value != null ? { flexShrink: 0, maxWidth: '60%' } : { flex: 1 }}>
         {typeof label === 'string' ? <Text style={[T.body, { color }]}>{label}</Text> : label}
         {subtitle && <Text style={[T.footnote, { marginTop: 2 }]}>{subtitle}</Text>}
       </View>
-      {typeof value === 'string' || typeof value === 'number' ? <Text style={[T.body, { color: C.label2, flexShrink: 1, textAlign: 'right' }]}>{value}</Text> : value}
+      {typeof value === 'string' || typeof value === 'number' ? <Text style={[T.body, { color: C.label2, flex: 1, textAlign: 'right' }]}>{value}</Text> : value != null ? <View style={{ flex: 1, alignItems: 'flex-end' }}>{value}</View> : null}
       {checked && <SymbolView name="checkmark" size={17} weight="semibold" tintColor={C.accent} />}
       {chevron && <SymbolView name="chevron.right" size={13} weight="semibold" tintColor={C.label3} />}
     </View>

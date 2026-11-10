@@ -6,7 +6,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { TxSql } from '@bap/db';
 import { AnzeigeDraft, AnzeigePatch, anzeigeNo, canBePosition, formatDate, type MangelStatus } from '@bap/domain';
-import { renderAnzeigePdf, type AnzeigePdfData } from './anzeige-pdf';
+import { renderAnzeigePdf, renderMaengelbericht, type AnzeigePdfData } from './anzeige-pdf';
+import { firstPhotos } from './foto-service';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
@@ -112,6 +113,7 @@ async function pdfData(tx: TxSql, id: string, draft: boolean, number: number | n
     SELECT p.name AS project, (SELECT c.name FROM company c WHERE c.tenant_id = p.tenant_id AND c.kind = 'own' LIMIT 1) AS own,
            (SELECT name FROM app_user WHERE id = ${signerId}) AS signer
     FROM project p WHERE p.id = ${d.project_id}`;
+  const photos = await firstPhotos(tx, d.positions.map((p) => p.mangel_id as string));
   return {
     number,
     draft,
@@ -132,6 +134,7 @@ async function pdfData(tx: TxSql, id: string, draft: boolean, number: number | n
       plan: p.file_key && p.pin_x != null
         ? { file: p.file_key as string, name: p.plan_name as string, index: p.plan_index as string, page: (p.pin_page as number) ?? 1, x: p.pin_x as number, y: p.pin_y as number }
         : null,
+      photo: photos.get(p.mangel_id as string) ?? null,
     })),
   };
 }
@@ -202,4 +205,42 @@ function iso(v: unknown): string | null {
   if (!v) return null;
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v).slice(0, 10);
+}
+
+/** Mängelbericht: selected Mängel with photo and plan crop (RLS: only visible ones end up in the PDF). */
+export async function maengelBericht(tx: TxSql, userId: string, projectId: string, ids: string[]) {
+  await actorFor(tx, userId, projectId);
+  const rows = await tx`
+    SELECT m.id, m.number, m.description, m.status, m.due_date, m.plan_id, m.pin_page, m.pin_x, m.pin_y,
+           l.name AS location_name, g.name AS gewerk_name, c.name AS company_name, pl.name AS plan_name, pl.plan_index, pl.file_key
+    FROM mangel m JOIN location l ON l.id = m.location_id JOIN gewerk g ON g.id = m.gewerk_id
+    LEFT JOIN company c ON c.id = m.assigned_company_id LEFT JOIN plan pl ON pl.id = m.plan_id
+    WHERE m.project_id = ${projectId} AND m.deleted_at IS NULL ${ids.length ? tx`AND m.id IN ${tx(ids)}` : tx``}
+    ORDER BY m.number`;
+  if (!rows.length) throw new HttpError(404, 'Keine Mängel gefunden');
+  const photos = await firstPhotos(tx, rows.map((r) => r.id as string));
+  const [ctx] = await tx`SELECT p.name AS project, (SELECT c.name FROM company c WHERE c.tenant_id = p.tenant_id AND c.kind = 'own' LIMIT 1) AS own FROM project p WHERE p.id = ${projectId}`;
+  const { MANGEL_STATUS_LABELS } = await import('@bap/domain');
+  return renderMaengelbericht(
+    {
+      title: rows.length === 1 ? `Mangel M-${String(rows[0]!.number).padStart(3, '0')}` : `Mängelbericht (${rows.length} Mängel)`,
+      subtitle: ctx!.project as string,
+      ownCompany: (ctx!.own as string) ?? '',
+      items: rows.map((r) => ({
+        pos: 0,
+        number: r.number as number,
+        description: r.description as string,
+        location: r.location_name as string,
+        gewerk: r.gewerk_name as string,
+        company: (r.company_name as string) ?? null,
+        status: MANGEL_STATUS_LABELS[r.status as keyof typeof MANGEL_STATUS_LABELS],
+        dueDate: iso(r.due_date),
+        plan: r.file_key && r.pin_x != null
+          ? { file: r.file_key as string, name: r.plan_name as string, index: r.plan_index as string, page: (r.pin_page as number) ?? 1, x: r.pin_x as number, y: r.pin_y as number }
+          : null,
+        photo: photos.get(r.id as string) ?? null,
+      })),
+    },
+    PLAN_DIR,
+  );
 }

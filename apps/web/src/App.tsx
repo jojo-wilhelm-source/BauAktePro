@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, type MangelStatus, type Priority } from '@bap/domain';
-import { api, ApiError, getToken, setToken, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
+import { api, ApiError, getToken, openPdf, setToken, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
 import { AnzeigenPage, type AnzeigeStart } from './Anzeigen';
 import { BesprechungenPage } from './Besprechungen';
+import { DokumentePage } from './Dokumente';
+import { EinreichungenPage } from './Einreichungen';
+import { StundenPage } from './Stunden';
+import { NachunternehmerPage } from './Nachunternehmer';
+import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
+import { KostenPage } from './Kosten';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
+import { Foto } from './ui/Foto';
 import { PageHeader, type Run } from './ui/layout';
 
 const TEST_USERS = [
@@ -16,21 +23,13 @@ const TEST_USERS = [
   ['elektro@example.test', 'Erik Elektro', 'NU Elektro Blitz'],
   ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs'],
   ['bauherr@example.test', 'Hanna Bauherr', 'Bauherr'],
+  ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
 ] as const;
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'hinweise';
+type Module = 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
 
-/** Modules of the full product (CLAUDE.md, Umsetzungsreihenfolge) that are not built yet. */
-const COMING: { icon: IconName; label: string }[] = [
-  { icon: 'ordner', label: 'Dokumente' },
-  { icon: 'firmen', label: 'Nachunternehmer' },
-  { icon: 'rechnung', label: 'Rechnungen' },
-  { icon: 'kosten', label: 'Kosten' },
-  { icon: 'einkauf', label: 'Einkäufe' },
-  { icon: 'auto', label: 'Fahrtenbuch' },
-];
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
 
@@ -173,7 +172,7 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
           <div className="app-icon">BA</div>
           <div>
             <strong>Bau Akte Pro</strong>
-            <small>{info ? ROLE_LABELS[info.role] : ' '}</small>
+            <small>{info ? info.roleLabel : ' '}</small>
           </div>
         </div>
         <div className="project-picker">
@@ -190,15 +189,15 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
         {nav('besprechungen', 'besprechung', 'Besprechungen')}
         {nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
+        {nav('dokumente', 'ordner', 'Dokumente')}
+        {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('nachunternehmer', 'firmen', 'Nachunternehmer')}
+        {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('stunden', 'kosten', 'Stundenzettel')}
+        {info && (info.role === 'bauleitung' || info.role === 'nu') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && <div className="side-section">Geld und Betrieb</div>}
+        {info && info.role === 'bauleitung' && nav('kosten', 'kosten', 'Kosten')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
-        <div className="side-section">In Vorbereitung</div>
-        {COMING.map((c) => (
-          <div key={c.label} className="side-item soon" title="Kommt in einem der nächsten Schritte">
-            <Icon name={c.icon} />
-            {c.label}
-            <span className="soon-tag">bald</span>
-          </div>
-        ))}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
           <div className="who">
@@ -283,6 +282,13 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
                 run={run}
               />
             )}
+            {module === 'dokumente' && <DokumentePage info={info} run={run} />}
+            {module === 'stunden' && <StundenPage info={info} run={run} />}
+            {module === 'einreichungen' && <EinreichungenPage info={info} run={run} />}
+            {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
+            {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}
+            {module === 'fahrtenbuch' && <FahrtenbuchPage info={info} run={run} />}
+            {module === 'kosten' && <KostenPage info={info} run={run} />}
             {module === 'hinweise' && <HinweisePage info={info} conflicts={conflicts} run={run} />}
           </>
         )}
@@ -353,6 +359,14 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
             </button>
           ))}
         </div>
+        <button
+          className="btn"
+          disabled={visible.length === 0}
+          onClick={() => run(() => openPdf(`/projects/${info.project.id}/maengel/pdf?ids=${visible.map((m) => m.id).join(',')}`), 'Mängelbericht geöffnet')}
+          title="PDF mit Foto und Planausschnitt je Mangel"
+        >
+          Mängelbericht (PDF)
+        </button>
         <select className="popup" value={gewerk} onChange={(e) => setGewerk(e.target.value)} aria-label="Gewerk">
           <option value="">Alle Gewerke</option>
           {info.gewerke.map((g) => (
@@ -476,10 +490,17 @@ function PlanPage(props: {
         {view === 'plan' && (
           <>
             <select className="popup" value={planId} onChange={(e) => setPlanId(e.target.value)} aria-label="Plan">
-              {info.plans.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} · Index {p.plan_index}
-                </option>
+              {[...new Set(info.plans.map((p) => p.folder_name ?? 'Ohne Ordner'))].map((folderName) => (
+                <optgroup key={folderName} label={folderName}>
+                  {info.plans
+                    .filter((p) => (p.folder_name ?? 'Ohne Ordner') === folderName)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} · Index {p.plan_index}
+                        {p.released ? '' : ' (noch nicht freigegeben)'}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
             </select>
             <select className="popup" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Anzeigen">
@@ -600,6 +621,48 @@ function Inspector({ m, info, run, onAnzeige }: { m: Mangel | null; info: Projec
           <StatusPill status={m.status} />
         </div>
         <h2>{m.description}</h2>
+      </div>
+
+      <div>
+        <div className="group-title">Fotos</div>
+        <div className="group">
+          {m.fotos.length > 0 && (
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+              {m.fotos.map((f) => (
+                <span key={f.id} style={{ position: 'relative' }}>
+                  <Foto id={f.id} size={72} />
+                  {f.kind === 'nachweis' && <span className="pill c-green" style={{ position: 'absolute', left: 4, bottom: 4 }}>Nachweis</span>}
+                </span>
+              ))}
+            </div>
+          )}
+          <label className="row action" style={{ cursor: 'pointer' }}>
+            Foto hinzufügen
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                void run(async () => {
+                  const fd = new FormData();
+                  fd.set('id', crypto.randomUUID());
+                  fd.set('taken_at', new Date(file.lastModified).toISOString());
+                  fd.set('file', file);
+                  const res = await fetch(`/api/maengel/${m.id}/fotos`, { method: 'POST', body: fd, headers: { authorization: `Bearer ${getToken()}` } });
+                  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+                }, 'Foto hinzugefügt');
+              }}
+            />
+            <Icon name="plus" size={16} />
+          </label>
+          <button className="row action" onClick={() => run(() => openPdf(`/projects/${info.project.id}/maengel/pdf?ids=${m.id}`), 'PDF geöffnet')}>
+            Als PDF (Foto + Planausschnitt)
+            <Icon name="anzeige" size={16} />
+          </button>
+        </div>
       </div>
 
       <div>

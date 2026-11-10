@@ -29,12 +29,13 @@ export interface Me {
 export interface ProjectInfo {
   project: { id: string; name: string };
   role: ProjectRole;
+  roleLabel: string;
   companyId: string;
   locations: { id: string; parent_id: string | null; kind: string; name: string }[];
   gewerke: { id: string; name: string }[];
   gewerkCompanies: { gewerk_id: string; company_id: string }[];
   companies: { id: string; name: string; kind: string; email: string | null }[];
-  plans: { id: string; location_id: string; name: string; plan_index: string; page_count: number }[];
+  plans: { id: string; location_id: string; name: string; plan_index: string; page_count: number; folder_name: string | null; released: boolean }[];
   locationAreas: LocationArea[];
 }
 export interface Mangel {
@@ -67,6 +68,7 @@ export interface Mangel {
   anzeige_status: AnzeigeStatus | null;
   anzeige_sent_at: string | null;
   created_by: string;
+  fotos: { id: string; kind: 'mangel' | 'nachweis'; taken_at: string }[];
 }
 export interface AnzeigeListItem {
   id: string;
@@ -100,6 +102,18 @@ export interface AnzeigePosition {
 }
 
 /** Opens a PDF from the API in a new tab without putting the token into the URL. */
+/** Authenticated download (e.g. calendar file). */
+export async function downloadFile(path: string, fileName: string) {
+  const res = await fetch(`/api${path}`, { headers: { authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export async function openPdf(path: string) {
   const win = window.open('', '_blank');
   const res = await fetch(`/api${path}`, { headers: { authorization: `Bearer ${getToken()}` } });
@@ -157,6 +171,7 @@ export interface BesprechungListItem {
   sent_at: string | null;
   previous_id: string | null;
   version: number;
+  next_at: string | null;
   punkte: number;
   offen: number;
   has_next: boolean;
@@ -186,9 +201,18 @@ export interface Punkt {
   version: number;
 }
 export interface BesprechungDetail extends Omit<BesprechungListItem, 'punkte' | 'offen' | 'has_next'> {
-  teilnehmer: { id: string; name: string; kind: string; email: string | null }[];
+  teilnehmer: { id: string; name: string; kind: string; email: string | null; anwesend: boolean | null }[];
+  bemerkung: string | null;
   punkte: Punkt[];
   maengel: { id: string; number: number; description: string; company_name: string; escalation: { label: string } }[];
   can_edit: boolean;
   can_send: boolean;
 }
+
+// --- Dokumente --------------------------------------------------------------------
+export interface Folder { id: string; parent_id: string | null; name: string; sort: number; visible_to_nu: boolean; visible_to_bauherr: boolean; kind: 'plaene' | 'dokumente'; location_id: string | null }
+export interface DocVersion {
+  id: string; label: string; status: PlanRevisionStatus; comment: string | null; uploaded_at: string; decided_at: string | null;
+  uploaded_by_name: string; decided_by_name: string | null; version: number; file_name?: string; mime?: string;
+}
+export interface DocItem { id: string; type: 'plan' | 'document'; folder_id: string; name: string; current_revision_id: string | null; revisions: DocVersion[] }

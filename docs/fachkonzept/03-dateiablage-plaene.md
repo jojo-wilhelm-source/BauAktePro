@@ -25,6 +25,13 @@ Entwurf → Zur Prüfung → In Prüfung → Freigegeben | Freigegeben mit Anmer
 - Bei Plänen mit Bemusterungsbezug kommt die Bauherr-Freigabe automatisch in die Kette, **aber erst nach der Bemusterungsentscheidung**. Ändert sich die Bemusterung nachträglich, gehen die betroffenen Pläne auf „Prüfung erforderlich“.
 - Lesebestätigung, Verteiler, Warnhinweis bei veraltetem Stand („aktueller Stand: Index C“), Planvergleich zwischen Indizes (Stufe 4), Planlauf mit Soll-Terminen.
 
+## Dokumente und Ordner (entschieden 10.11.2026)
+- Unter **Dokumente** liegen Ordner und Unterordner, z. B. *Pläne/Architektur*, *Pläne/Tragwerk*, *Statik*, *Nachweise*, *Verträge*, *Protokolle*. Pläne sind eine Dokumentart mit PINs.
+- **Jeder Ordner hat einen Unterordner „Alt“**: dort liegen automatisch die ersetzten Stände. Im Ordner selbst nur der aktuelle, freigegebene Stand.
+- Neue Dateien und neue Stände landen zuerst in „Zur Prüfung“ und werden von Bau- oder Projektleitung freigegeben.
+- **Alten Stand angeklickt:** Warnung „Veraltet – neuer Stand (Index C) vorhanden“ mit Knopf „Aktuellen Stand öffnen“. Der alte bleibt lesbar (mit Wasserzeichen).
+- An jedem Dokument sieht man, ob es eine neuere Version gibt.
+
 ## Planstand per QR-Code prüfen (entschieden 10.11.2026)
 - Jeder ausgegebene Plan (Download/Druck) bekommt unten rechts einen **QR-Code** mit Index und Freigabedatum.
 - Scannt der Polier den Code mit der iPhone-Kamera, öffnet sich die Prüfseite: **grüner Haken „Aktueller Stand“** oder **rote Warnung „Veraltet – neuer Index C seit …“**. Anmeldung erforderlich, damit Planinformationen nicht öffentlich sind.
@@ -43,3 +50,9 @@ Rot = offen, Orange = in Arbeit, Grün = erledigt, Blau = Info/Besprechungspunkt
 - Der Sync folgt den Rechten. Freigegebene Dateien sind schreibgeschützt.
 - Neue Dateien aus dem Ordner starten als „Nicht freigegeben, zur Prüfung“. Verschieben in den freigegebenen Bereich gibt **nicht** frei.
 - Konflikte erzeugen eine Konfliktkopie. Statussymbole am Dateisymbol.
+
+## Umsetzungsstand (10.11.2026): einfacher Upload, Pläne aus der Dateiablage
+- **Hochladen ohne Formular:** Dateien in den gewählten Ordner ziehen oder „Hochladen“ wählen. Gleicher Name im Ordner = neue Version (Index/Version wird aus dem Dateinamen erkannt, z. B. `Grundriss EG_Index_C.pdf`), sonst ein neues Dokument.
+- **Ordner-Art:** Jeder Ordner ist „Pläne“ oder „Dokumente“; Unterordner erben die Art. Ein PDF in einem Planordner wird automatisch ein **Plan** und erscheint unter „Pläne“, gruppiert nach Ordner. Der Ort kommt aus dem Ordner („Ort der Pläne“), sonst aus dem Dateinamen (z. B. „OG 1“), sonst das erste Geschoss (ANNAHME).
+- Jeder Upload landet „Zur Prüfung“; erst die Freigabe macht ihn zum gültigen Stand, der alte wandert nach „Alt“.
+- Ordner anlegen: Bau- und Projektleitung (Fehler „Interner Fehler“ behoben, Regressionstest vorhanden).

@@ -16,16 +16,30 @@ const sql = connect();
 const app = buildApp(sql);
 const tokens: Record<string, string> = {};
 
-async function call(user: keyof typeof ID, method: 'GET' | 'POST' | 'PATCH', url: string, body?: object) {
+async function call(user: keyof typeof ID, method: 'GET' | 'POST' | 'PATCH' | 'PUT', url: string, body?: object) {
   const res = await app.inject({ method, url, payload: body, headers: { authorization: `Bearer ${tokens[user]}`, 'x-device-id': 'test' } });
   return { status: res.statusCode, body: res.json() as any };
 }
+/** Multipart upload like the browser/app does it (fields first, then the file). */
+async function upload(user: keyof typeof ID, url: string, fields: Record<string, string>, filename: string, bytes: Buffer) {
+  const b = '----bap' + randomUUID();
+  const parts = Object.entries(fields).map(([k, v]) => `--${b}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`).join('');
+  const payload = Buffer.concat([Buffer.from(parts + `--${b}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`), bytes, Buffer.from(`\r\n--${b}--\r\n`)]);
+  const res = await app.inject({ method: 'POST', url, payload, headers: { authorization: `Bearer ${tokens[user]}`, 'content-type': `multipart/form-data; boundary=${b}` } });
+  return { status: res.statusCode, body: res.json() as any };
+}
+const tinyPdf = async () => {
+  const { PDFDocument } = await import('pdf-lib');
+  const d = await PDFDocument.create();
+  d.addPage([200, 200]);
+  return Buffer.from(await d.save());
+};
 const maengel = async (user: keyof typeof ID) => (await call(user, 'GET', `/projects/${ID.project}/maengel`)).body as any[];
 const numbers = async (user: keyof typeof ID) => (await maengel(user)).map((m) => m.number).sort();
 
 beforeAll(async () => {
   await initKeys();
-  for (const u of ['uBauleitung', 'uPolier', 'uElektro', 'uFliesen', 'uBauherr'] as const) tokens[u] = await issueToken(ID[u]);
+  for (const u of ['uBauleitung', 'uPolier', 'uElektro', 'uFliesen', 'uBauherr', 'uProjektleitung'] as const) tokens[u] = await issueToken(ID[u]);
 });
 beforeEach(() => {
   execSync('pnpm --silent db:seed', { cwd: root, stdio: 'ignore' });
@@ -356,5 +370,254 @@ describe('NU-Besprechung', () => {
     const res = await app.inject({ method: 'GET', url: `/besprechungen/${ID.bespr1}/pdf`, headers: { authorization: `Bearer ${tokens.uFliesen}` } });
     expect(res.statusCode).toBe(200);
     expect(res.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+  });
+});
+
+describe('Projektleitung = gleiche Rechte wie Bauleitung', () => {
+  it('gibt Pläne frei, sieht interne Notizen und Einreichungen, entscheidet Stunden', async () => {
+    expect((await call('uProjektleitung', 'POST', `/plan-revisions/${ID.revEgB}/decision`, { decision: 'freigeben', base_version: 1 })).status).toBe(200);
+    expect((await maengel('uProjektleitung')).find((m) => m.id === ID.mFliesen).notes).toHaveLength(1);
+    expect((await call('uProjektleitung', 'GET', `/projects/${ID.project}/einreichungen`)).body.einreichungen).toHaveLength(2);
+    expect((await call('uProjektleitung', 'POST', `/stundenzettel/${ID.szElektro}/decision`, { decision: 'bestaetigen', base_version: 1 })).status).toBe(200);
+  });
+});
+
+describe('Dokumente: Ordner, Alt, Sichtbarkeit', () => {
+  const tree = async (u: keyof typeof ID) => (await call(u, 'GET', `/projects/${ID.project}/dokumente`)).body;
+  it('NU sieht nur freigegebene Ordner und nur den aktuellen Stand; Bauherr nur Pläne/Architektur', async () => {
+    const nu = await tree('uElektro');
+    expect(nu.folders.map((f: any) => f.name).sort()).toEqual(['Architektur', 'Pläne', 'Statik', 'Tragwerk']);
+    const statik = nu.items.find((i: any) => i.id === ID.docStatik);
+    expect(statik.revisions.map((r: any) => r.label)).toEqual(['Version 2']); // "Alt" (Version 1) stays internal
+    expect(nu.items.some((i: any) => i.id === ID.docBrandschutz)).toBe(false);
+    const bh = await tree('uBauherr');
+    expect(bh.folders.map((f: any) => f.name).sort()).toEqual(['Architektur', 'Pläne']);
+    const intern = await tree('uPolier');
+    expect(intern.items.find((i: any) => i.id === ID.docStatik).revisions.map((r: any) => r.status)).toEqual(['freigegeben', 'ersetzt']);
+  });
+  it('QR-Prüfung meldet die alte Statik als veraltet', async () => {
+    const c = await call('uPolier', 'GET', `/plan-revisions/${ID.docStatikV1}/check`);
+    expect(c.body.is_current).toBe(false);
+    expect(c.body.current_index).toBe('2');
+    expect((await call('uPolier', 'GET', `/plan-revisions/${ID.docStatikV2}/check`)).body.is_current).toBe(true);
+  });
+  it('neue Version landet in „Zur Prüfung“; Freigabe schiebt die alte nach „Alt“; NU darf nicht hochladen', async () => {
+    const pdf = await tinyPdf();
+    expect((await upload('uElektro', '/document-revisions', { project_id: ID.project, document_id: ID.docStatik }, 'statik.pdf', pdf)).status).toBe(403);
+    const up = await upload('uPolier', '/document-revisions', { project_id: ID.project, document_id: ID.docStatik }, 'statik-v3.pdf', pdf);
+    expect(up.body.version_label).toBe('3');
+    expect((await call('uPolier', 'POST', `/document-revisions/${up.body.revision_id}/decision`, { decision: 'freigeben', base_version: 1 })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/document-revisions/${up.body.revision_id}/decision`, { decision: 'freigeben', base_version: 1 })).status).toBe(200);
+    const revs = (await tree('uPolier')).items.find((i: any) => i.id === ID.docStatik).revisions;
+    expect(revs.map((r: any) => `${r.label}:${r.status}`)).toEqual(['Version 3:freigegeben', 'Version 2:ersetzt', 'Version 1:ersetzt']);
+  });
+});
+
+describe('Stundenzettel', () => {
+  const zettel = (company: string, extra: object = {}) => ({
+    id: randomUUID(), project_id: ID.project, company_id: company, period_from: '2026-11-09', period_to: '2026-11-13',
+    zeilen: [{ id: randomUUID(), datum: '2026-11-10', person: 'A. Helfer', von: '07:00', bis: '15:30', pause_min: 30, stunden: 8, taetigkeit: 'Aufräumen', bezug: 'regie' }],
+    ...extra,
+  });
+  const list = async (u: keyof typeof ID) => (await call(u, 'GET', `/projects/${ID.project}/stundenzettel`)).body.zettel ?? [];
+
+  it('NU sieht nur eigene Zettel; Bauherr hat keinen Zugriff', async () => {
+    expect((await list('uFliesen'))).toEqual([]);
+    expect((await list('uElektro')).map((z: any) => z.id)).toEqual([ID.szElektro]);
+    expect((await call('uFliesen', 'GET', `/stundenzettel/${ID.szElektro}`)).status).toBe(404);
+    expect((await call('uBauherr', 'PUT', '/stundenzettel', zettel(ID.coBauherr))).status).toBe(403);
+  });
+  it('NU reicht nur für die eigene Firma ein; Polier auch für Helfer anderer Firmen', async () => {
+    expect((await call('uFliesen', 'PUT', '/stundenzettel', zettel(ID.coElektro))).status).toBe(403);
+    expect((await call('uPolier', 'PUT', '/stundenzettel', zettel(ID.coOwn))).status).toBe(200);
+  });
+  it('eingereicht ist gesperrt; nur die Leitung entscheidet; Kürzen braucht Begründung', async () => {
+    const z = zettel(ID.coFliesen);
+    expect((await call('uFliesen', 'PUT', '/stundenzettel', z)).body.hours_total).toBe('8.00');
+    expect((await call('uFliesen', 'POST', `/stundenzettel/${z.id}/submit`, { base_version: 1 })).status).toBe(200);
+    expect((await call('uFliesen', 'PUT', '/stundenzettel', z)).status).toBe(409);
+    expect((await call('uPolier', 'POST', `/stundenzettel/${z.id}/decision`, { decision: 'bestaetigen', base_version: 2 })).status).toBe(403);
+    expect((await call('uFliesen', 'POST', `/stundenzettel/${z.id}/decision`, { decision: 'bestaetigen', base_version: 2 })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/stundenzettel/${z.id}/decision`, { decision: 'kuerzen', base_version: 2, zeilen: [{ id: z.zeilen[0]!.id, stunden_anerkannt: 6 }] })).status).toBe(422);
+    const ok = await call('uBauleitung', 'POST', `/stundenzettel/${z.id}/decision`, { decision: 'kuerzen', reason: 'Pause 2 h laut Tagesbericht', base_version: 2, zeilen: [{ id: z.zeilen[0]!.id, stunden_anerkannt: 6 }] });
+    expect(ok.body.status).toBe('gekuerzt');
+    expect(Number(ok.body.hours_approved)).toBe(6);
+    const seen = (await call('uFliesen', 'GET', `/stundenzettel/${z.id}`)).body;
+    expect(seen.decision_reason).toBe('Pause 2 h laut Tagesbericht');
+  });
+});
+
+describe('NU-Einreichungen: Nachträge und Rechnungen', () => {
+  const list = async (u: keyof typeof ID) => (await call(u, 'GET', `/projects/${ID.project}/einreichungen`));
+  it('NU sieht nur eigene; Polier und Bauherr sehen keine (Preise)', async () => {
+    expect((await list('uElektro')).body.einreichungen.map((e: any) => e.id)).toEqual([ID.ezNachtrag]);
+    expect((await list('uFliesen')).body.einreichungen.map((e: any) => e.id)).toEqual([ID.ezRechnung]);
+    expect((await list('uPolier')).status).toBe(403);
+    expect((await list('uBauherr')).status).toBe(403);
+  });
+  it('NU lädt Rechnung hoch; Leitung gibt frei; großer Nachtrag braucht die GF; Ablehnen nur mit Grund', async () => {
+    const pdf = await tinyPdf();
+    const r = await upload('uFliesen', '/einreichungen', { project_id: ID.project, kind: 'rechnung', rechnung_art: 'abschlag', title: '2. AR', amount_net: '8000' }, 'ar2.pdf', pdf);
+    expect(r.status).toBe(200);
+    expect((await call('uFliesen', 'POST', `/einreichungen/${r.body.id}/decision`, { decision: 'freigeben', base_version: 1 })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/einreichungen/${r.body.id}/decision`, { decision: 'freigeben', base_version: 1 })).body.status).toBe('freigegeben');
+    const big = await upload('uElektro', '/einreichungen', { project_id: ID.project, kind: 'nachtrag', title: 'NT 02', amount_net: '60000' }, 'nt2.pdf', pdf);
+    expect((await call('uProjektleitung', 'POST', `/einreichungen/${big.body.id}/decision`, { decision: 'freigeben', base_version: 1 })).body.status).toBe('gf_erforderlich');
+    expect((await call('uBauleitung', 'POST', `/einreichungen/${ID.ezNachtrag}/decision`, { decision: 'ablehnen', base_version: 1 })).status).toBe(422);
+  });
+});
+
+describe('Nachträge und Rechnungen: getrennt nummeriert, Entscheidung revidierbar', () => {
+  it('Nachträge und Rechnungen haben eigene Nummernkreise', async () => {
+    const pdf = await tinyPdf();
+    const re = await upload('uFliesen', '/einreichungen', { project_id: ID.project, kind: 'rechnung', rechnung_art: 'abschlag', title: '2. AR', amount_net: '1000' }, 'ar2.pdf', pdf);
+    const nt = await upload('uElektro', '/einreichungen', { project_id: ID.project, kind: 'nachtrag', title: 'NT 02', amount_net: '500' }, 'nt2.pdf', pdf);
+    expect(re.body.number).toBe(2);
+    expect(nt.body.number).toBe(2);
+  });
+  it('Leitung nimmt eine Freigabe mit Grund zurück; NU zieht nur unbearbeitete Einreichungen zurück', async () => {
+    const ok = await call('uBauleitung', 'POST', `/einreichungen/${ID.ezNachtrag}/decision`, { decision: 'freigeben', base_version: 1 });
+    expect(ok.body.status).toBe('freigegeben');
+    expect((await call('uBauleitung', 'POST', `/einreichungen/${ID.ezNachtrag}/decision`, { decision: 'zuruecknehmen', base_version: 2 })).status).toBe(422);
+    expect((await call('uElektro', 'POST', `/einreichungen/${ID.ezNachtrag}/decision`, { decision: 'zuruecknehmen', reason: 'x', base_version: 2 })).status).toBe(403);
+    const back = await call('uBauleitung', 'POST', `/einreichungen/${ID.ezNachtrag}/decision`, { decision: 'zuruecknehmen', reason: 'Falsch geklickt', base_version: 2 });
+    expect(back.body.status).toBe('in_pruefung');
+    const [log] = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${ID.uBauleitung}, true)`;
+      return tx`SELECT action FROM audit_log WHERE entity_id = ${ID.ezNachtrag} ORDER BY id DESC LIMIT 1`;
+    });
+    expect(log!.action).toBe('entscheidung_zurueckgenommen');
+    // Already in Prüfung: the NU can no longer withdraw it.
+    expect((await call('uElektro', 'POST', `/einreichungen/${ID.ezNachtrag}/decision`, { decision: 'zurueckziehen', base_version: 3 })).status).toBe(409);
+    const pdf = await tinyPdf();
+    const nt = await upload('uElektro', '/einreichungen', { project_id: ID.project, kind: 'nachtrag', title: 'NT 03', amount_net: '100' }, 'nt3.pdf', pdf);
+    expect((await call('uFliesen', 'POST', `/einreichungen/${nt.body.id}/decision`, { decision: 'zurueckziehen', base_version: 1 })).status).toBe(404);
+    expect((await call('uElektro', 'POST', `/einreichungen/${nt.body.id}/decision`, { decision: 'zurueckziehen', base_version: 1 })).body.status).toBe('zurueckgezogen');
+  });
+});
+
+describe('Dokumente: Ordner anlegen und einfacher Upload', () => {
+  it('Leitung legt Ordner an (Regression RLS), Unterordner erbt „Pläne“; Polier und NU nicht', async () => {
+    const f = await call('uBauleitung', 'POST', '/folders', { project_id: ID.project, parent_id: ID.fPlaene, name: 'Haustechnik' });
+    expect(f.status).toBe(200);
+    expect(f.body.kind).toBe('plaene');
+    expect((await call('uProjektleitung', 'POST', '/folders', { project_id: ID.project, name: 'Gutachten' })).body.kind).toBe('dokumente');
+    expect((await call('uPolier', 'POST', '/folders', { project_id: ID.project, name: 'X' })).status).toBe(403);
+    expect((await call('uElektro', 'POST', '/folders', { project_id: ID.project, name: 'X' })).status).toBe(403);
+  });
+  it('PDF im Planordner wird ein Plan (unter „Pläne“), gleicher Name = neuer Index; sonst Dokument', async () => {
+    const pdf = await tinyPdf();
+    const neu = await upload('uPolier', '/dokumente/upload', { project_id: ID.project, folder_id: ID.fArchitektur }, 'Grundriss OG 1_Index_A.pdf', pdf);
+    expect(neu.body).toMatchObject({ type: 'plan', name: 'Grundriss OG 1', label: 'Index A', isNew: true });
+    const again = await upload('uPolier', '/dokumente/upload', { project_id: ID.project, folder_id: ID.fArchitektur }, 'Grundriss OG 1 Index B.pdf', pdf);
+    expect(again.body).toMatchObject({ type: 'plan', isNew: false, label: 'Index B' });
+    const doc = await upload('uPolier', '/dokumente/upload', { project_id: ID.project, folder_id: ID.fNachweise }, 'Wärmeschutznachweis.pdf', pdf);
+    expect(doc.body).toMatchObject({ type: 'document', name: 'Wärmeschutznachweis', isNew: true });
+    expect((await upload('uElektro', '/dokumente/upload', { project_id: ID.project, folder_id: ID.fArchitektur }, 'x.pdf', pdf)).status).toBe(403);
+    // The new plan shows up in the project's plan list, with its folder.
+    const plans = (await call('uPolier', 'GET', `/projects/${ID.project}`)).body.plans as any[];
+    expect(plans.find((p) => p.name === 'Grundriss OG 1')?.folder_name).toBe('Architektur');
+  });
+});
+
+describe('Nachunternehmer und Kosten: Preissperre', () => {
+  it('NU-Verzeichnis: Leitung sieht Verträge, NU nur sich selbst ohne Preise, Bauherr keinen Zugriff', async () => {
+    const bl = (await call('uBauleitung', 'GET', `/projects/${ID.project}/nachunternehmer`)).body.nu as any[];
+    expect(bl.map((n) => n.name)).toEqual(['Elektro Blitz GmbH', 'Fliesen Fuchs GmbH']);
+    expect(bl[0].auftrag).toBe(86500);
+    const nu = (await call('uElektro', 'GET', `/projects/${ID.project}/nachunternehmer`)).body.nu as any[];
+    expect(nu.map((n) => n.name)).toEqual(['Elektro Blitz GmbH']);
+    expect(nu[0].auftrag).toBeNull();
+    expect(nu[0].vertraege).toEqual([]);
+    const polier = (await call('uPolier', 'GET', `/projects/${ID.project}/nachunternehmer`)).body.nu as any[];
+    expect(polier.every((n) => n.auftrag === null)).toBe(true);
+    expect((await call('uBauherr', 'GET', `/projects/${ID.project}/nachunternehmer`)).status).toBe(403);
+  });
+  it('NU anlegen und Vertrag erfassen nur durch die Leitung', async () => {
+    const id = randomUUID();
+    expect((await call('uPolier', 'PUT', '/nachunternehmer', { id, project_id: ID.project, name: 'Maler Meier', gewerk_ids: [] })).status).toBe(403);
+    expect((await call('uBauleitung', 'PUT', '/nachunternehmer', { id, project_id: ID.project, name: 'Maler Meier', gewerk_ids: [ID.gwFliesen] })).status).toBe(200);
+    expect((await call('uElektro', 'POST', '/vertraege', { project_id: ID.project, company_id: id, title: 'X', amount_net: 1 })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', '/vertraege', { project_id: ID.project, company_id: id, title: 'Malerarbeiten', amount_net: 12000, gewerk_id: ID.gwFliesen })).status).toBe(200);
+    const nu = (await call('uBauleitung', 'GET', `/projects/${ID.project}/nachunternehmer`)).body.nu as any[];
+    expect(nu.find((n) => n.id === id)?.auftrag).toBe(12000);
+  });
+  it('Kostenübersicht nur für Bau- und Projektleitung', async () => {
+    expect((await call('uProjektleitung', 'GET', `/projects/${ID.project}/kosten`)).status).toBe(200);
+    for (const u of ['uPolier', 'uElektro', 'uBauherr'] as const) expect((await call(u, 'GET', `/projects/${ID.project}/kosten`)).status).toBe(403);
+    expect((await call('uPolier', 'PUT', `/gewerke/${ID.gwElektro}/budget`, { budget_net: 1 })).status).toBe(403);
+  });
+});
+
+describe('Baustellen-Einkäufe', () => {
+  const einkauf = (extra: object = {}) => ({ id: randomUUID(), project_id: ID.project, gekauft_von: 'Paul Polier', datum: '2026-11-10', haendler: 'Hornbach', betrag_brutto: 19.9, zweck: 'Kabelbinder', ...extra });
+  it('Polier sieht eigene, Leitung alle; NU und Bauherr weder lesen noch erfassen', async () => {
+    expect((await call('uPolier', 'POST', '/einkaeufe', einkauf())).status).toBe(200);
+    const bl = (await call('uBauleitung', 'GET', `/projects/${ID.project}/einkaeufe`)).body.einkaeufe as any[];
+    expect(bl.length).toBe(3);
+    const own = await call('uBauleitung', 'POST', '/einkaeufe', einkauf({ gekauft_von: 'Bea' }));
+    expect(own.status).toBe(200);
+    expect(((await call('uPolier', 'GET', `/projects/${ID.project}/einkaeufe`)).body.einkaeufe as any[]).length).toBe(3); // not Bea's
+    for (const u of ['uElektro', 'uBauherr'] as const) {
+      expect((await call(u, 'GET', `/projects/${ID.project}/einkaeufe`)).status).toBe(403);
+      expect((await call(u, 'POST', '/einkaeufe', einkauf())).status).toBe(403);
+    }
+  });
+  it('Offline doppelt hochgeladen: nur ein Einkauf, Nummer vom Server', async () => {
+    const e = einkauf();
+    const a = await call('uPolier', 'POST', '/einkaeufe', e);
+    const b = await call('uPolier', 'POST', '/einkaeufe', e);
+    expect(a.body.number).toBe(3);
+    expect(b.body.number).toBe(3);
+  });
+  it('nur die Leitung entscheidet; Ablehnen mit Grund; Entscheidung zurücknehmen', async () => {
+    expect((await call('uPolier', 'POST', `/einkaeufe/${ID.ekBaumarkt}/decision`, { decision: 'freigeben', base_version: 1 })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/einkaeufe/${ID.ekBaumarkt}/decision`, { decision: 'ablehnen', base_version: 1 })).status).toBe(422);
+    expect((await call('uBauleitung', 'POST', `/einkaeufe/${ID.ekBaumarkt}/decision`, { decision: 'freigeben', base_version: 1 })).body.status).toBe('freigegeben');
+    expect((await call('uBauleitung', 'POST', `/einkaeufe/${ID.ekBaumarkt}/decision`, { decision: 'ablehnen', reason: 'x', base_version: 2 })).status).toBe(409);
+    expect((await call('uBauleitung', 'POST', `/einkaeufe/${ID.ekBaumarkt}/decision`, { decision: 'zuruecknehmen', base_version: 2 })).body.status).toBe('eingereicht');
+  });
+});
+
+describe('Fahrtenbuch', () => {
+  it('Fahrer sieht eigene Fahrten, Leitung alle; NU hat kein Fahrtenbuch', async () => {
+    const polier = (await call('uPolier', 'GET', '/fahrtenbuch')).body;
+    expect(polier.fahrten.map((f: any) => f.fahrer_id)).toEqual([ID.uPolier]);
+    expect(polier.fahrzeuge.length).toBe(2);
+    const bl = (await call('uBauleitung', 'GET', '/fahrtenbuch')).body;
+    expect(bl.fahrten.length).toBe(2);
+    expect((await call('uElektro', 'GET', '/fahrtenbuch')).status).toBe(403);
+  });
+  it('Fahrt nur als eigene Person; km-Lücke ist eine Warnung, kein Fehler; Fahrzeuge legt die Leitung an', async () => {
+    const r = await call('uPolier', 'POST', '/fahrten', { id: randomUUID(), fahrzeug_id: ID.fzSprinter, datum: '2026-11-10', km_start: 48300, km_ende: 48350, zweck: 'Material' });
+    expect(r.status).toBe(200);
+    expect(r.body.fahrt.fahrer_id).toBe(ID.uPolier);
+    expect(r.body.warnung).toBeTruthy();
+    expect((await call('uPolier', 'POST', '/fahrten', { id: randomUUID(), fahrzeug_id: ID.fzSprinter, datum: '2026-11-10', km_start: 100, km_ende: 50, zweck: 'x' })).status).toBe(422);
+    expect((await call('uElektro', 'POST', '/fahrten', { id: randomUUID(), fahrzeug_id: ID.fzSprinter, datum: '2026-11-10', km_start: 1, km_ende: 2, zweck: 'x' })).status).not.toBe(200);
+    expect((await call('uPolier', 'POST', '/fahrzeuge', { kennzeichen: 'S-X 1', bezeichnung: 'Caddy' })).status).toBe(403);
+    expect((await call('uProjektleitung', 'POST', '/fahrzeuge', { kennzeichen: 'S-X 1', bezeichnung: 'Caddy' })).status).toBe(200);
+  });
+});
+
+describe('Besprechung: Art, Anwesenheit, Bemerkungen, nächster Termin', () => {
+  it('Anwesenheit und Kopf nur im Entwurf und nur intern; Kalenderdatei für den nächsten Termin', async () => {
+    const id = randomUUID();
+    await call('uBauleitung', 'POST', '/besprechungen', { id, project_id: ID.project, kind: 'bau', title: 'Baubesprechung', held_at: '2026-11-12T08:00:00Z', company_ids: [ID.coElektro, ID.coBauherr] });
+    expect((await call('uPolier', 'PUT', `/besprechungen/${id}/teilnehmer/${ID.coElektro}/anwesenheit`, { anwesend: true })).status).toBe(200);
+    expect((await call('uElektro', 'PUT', `/besprechungen/${id}/teilnehmer/${ID.coElektro}/anwesenheit`, { anwesend: false })).status).toBe(404);
+    const p = await call('uPolier', 'PATCH', `/besprechungen/${id}`, { base_version: 1, bemerkung: 'Zufahrt Nordtor', next_at: '2026-11-19T08:00:00Z' });
+    expect(p.status).toBe(200);
+    expect((await call('uPolier', 'PATCH', `/besprechungen/${id}`, { base_version: 1, place: 'x' })).status).toBe(409);
+    // Changing participants keeps recorded attendance.
+    await call('uBauleitung', 'PUT', `/besprechungen/${id}/teilnehmer`, { company_ids: [ID.coElektro] });
+    const d = (await call('uBauleitung', 'GET', `/besprechungen/${id}`)).body;
+    expect(d.kind).toBe('bau');
+    expect(d.teilnehmer.map((t: any) => [t.id, t.anwesend])).toEqual([[ID.coElektro, true]]);
+    const ics = await app.inject({ method: 'GET', url: `/besprechungen/${id}/naechster-termin.ics`, headers: { authorization: `Bearer ${tokens.uBauleitung}` } });
+    expect(ics.body).toContain('DTSTART:20261119T080000Z');
+    await call('uBauleitung', 'POST', `/besprechungen/${id}/send`, { base_version: 2 });
+    expect((await call('uBauleitung', 'PATCH', `/besprechungen/${id}`, { base_version: 3, bemerkung: 'nachträglich' })).status).toBe(409);
+    expect((await call('uBauleitung', 'PUT', `/besprechungen/${id}/teilnehmer/${ID.coElektro}/anwesenheit`, { anwesend: false })).status).toBe(409);
   });
 });

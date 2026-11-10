@@ -60,6 +60,33 @@ export const BesprechungCreate = z.object({
   previous_id: z.string().uuid().nullish(),
 });
 
+/** Draft meeting header edits: title, date, place, remarks, next date (docs/fachkonzept/09). */
+export const BesprechungPatch = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    held_at: z.string().datetime({ offset: true }),
+    place: z.string().max(200).nullable(),
+    bemerkung: z.string().max(5000).nullable(),
+    next_at: z.string().datetime({ offset: true }).nullable(),
+  })
+  .partial();
+
+/** Attendance of a participating company: true = anwesend, false = entschuldigt/fehlt, null = not recorded. */
+export const anwesendLabel = (a: boolean | null | undefined) => (a === true ? 'anwesend' : a === false ? 'entschuldigt' : '–');
+
+/** iCalendar (RFC 5545) event for the next meeting; times in UTC. */
+export function besprechungIcs(e: { uid: string; title: string; start: Date; minutes?: number; place?: string | null; description?: string }): string {
+  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  const end = new Date(e.start.getTime() + (e.minutes ?? 60) * 60000);
+  return [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Bau Akte Pro//DE', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT', `UID:${e.uid}@bauaktepro`, `DTSTAMP:${fmt(new Date())}`, `DTSTART:${fmt(e.start)}`, `DTEND:${fmt(end)}`,
+    `SUMMARY:${esc(e.title)}`, ...(e.place ? [`LOCATION:${esc(e.place)}`] : []), ...(e.description ? [`DESCRIPTION:${esc(e.description)}`] : []),
+    'END:VEVENT', 'END:VCALENDAR', '',
+  ].join('\r\n');
+}
+
 /** Plan index sequence: A → B … Z → AA (docs/fachkonzept/03). */
 export function nextPlanIndex(i: string): string {
   const s = i.toUpperCase();

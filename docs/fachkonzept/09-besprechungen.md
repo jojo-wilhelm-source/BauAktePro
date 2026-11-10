@@ -56,3 +56,10 @@ Reihenfolge der Blöcke, Überschriften, Zusatzfelder je Punkt, Kopfzeile/Logo; 
 - Suche über alle Protokolle.
 
 > ❓ **OFFEN – Annahmen bis zur Bestätigung:** Die Bauleitung führt das Protokoll; Einspruchsfrist 7 Tage; Einladungen über iPhone-Kalender/Outlook.
+
+## Umsetzungsstand (10.11.2026)
+- **Art wählbar:** Baubesprechung (Vorschlag Teilnehmer: eigene Firma, Bauherr) oder NU-Besprechung (eigene Firma, NU). Liste filterbar nach Art.
+- **Anwesenheit** je Teilnehmer (anwesend / entschuldigt / nicht erfasst), im Protokoll hinter dem Namen.
+- **Bemerkungen** (Allgemeines, z. B. Zufahrt, Baustellenordnung) und **nächster Termin**; beides erscheint im PDF. Der nächste Termin lässt sich als Kalenderdatei (`.ics`, iPhone/Outlook) laden und wird bei „Folgesitzung vorbereiten“ als Termin übernommen.
+- Alles nur im Entwurf änderbar (versionsgeprüft); nach dem Versand gesperrt.
+- ❓ OFFEN (D6): Soll der Bauherr in der Baubesprechung die (nicht internen) Punkte sehen? Bisher sieht er nur das versendete Protokoll-PDF, keine Punkte im Portal.

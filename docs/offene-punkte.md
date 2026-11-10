@@ -56,3 +56,9 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
   **Entscheidung:**
 - [ ] **D3 – Baustellen-Einkäufe:** Betragsgrenze für Freigabe durch die Geschäftsführung? Erstattung über Lohn oder separat? → [14](fachkonzept/14-fahrtenbuch-auslagen.md)
   **Entscheidung:**
+- [ ] **D4 – Stundenzettel:** Wer bestätigt die Stunden vom Polier (Bauleitung, Annahme)? Werden Helferstunden einer Firma zugeordnet, die keinen Zugang hat (Annahme: ja, Firma wird vom Polier angelegt)? → [08](fachkonzept/08-nu-portal-stunden.md)
+  **Entscheidung:**
+- [ ] **D5 – Ordnerstruktur:** Startordner je Projekt (Vorschlag: Pläne/Architektur, Pläne/Tragwerk, Pläne/TGA, Statik, Nachweise, Verträge, Protokolle, Fotos)? → [03](fachkonzept/03-dateiablage-plaene.md)
+  **Entscheidung:**
+- [ ] **D6 – Baubesprechung mit Bauherr:** Sieht der Bauherr die nicht internen Punkte der Baubesprechung im Portal (Annahme bisher: nein, nur das Protokoll-PDF)? Bekommt er eine eigene Aufgabenliste? → [09](fachkonzept/09-besprechungen.md)
+  **Entscheidung:**

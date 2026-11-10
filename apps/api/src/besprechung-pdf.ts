@@ -24,6 +24,8 @@ export interface ProtokollData {
     carried: boolean;
   }[];
   maengel: { number: number; description: string; company: string; due: string | null; label: string }[];
+  bemerkung?: string | null;
+  nextAt?: string | null; // formatted
   footer: string;
 }
 
@@ -170,6 +172,28 @@ export async function renderProtokoll(d: ProtokollData): Promise<Uint8Array> {
       y -= 14;
     }
   }
+
+  const section = (title: string, lines: string[]) => {
+    if (y < M + 40 + lines.length * 12) {
+      page = doc.addPage(A4L);
+      y = A4L[1] - M;
+    }
+    y -= 10;
+    text(title, M, y, 10.5, bold);
+    y -= 6;
+    page.drawLine({ start: { x: M, y }, end: { x: A4L[0] - M, y }, thickness: 0.8, color: INK });
+    y -= 14;
+    for (const l of lines) {
+      if (y < M + 24) {
+        page = doc.addPage(A4L);
+        y = A4L[1] - M;
+      }
+      text(l, M + 4, y, 9);
+      y -= 12;
+    }
+  };
+  if (d.bemerkung?.trim()) section('Bemerkungen', wrap(d.bemerkung, font, 9, A4L[0] - 2 * M - 8));
+  if (d.nextAt) section('Nächster Termin', [d.nextAt]);
 
   const legend = 'Status: Offen · In Arbeit · Erledigt · Info   |   W = aus der vorigen Besprechung übernommen';
   const pages = doc.getPages();

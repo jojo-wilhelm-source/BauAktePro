@@ -2,6 +2,12 @@
 
 **Keine Zahlungsauslösung.** Die App gibt frei und übergibt an die Buchhaltung.
 
+## Einreichung durch den NU (entschieden 10.11.2026)
+- Der NU lädt über seinen Projektzugang **Nachträge** (Angebot) und **Rechnungen** hoch: PDF (später E-Rechnung), Art, Betrag netto, Bezug/Titel, Bemerkung.
+- **Bau- und Projektleitung** sehen alle Einreichungen des Projekts (gleicher Zugang) und entscheiden: `Eingereicht → In Prüfung → Freigegeben | Abgelehnt (mit Begründung)`; Nachträge über der Freigabegrenze (50.000 € netto) gehen an die Geschäftsführung (ANNAHME: Status „Freigabe GF erforderlich“, Geschäftsführungs-Sicht folgt).
+- Der NU sieht nur die eigenen Einreichungen, Status und Begründung. Andere NU, Bauherr und Polier sehen sie nicht (ANNAHME: Polier nicht – Kosten).
+- Freigabe heißt nicht Zahlung: Rechnungen gehen danach in die Prüfung/Buchhaltungsübergabe (Abschnitt unten).
+
 ## Eingang
 - NU-Portal, E-Mail an die Projektadresse, Foto/Scan.
 - E-Rechnung (XRechnung/ZUGFeRD) wird direkt eingelesen, PDFs per Texterkennung.
@@ -49,3 +55,9 @@ Sicherheitseinbehalt, Gewährleistungsbürgschaft, Rückgabetermine; Skonto- und
 - Pro Gewerk: Auftrag, Nachträge, geprüft, freigegeben, bezahlt, Einbehalt, Rest, Prognose.
 - Warnung bei Überschreitung oder auffälligen Kürzungen.
 - Der Bauherr sieht höchstens freigegebene Summen, falls gewünscht.
+
+## Umsetzungsstand (10.11.2026)
+- **Ein Menüpunkt „Nachträge & Rechnungen“**, darin getrennte Bereiche mit **eigenen Nummernkreisen** (`NT-001…`, `RE-001…`).
+- **Entscheidung revidierbar:** Die Bau-/Projektleitung kann eine Freigabe, Ablehnung oder „GF erforderlich“ **zurücknehmen** (Grund Pflicht) – die Einreichung steht dann wieder „In Prüfung“. Im Audit Log als `entscheidung_zurueckgenommen`. Der NU kann eine Einreichung **zurückziehen**, solange sie noch niemand prüft.
+- **Nachunternehmer-Verzeichnis** mit Kontaktdaten, Gewerken und Verträgen (Auftragssumme netto). Preise sieht nur die Leitung; der NU sieht nur sich selbst ohne Preise.
+- **Kostenübersicht je Gewerk:** Budget (per Klick änderbar), Auftrag, Nachträge beauftragt/offen, abgerechnet, freigegebene Baustellen-Einkäufe, anerkannte Regiestunden, Prognose = Auftrag + beauftragte Nachträge + Einkäufe. Ampel: rot, wenn die Prognose inkl. offener Nachträge das Budget übersteigt, gelb ab 95 %. Nur Bau-/Projektleitung.

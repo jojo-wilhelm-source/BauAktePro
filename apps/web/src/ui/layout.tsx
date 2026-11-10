@@ -16,7 +16,7 @@ export function PageHeader({ eyebrow, title, children, action }: { eyebrow: stri
 }
 
 /** Modal sheet in the iPadOS style: Cancel · Title · Primary. Escape closes it. */
-export function Sheet(props: { title: string; primary: string; primaryDisabled?: boolean; destructive?: boolean; onCancel: () => void; onPrimary: () => void; children: ReactNode }) {
+export function Sheet(props: { title: string; primary: string; primaryDisabled?: boolean; destructive?: boolean; wide?: boolean; onCancel: () => void; onPrimary: () => void; children: ReactNode }) {
   const { onCancel } = props;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCancel();
@@ -25,7 +25,7 @@ export function Sheet(props: { title: string; primary: string; primaryDisabled?:
   }, [onCancel]);
   return (
     <div className="sheet-backdrop" onClick={onCancel}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={props.title}>
+      <div className={`sheet ${props.wide ? 'wide' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={props.title}>
         <div className="sheet-bar">
           <button className="btn plain" onClick={onCancel}>
             Abbrechen

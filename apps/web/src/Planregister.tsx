@@ -4,6 +4,7 @@ import { formatDate, nextPlanIndex, PLAN_REVISION_LABELS, type PlanRevisionStatu
 import { api, ApiError, getToken, openPdf, type PlanEntry, type PlanRevision, type ProjectInfo } from './api';
 import { Icon } from './ui/Icon';
 import { Sheet, type Run } from './ui/layout';
+import { OldVersionSheet } from './Dokumente';
 
 const TONE: Record<PlanRevisionStatus, string> = { freigegeben: 'c-green', zur_pruefung: 'c-orange', abgelehnt: 'c-red', ersetzt: 'c-gray' };
 
@@ -11,6 +12,7 @@ export function Planregister({ info, run, onChanged }: { info: ProjectInfo; run:
   const [plans, setPlans] = useState<PlanEntry[]>([]);
   const [upload, setUpload] = useState<{ plan?: PlanEntry } | null>(null);
   const [reject, setReject] = useState<PlanRevision | null>(null);
+  const [warn, setWarn] = useState<{ plan: PlanEntry; rev: PlanRevision } | null>(null);
   const internal = info.role === 'bauleitung' || info.role === 'polier';
   const isBauleitung = info.role === 'bauleitung';
   const reload = useCallback(async () => setPlans((await api<{ plans: PlanEntry[] }>(`/projects/${info.project.id}/plaene`)).plans), [info.project.id]);
@@ -108,7 +110,7 @@ export function Planregister({ info, run, onChanged }: { info: ProjectInfo; run:
                           {old.map((r, i) => (
                             <span key={r.id}>
                               {i > 0 && ', '}
-                              <a href="#" onClick={(e) => (e.preventDefault(), run(() => openPdf(`/plan-revisions/${r.id}/pdf`), 'Alter Stand geöffnet'))}>
+                              <a href="#" onClick={(e) => (e.preventDefault(), setWarn({ plan: p, rev: r }))}>
                                 Index {r.plan_index} ({PLAN_REVISION_LABELS[r.status]})
                               </a>
                             </span>
@@ -144,6 +146,27 @@ export function Planregister({ info, run, onChanged }: { info: ProjectInfo; run:
         <div className="footnote">Ausgedruckte Pläne tragen einen QR-Code. Mit der iPhone-Kamera scannen: grüner Haken = aktueller Stand, rote Warnung = veraltet.</div>
       </div>
 
+      {warn && (
+        <OldVersionSheet
+          name={warn.plan.name}
+          old={{ label: `Index ${warn.rev.plan_index}` }}
+          current={(() => {
+            const c = warn.plan.revisions.find((x) => x.id === warn.plan.current_revision_id);
+            return c ? { label: `Index ${c.plan_index}`, decided_at: c.decided_at } : null;
+          })()}
+          onCancel={() => setWarn(null)}
+          onOpenCurrent={() => {
+            const id = warn.plan.current_revision_id;
+            setWarn(null);
+            if (id) void run(() => openPdf(`/plan-revisions/${id}/pdf`), 'Aktueller Plan geöffnet');
+          }}
+          onOpenOld={() => {
+            const id = warn.rev.id;
+            setWarn(null);
+            void run(() => openPdf(`/plan-revisions/${id}/pdf`), 'Alter Stand geöffnet');
+          }}
+        />
+      )}
       {upload && <UploadSheet info={info} plan={upload.plan} onCancel={() => setUpload(null)} run={runAndReload} onDone={() => setUpload(null)} />}
       {reject && (
         <RejectSheet
@@ -258,7 +281,7 @@ function RejectSheet({ rev, onCancel, onReject }: { rev: PlanRevision; onCancel:
 
 /** Page behind the QR code on printed plans: /check/<revision id>. */
 export function CheckPage({ revisionId }: { revisionId: string }) {
-  const [r, setR] = useState<{ plan_name: string; plan_index: string; current_index: string; current_released_at: string; project_name: string; is_current: boolean; status: string } | null>(null);
+  const [r, setR] = useState<{ kind: 'plan' | 'document'; plan_name: string; plan_index: string; current_index: string; current_released_at: string; project_name: string; is_current: boolean; status: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     api<typeof r>(`/plan-revisions/${revisionId}/check`).then(setR, (e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -271,11 +294,11 @@ export function CheckPage({ revisionId }: { revisionId: string }) {
         <div className="big" style={{ background: r.is_current ? 'var(--green)' : 'var(--red)' }}>{r.is_current ? '✓' : '!'}</div>
         <h1 style={{ margin: '0 0 6px' }}>{r.is_current ? 'Aktueller Stand' : 'Veraltet'}</h1>
         <p style={{ fontSize: 17 }}>
-          {r.plan_name} · Index {r.plan_index}
+          {r.plan_name} · {r.kind === 'document' ? 'Version' : 'Index'} {r.plan_index}
         </p>
         {!r.is_current && (
           <p style={{ color: 'var(--red)', fontWeight: 600 }}>
-            Neuer Index {r.current_index} gültig seit {formatDate(r.current_released_at)} – diesen Ausdruck nicht mehr verwenden.
+            {r.kind === 'document' ? 'Neue Version' : 'Neuer Index'} {r.current_index} gültig seit {formatDate(r.current_released_at)} – diesen Ausdruck nicht mehr verwenden.
           </p>
         )}
         <p className="sub">{r.project_name}</p>

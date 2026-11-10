@@ -17,6 +17,7 @@ const PATHS = {
   abmelden: 'M15 4h4v16h-4M10 8l-4 4 4 4m-4-4h10',
   haken: 'M5 12l5 5 9-10',
   stift: 'M4 20h4L19 9l-4-4L4 16v4Z',
+  kalender: 'M4 6h16v14H4V6Zm0 4h16M8 3v4m8-4v4',
 } as const;
 
 export type IconName = keyof typeof PATHS;

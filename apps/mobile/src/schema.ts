@@ -68,6 +68,20 @@ const besprechung_eintrag = new Table({ besprechung_id: column.text, punkt_id: c
 /** Status chips tapped in the meeting: upload queue, applied only if the Punkt is unchanged (like mangel_action). */
 const punkt_action = new Table({ punkt_id: column.text, payload: column.text, base_version: column.integer, occurred_at: column.text }, { insertOnly: true });
 const pending_punkt = new Table({ punkt_id: column.text, status: column.text, base_version: column.integer, occurred_at: column.text }, { localOnly: true });
+/** Photos of Mängel: metadata synced; files load via the API. */
+const mangel_foto = new Table({ mangel_id: column.text, project_id: column.text, kind: column.text, taken_at: column.text, created_by: column.text }, { indexes: { m: ['mangel_id'] } });
+/** Photos taken on the device that still have to be uploaded (file lies in the app's documents folder). Never synced. */
+const foto_upload = new Table({ mangel_id: column.text, uri: column.text, kind: column.text, taken_at: column.text, error: column.text }, { localOnly: true });
+/** Baustellen-Einkäufe and Fahrtenbuch (docs/fachkonzept/14): own entries, recorded offline, uploaded via /sync/upload. */
+const einkauf = new Table({
+  project_id: column.text, number: column.integer, gekauft_von: column.text, datum: column.text, haendler: column.text, betrag_brutto: column.real,
+  mwst_satz: column.real, gewerk_id: column.text, zweck: column.text, zahlungsart: column.text, status: column.text, created_by: column.text, created_at: column.text,
+});
+const fahrzeug = new Table({ tenant_id: column.text, kennzeichen: column.text, bezeichnung: column.text, kraftstoff: column.text, fahrer_id: column.text });
+const fahrt = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datum: column.text, km_start: column.integer, km_ende: column.integer, project_id: column.text, zweck: column.text });
+const tankvorgang = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datum: column.text, liter: column.real, betrag_brutto: column.real, km_stand: column.integer, tankstelle: column.text, project_id: column.text });
+/** Receipt photos waiting for upload (einkauf / tankvorgang). Never synced. */
+const beleg_upload = new Table({ kind: column.text, entity_id: column.text, uri: column.text }, { localOnly: true });
 const sync_conflict = new Table({ project_id: column.text, entity_id: column.text, kind: column.text, reason: column.text, created_at: column.text });
 
 /**
@@ -86,7 +100,7 @@ const pending_action = new Table(
 );
 
 export const AppSchema = new Schema({
-  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
+  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, fahrzeug, fahrt, tankvorgang, beleg_upload, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
 });
 export type Database = (typeof AppSchema)['types'];
 export type MangelRow = Database['mangel'];

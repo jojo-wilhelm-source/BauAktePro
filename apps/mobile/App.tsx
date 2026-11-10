@@ -1,6 +1,6 @@
 import '@azure/core-asynciterator-polyfill';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, LogBox, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, LogBox, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { BlurView } from 'expo-blur';
@@ -11,6 +11,8 @@ import type { PowerSyncDatabase } from '@powersync/react-native';
 import {
   allowedTransitions,
   anzeigeNo,
+  effectiveRole,
+  roleLabel,
   roomAt,
   escalation,
   formatDate,
@@ -25,6 +27,8 @@ import { Connector, openDatabase } from './src/db';
 import { BesprechungTab } from './src/BesprechungTab';
 import { PlanScreen } from './src/PlanScreen';
 import { clearPlanFiles, usePlanFiles, type PlanFiles } from './src/planStore';
+import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoUploader, type Picked } from './src/fotoStore';
+import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import type { MangelRow } from './src/schema';
 import { loadSession, login, logout, type Session } from './src/session';
 import { AMPEL_TINT, C, STATUS_TINT, T, TINT, type Tint } from './src/theme';
@@ -39,18 +43,18 @@ const TEST_USERS = [
   ['elektro@example.test', 'Erik Elektro', 'NU Elektro Blitz'],
   ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs'],
   ['bauherr@example.test', 'Hanna Bauherr', 'Bauherr'],
+  ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
 ] as const;
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
 /** Modules of the full product that are not built yet (CLAUDE.md, Umsetzungsreihenfolge). */
-const COMING: [SFSymbol, Tint, string][] = [
+/** Modules that live in the web app for now (desk work). */
+const IM_WEB: [SFSymbol, Tint, string][] = [
   ['folder', 'blue', 'Dokumente'],
   ['building.2', 'gray', 'Nachunternehmer'],
-  ['doc.plaintext', 'teal', 'Rechnungen'],
+  ['doc.plaintext', 'teal', 'Nachträge & Rechnungen'],
   ['chart.bar', 'green', 'Kosten'],
-  ['cart', 'orange', 'Einkäufe'],
-  ['car', 'purple', 'Fahrtenbuch'],
 ];
 
 type Mangel = MangelRow & { id: string; location_name: string | null; gewerk_name: string | null; company_name: string | null };
@@ -97,6 +101,7 @@ export default function App() {
             onLogout={async () => {
               await db.disconnectAndClear(); // device data belongs to the user: remove on logout
               clearPlanFiles();
+              clearFotos();
               await logout();
               setSession(null);
             }}
@@ -252,6 +257,9 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   const { data: plans } = useQuery<{ id: string; name: string; plan_index: string }>('SELECT id, name, plan_index FROM plan WHERE project_id = ? ORDER BY name', [pid]);
   // All plans of the project are kept on the device, so they work on site without network.
   const { files: planFiles, loading: plansLoading } = usePlanFiles(plans, session, status.connected);
+  // Photos taken offline go up automatically once online and the Mangel is on the server.
+  useFotoUploader(session, status.connected);
+  useBelegUploader(session, status.connected);
   const { data: pending } = useQuery<Pending>('SELECT * FROM pending_action');
   const { data: conflicts } = useQuery<{ id: string; reason: string; kind: string; entity_id: string; created_at: string }>(
     'SELECT * FROM sync_conflict WHERE project_id = ? ORDER BY created_at DESC',
@@ -285,7 +293,8 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
       </View>
     );
   }
-  const me: Me = { role: membership.role, userId: session.userId, companyId: membership.company_id };
+  // Projektleitung has the same rights as Bauleitung (docs/fachkonzept/01).
+  const me: Me = { role: effectiveRole(membership.role), userId: session.userId, companyId: membership.company_id };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -294,7 +303,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
       {tab === 'besprechung' && (
         <BesprechungTab
           projectId={pid}
-          role={membership.role}
+          role={effectiveRole(membership.role)}
           userId={session.userId}
           header={(eyebrow) => <LargeHeader eyebrow={eyebrow} title="Besprechung" right={<SyncPill />} />}
         />
@@ -313,7 +322,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
       <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }} />
 
       <Modal visible={!!current} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelected(null)}>
-        {current && <Detail m={current} me={me} pendingFor={pending.find((p) => p.mangel_id === current.id)} onClose={() => setSelected(null)} />}
+        {current && <Detail m={current} me={me} token={session.token} pendingFor={pending.find((p) => p.mangel_id === current.id)} onClose={() => setSelected(null)} />}
       </Modal>
       <Modal visible={!!draft} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDraft(null)}>
         {draft && <NewMangel projectId={pid} pos={draft} me={me} onClose={() => setDraft(null)} />}
@@ -485,6 +494,9 @@ function MehrTab(props: {
 }) {
   const { status, pending, tint, short } = useSyncState();
   const role = props.memberships.find((m) => m.project_id === props.projectId)?.role;
+  const project = props.memberships.find((m) => m.project_id === props.projectId);
+  const intern = !!role && role !== 'nu' && role !== 'bauherr';
+  const [open, setOpen] = useState<'einkauf' | 'fahrt' | null>(null);
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
       <LargeHeader title="Mehr" />
@@ -497,7 +509,7 @@ function MehrTab(props: {
                 <View>
                   <Text style={T.title2}>{props.session.name ?? props.session.email}</Text>
                   <Text style={T.subhead}>
-                    {role ? ROLE_LABELS[role] : ''} · {props.session.email}
+                    {role ? roleLabel(role) : ''} · {props.session.email}
                   </Text>
                 </View>
               </View>
@@ -506,7 +518,7 @@ function MehrTab(props: {
         </Section>
         <Section title="Projekt">
           {props.memberships.map((m) => (
-            <Row key={m.project_id} label={m.name} subtitle={ROLE_LABELS[m.role]} checked={m.project_id === props.projectId} onPress={() => props.onProject(m.project_id)} />
+            <Row key={m.project_id} label={m.name} subtitle={roleLabel(m.role)} checked={m.project_id === props.projectId} onPress={() => props.onProject(m.project_id)} />
           ))}
         </Section>
         <Section title="Abgleich" footer="Pläne und Mängel sind auf dem Gerät gespeichert und verschlüsselt. Änderungen werden übertragen, sobald eine Verbindung besteht.">
@@ -515,11 +527,23 @@ function MehrTab(props: {
           <Row icon="map" iconBg="indigo" label="Pläne auf dem Gerät" value={props.plansOnDevice} />
           <Row icon="clock" iconBg="gray" label="Letzter Abgleich" value={status.lastSyncedAt ? status.lastSyncedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '–'} />
         </Section>
-        <Section title="In Vorbereitung">
-          {COMING.map(([icon, bg, label]) => (
-            <Row key={label} icon={icon} iconBg={bg} label={<Text style={[T.body, { color: C.label2 }]}>{label}</Text>} value="bald" />
+        {intern && (
+          <Section title="Auf der Baustelle" footer="Funktioniert auch ohne Netz. Die Bauleitung gibt Einkäufe im Web frei.">
+            <Row icon="cart" iconBg="orange" label="Einkauf erfassen" chevron onPress={() => setOpen('einkauf')} />
+            <Row icon="car" iconBg="purple" label="Fahrtenbuch und Tanken" chevron onPress={() => setOpen('fahrt')} />
+          </Section>
+        )}
+        <Section title="Im Web" footer="Diese Bereiche sind für den Schreibtisch gedacht und in der Web-App verfügbar.">
+          {IM_WEB.map(([icon, bg, label]) => (
+            <Row key={label} icon={icon} iconBg={bg} label={<Text style={[T.body, { color: C.label2 }]}>{label}</Text>} />
           ))}
         </Section>
+        <Modal visible={open === 'einkauf'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
+          <EinkaufScreen projectId={props.projectId} userId={props.session.userId} userName={props.session.name ?? props.session.email} onClose={() => setOpen(null)} />
+        </Modal>
+        <Modal visible={open === 'fahrt'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
+          <FahrtenbuchScreen projectId={props.projectId} projectName={project?.name ?? ''} userId={props.session.userId} onClose={() => setOpen(null)} />
+        </Modal>
         <Section>
           <Row label="Abmelden" tone="destructive" onPress={props.onLogout} />
         </Section>
@@ -528,7 +552,7 @@ function MehrTab(props: {
   );
 }
 
-function Detail({ m, me, pendingFor, onClose }: { m: Mangel; me: Me; pendingFor?: { payload: string }; onClose: () => void }) {
+function Detail({ m, me, token, pendingFor, onClose }: { m: Mangel; me: Me; token: string; pendingFor?: { payload: string }; onClose: () => void }) {
   const db = usePowerSync();
   const { data: notes } = useQuery<{ id: string; text: string }>('SELECT id, text FROM mangel_note WHERE mangel_id = ?', [m.id]);
   const { data: anzeigen } = useQuery<{ number: number | null; status: string; sent_at: string | null }>(
@@ -536,6 +560,15 @@ function Detail({ m, me, pendingFor, onClose }: { m: Mangel; me: Me; pendingFor?
      WHERE p.mangel_id = ? ORDER BY a.status = 'versendet' DESC, a.sent_at DESC`,
     [m.id],
   );
+  const { data: fotos } = useQuery<{ id: string; kind: string; queued: number }>(
+    `SELECT id, kind, 0 AS queued FROM mangel_foto WHERE mangel_id = ?
+     UNION ALL SELECT id, kind, 1 AS queued FROM foto_upload WHERE mangel_id = ?`,
+    [m.id, m.id],
+  );
+  const addFoto = async (source: 'camera' | 'library') => {
+    const picked = await pickFoto(source);
+    if (picked) await queueFoto(db, m.id, picked, me.role === 'nu' ? 'nachweis' : 'mangel');
+  };
   const e = escOf(m);
   const transitions = m.number
     ? allowedTransitions(me, { status: statusOf(m), createdBy: m.created_by ?? '', creatorRole: (m.creator_role ?? 'polier') as ProjectRole, assignedCompanyId: m.assigned_company_id ?? null }).filter(
@@ -565,6 +598,29 @@ function Detail({ m, me, pendingFor, onClose }: { m: Mangel; me: Me; pendingFor?
           </View>
           <Text style={T.title2}>{m.description}</Text>
         </View>
+        <Section title="Fotos" footer={fotos.some((f) => f.queued) ? 'Noch nicht übertragene Fotos werden hochgeladen, sobald Netz da ist.' : undefined}>
+          {fotos.length > 0 && (
+            <ScrollView horizontal contentContainerStyle={{ gap: 8, padding: 10 }} showsHorizontalScrollIndicator={false}>
+              {fotos.map((f) => (
+                <View key={f.id}>
+                  <Image source={fotoSource(f.id, token)} style={st.thumb} />
+                  {!!f.queued && (
+                    <View style={st.thumbBadge}>
+                      <Text style={st.thumbBadgeText}>wartet</Text>
+                    </View>
+                  )}
+                  {f.kind === 'nachweis' && (
+                    <View style={[st.thumbBadge, { backgroundColor: TINT.green }]}>
+                      <Text style={st.thumbBadgeText}>Nachweis</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <Row icon="camera" iconBg="blue" label="Foto aufnehmen" tone="accent" onPress={() => void addFoto('camera')} />
+          <Row icon="photo.on.rectangle" iconBg="indigo" label="Aus Fotos wählen" tone="accent" onPress={() => void addFoto('library')} />
+        </Section>
         <Section>
           <Row icon="mappin.and.ellipse" iconBg="red" label="Ort" value={m.location_name ?? '–'} />
           <Row icon="hammer" iconBg="orange" label="Gewerk" value={m.gewerk_name ?? '–'} />
@@ -650,6 +706,7 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
   const [room, setRoom] = useState<string | null>(null);
   const [gewerk, setGewerk] = useState<string | null>(null);
   const [priority, setPriority] = useState<Priority>('normal');
+  const [foto, setFoto] = useState<Picked | null>(null);
   const roomId = room ?? suggested ?? rooms[0]?.id;
   const g = useMemo(() => gewerke.find((x) => x.id === (gewerk ?? gewerke[0]?.id)), [gewerke, gewerk]);
   const valid = !!description.trim() && !!roomId && !!g;
@@ -657,12 +714,15 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
   const save = async () => {
     if (!valid) return;
     // Local insert with a device-generated id. Number, status and confirmation are set by the server on upload.
+    const mangelId = Crypto.randomUUID();
     await db.execute(
       `INSERT INTO mangel (id, project_id, location_id, gewerk_id, description, priority, status, plan_id, pin_page, pin_x, pin_y,
          assigned_company_id, assignment_confirmed, reporter_company_id, created_by, creator_role, created_at, version, visible_to_bauherr)
        VALUES (?, ?, ?, ?, ?, ?, 'neu', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, 0)`,
-      [Crypto.randomUUID(), projectId, roomId, g!.id, description.trim(), priority, pos.planId, pos.page, pos.x, pos.y, g!.company_id, me.companyId, me.userId, me.role, new Date().toISOString()],
+      [mangelId, projectId, roomId, g!.id, description.trim(), priority, pos.planId, pos.page, pos.x, pos.y, g!.company_id, me.companyId, me.userId, me.role, new Date().toISOString()],
     );
+    // The photo waits locally until the Mangel itself is on the server, then it is uploaded.
+    if (foto) await queueFoto(db, mangelId, foto, me.role === 'nu' ? 'nachweis' : 'mangel');
     onClose();
   };
 
@@ -680,6 +740,11 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
             placeholder="Was ist der Mangel?"
             placeholderTextColor={C.label3 as unknown as string}
           />
+        </Section>
+        <Section title="Foto" footer="Das Foto zeigt den Mangel, der Pin im Plan zeigt, wo genau. Beides kommt in den PDF-Bericht.">
+          {foto && <Image source={{ uri: foto.uri }} style={{ width: '100%', height: 200 }} resizeMode="cover" />}
+          <Row icon="camera" iconBg="blue" label={foto ? 'Neu aufnehmen' : 'Foto aufnehmen'} tone="accent" onPress={() => void pickFoto('camera').then((p) => p && setFoto(p))} />
+          <Row icon="photo.on.rectangle" iconBg="indigo" label="Aus Fotos wählen" tone="accent" onPress={() => void pickFoto('library').then((p) => p && setFoto(p))} />
         </Section>
         <Section title="Priorität">
           <View style={{ padding: 10 }}>
@@ -718,5 +783,8 @@ const st = StyleSheet.create({
   ampelBar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
   hairline: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator },
   planCard: { flex: 1, marginHorizontal: 16, marginBottom: 100, borderRadius: 12, overflow: 'hidden', backgroundColor: C.card },
+  thumb: { width: 120, height: 90, borderRadius: 8, backgroundColor: C.fill },
+  thumbBadge: { position: 'absolute', left: 6, bottom: 6, backgroundColor: TINT.orange, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  thumbBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   emptyState: { alignItems: 'center', gap: 10, paddingVertical: 60, paddingHorizontal: 30 },
 });

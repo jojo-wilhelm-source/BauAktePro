@@ -15,3 +15,13 @@ export const ROLE_LABELS: Record<ProjectRole, string> = {
   bauherr: 'Bauherr',
   einkauf: 'Einkauf',
 };
+
+/**
+ * Roles as stored in project_member. Projektleitung has the same rights as Bauleitung (docs/fachkonzept/01):
+ * all rights checks work on the EFFECTIVE role, the label shows the real one.
+ */
+export type StoredRole = ProjectRole | 'projektleitung';
+export const effectiveRole = (r: StoredRole | string): ProjectRole => (r === 'projektleitung' ? 'bauleitung' : (r as ProjectRole));
+export const roleLabel = (r: StoredRole | string) => (r === 'projektleitung' ? 'Projektleitung' : (ROLE_LABELS[r as ProjectRole] ?? r));
+/** Bau- or Projektleitung ("Leitung"): the deciding roles. */
+export const isLeitung = (r: StoredRole | string) => effectiveRole(r) === 'bauleitung';

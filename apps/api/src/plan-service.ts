@@ -38,6 +38,7 @@ export async function listPlans(tx: TxSql, userId: string, projectId: string) {
 const UploadFields = z.object({
   project_id: z.string().uuid(),
   plan_id: z.string().uuid().optional(), // missing: new plan
+  folder_id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(200).optional(),
   location_id: z.string().uuid().optional(),
   plan_index: z.string().trim().regex(/^[A-Za-z]{1,3}$/, 'Index: Buchstaben A–ZZZ').optional(),
@@ -65,8 +66,8 @@ export async function uploadRevision(tx: TxSql, userId: string, fields: unknown,
     planId = randomUUID();
     index ??= 'A';
     // A new plan is invisible to NU/Bauherr until its first index is released.
-    await tx`INSERT INTO plan (id, project_id, location_id, name, plan_index, file_key, page_count, visible_to_nu, visible_to_bauherr)
-             VALUES (${planId}, ${f.project_id}, ${f.location_id}, ${f.name}, ${index}, ${fileKey}, ${pageCount}, false, false)`;
+    await tx`INSERT INTO plan (id, project_id, location_id, name, plan_index, file_key, page_count, visible_to_nu, visible_to_bauherr, folder_id)
+             VALUES (${planId}, ${f.project_id}, ${f.location_id}, ${f.name}, ${index}, ${fileKey}, ${pageCount}, false, false, ${f.folder_id ?? null})`;
   } else {
     const [plan] = await tx`SELECT id, project_id FROM plan WHERE id = ${planId}`;
     if (!plan || plan.project_id !== f.project_id) throw new HttpError(404, 'Plan nicht gefunden');
@@ -126,30 +127,46 @@ export async function checkRevision(tx: TxSql, revisionId: string) {
     SELECT r.id, r.plan_index, r.status, r.decided_at, p.id AS plan_id, p.name AS plan_name, p.plan_index AS current_index,
            p.released_at AS current_released_at, pr.name AS project_name
     FROM plan_revision r JOIN plan p ON p.id = r.plan_id JOIN project pr ON pr.id = r.project_id WHERE r.id = ${revisionId}`;
-  if (!r) throw new HttpError(404, 'Planstand nicht gefunden oder keine Berechtigung');
-  return { ...r, is_current: r.status === 'freigegeben' && r.plan_index === r.current_index };
+  if (r) return { ...r, kind: 'plan', is_current: r.status === 'freigegeben' && r.plan_index === r.current_index };
+  // Documents (Statik, Nachweise …) carry the same QR code: same answer, generic fields.
+  const [d] = await tx`
+    SELECT r.id, r.version_label AS plan_index, r.status, r.decided_at, d.id AS plan_id, d.name AS plan_name,
+           c.version_label AS current_index, c.decided_at AS current_released_at, pr.name AS project_name, c.id AS current_revision_id
+    FROM document_revision r JOIN document d ON d.id = r.document_id JOIN project pr ON pr.id = r.project_id
+    LEFT JOIN document_revision c ON c.id = d.current_revision_id WHERE r.id = ${revisionId}`;
+  if (!d) throw new HttpError(404, 'Stand nicht gefunden oder keine Berechtigung');
+  return { ...d, kind: 'document', is_current: d.status === 'freigegeben' && d.id === d.current_revision_id };
 }
 
 /**
  * Revision as PDF for download/print: stamped with a QR code (check page), index and release date.
  * Not released → red "NICHT FREIGEGEBEN"; replaced → "ERSETZT – aktuell Index X".
  */
-export async function stampedRevisionPdf(tx: TxSql, revisionId: string): Promise<{ bytes: Uint8Array; name: string }> {
-  const [r] = await tx`
-    SELECT r.*, p.name AS plan_name, p.plan_index AS current_index, d.name AS decided_by_name
-    FROM plan_revision r JOIN plan p ON p.id = r.plan_id LEFT JOIN app_user d ON d.id = r.decided_by WHERE r.id = ${revisionId}`;
-  if (!r) throw new HttpError(404, 'Planstand nicht gefunden');
-  const doc = await PDFDocument.load(await readFile(PLAN_DIR + (r.file_key as string).replace(/[^a-z0-9._-]/gi, '')));
+export interface StampInfo {
+  checkId: string; // revision id behind the QR code
+  title: string; // plan/document name
+  label: string; // "Index B" / "Version 2"
+  status: keyof typeof PLAN_REVISION_LABELS;
+  decidedAt: Date | null;
+  decidedBy: string | null;
+  currentLabel: string | null; // label of the current version (for "ERSETZT – aktuell …")
+}
+
+/**
+ * Stamp every page with a QR code (→ check page), version and release date.
+ * Not released → red "NICHT FREIGEGEBEN"; replaced → "ERSETZT – aktuell …". Shared by plans and documents.
+ */
+export async function stampPdf(bytes: Uint8Array, i: StampInfo): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const qr = QRCode.create(`${PUBLIC_WEB_URL}/check/${revisionId}`, { errorCorrectionLevel: 'M' });
-  const status = r.status as keyof typeof PLAN_REVISION_LABELS;
-  const line1 = `${r.plan_name} · Index ${r.plan_index} · ${PLAN_REVISION_LABELS[status]}`;
-  const line2 = r.decided_at && status !== 'abgelehnt' ? `freigegeben ${formatDate((r.decided_at as Date).toISOString())} von ${r.decided_by_name}` : 'nicht freigegeben';
-  const line3 = `Gedruckt ${formatDate(new Date().toISOString())} · QR scannen = Stand prüfen`;
-
+  const qr = QRCode.create(`${PUBLIC_WEB_URL}/check/${i.checkId}`, { errorCorrectionLevel: 'M' });
+  const clean = (t: string) => t.replace(/[^\x20-\xFF·–]/g, '?');
+  const line1 = `${i.title} · ${i.label} · ${PLAN_REVISION_LABELS[i.status]}`;
+  const line2 = i.decidedAt && i.status !== 'abgelehnt' ? `freigegeben ${formatDate(i.decidedAt.toISOString())} von ${i.decidedBy}` : 'nicht freigegeben';
+  const line3 = `Abgerufen ${formatDate(new Date().toISOString())} · QR scannen = Stand prüfen`;
   for (const page of doc.getPages()) {
-    const { width } = page.getSize();
+    const { width, height } = page.getSize();
     const size = 64;
     const cell = size / qr.modules.size;
     const x0 = width - size - 24;
@@ -160,13 +177,28 @@ export async function stampedRevisionPdf(tx: TxSql, revisionId: string): Promise
         if (qr.modules.get(row, col)) page.drawRectangle({ x: x0 + col * cell, y: y0 + size - (row + 1) * cell, width: cell, height: cell, color: rgb(0, 0, 0) });
       }
     }
-    page.drawText(line1.replace(/[^\x20-\xFF·–]/g, '?'), { x: x0 - 222, y: y0 + 44, size: 9, font: bold });
-    page.drawText(line2.replace(/[^\x20-\xFF·–]/g, '?'), { x: x0 - 222, y: y0 + 30, size: 8, font });
-    page.drawText(line3.replace(/[^\x20-\xFF·–]/g, '?'), { x: x0 - 222, y: y0 + 16, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
-    const mark = status === 'zur_pruefung' || status === 'abgelehnt' ? 'NICHT FREIGEGEBEN' : status === 'ersetzt' ? `ERSETZT – aktuell Index ${r.current_index}` : null;
-    if (mark) {
-      page.drawText(mark, { x: 120, y: page.getSize().height / 2 - 120, size: 64, font: bold, color: rgb(1, 0.23, 0.19), rotate: degrees(25), opacity: 0.25 });
-    }
+    page.drawText(clean(line1), { x: x0 - 222, y: y0 + 44, size: 9, font: bold });
+    page.drawText(clean(line2), { x: x0 - 222, y: y0 + 30, size: 8, font });
+    page.drawText(clean(line3), { x: x0 - 222, y: y0 + 16, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
+    const mark = i.status === 'zur_pruefung' || i.status === 'abgelehnt' ? 'NICHT FREIGEGEBEN' : i.status === 'ersetzt' ? clean(`ERSETZT – aktuell ${i.currentLabel ?? ''}`) : null;
+    if (mark) page.drawText(mark, { x: 80, y: height / 2 - 120, size: Math.min(64, width / 12), font: bold, color: rgb(1, 0.23, 0.19), rotate: degrees(25), opacity: 0.25 });
   }
-  return { bytes: await doc.save(), name: `${r.plan_name}-Index-${r.plan_index}.pdf`.replace(/[^\wäöüÄÖÜß.-]+/g, '_') };
+  return doc.save();
+}
+
+export async function stampedRevisionPdf(tx: TxSql, revisionId: string): Promise<{ bytes: Uint8Array; name: string }> {
+  const [r] = await tx`
+    SELECT r.*, p.name AS plan_name, p.plan_index AS current_index, d.name AS decided_by_name
+    FROM plan_revision r JOIN plan p ON p.id = r.plan_id LEFT JOIN app_user d ON d.id = r.decided_by WHERE r.id = ${revisionId}`;
+  if (!r) throw new HttpError(404, 'Planstand nicht gefunden');
+  const bytes = await stampPdf(await readFile(PLAN_DIR + (r.file_key as string).replace(/[^a-z0-9._-]/gi, '')), {
+    checkId: revisionId,
+    title: r.plan_name as string,
+    label: `Index ${r.plan_index}`,
+    status: r.status as StampInfo['status'],
+    decidedAt: (r.decided_at as Date) ?? null,
+    decidedBy: (r.decided_by_name as string) ?? null,
+    currentLabel: `Index ${r.current_index}`,
+  });
+  return { bytes, name: `${r.plan_name}-Index-${r.plan_index}.pdf`.replace(/[^\wäöüÄÖÜß.-]+/g, '_') };
 }

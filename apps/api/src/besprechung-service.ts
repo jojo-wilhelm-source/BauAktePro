@@ -8,7 +8,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { TxSql } from '@bap/db';
 import {
+  anwesendLabel,
   BesprechungCreate,
+  BesprechungPatch,
+  besprechungIcs,
   besprechungNo,
   carriesOver,
   escalation,
@@ -80,7 +83,7 @@ export async function createBesprechung(tx: TxSql, userId: string, input: unknow
 export async function listBesprechungen(tx: TxSql, userId: string, projectId: string) {
   await actorFor(tx, userId, projectId);
   return tx`
-    SELECT b.id, b.number, b.kind, b.title, b.held_at, b.place, b.status, b.sent_at, b.previous_id, b.version,
+    SELECT b.id, b.number, b.kind, b.title, b.held_at, b.place, b.status, b.sent_at, b.previous_id, b.version, b.next_at,
       (SELECT count(*)::int FROM besprechung_eintrag e WHERE e.besprechung_id = b.id) AS punkte,
       (SELECT count(*)::int FROM besprechung_eintrag e JOIN besprechung_punkt p ON p.id = e.punkt_id
          WHERE e.besprechung_id = b.id AND p.status IN ('offen', 'in_arbeit')) AS offen,
@@ -94,7 +97,7 @@ export async function besprechungDetails(tx: TxSql, userId: string, id: string) 
   const actor = await actorFor(tx, userId, b.project_id);
   const internal = actor.role === 'bauleitung' || actor.role === 'polier';
   const teilnehmer = await tx`
-    SELECT c.id, c.name, c.kind, c.email FROM besprechung_teilnehmer t JOIN company c ON c.id = t.company_id
+    SELECT c.id, c.name, c.kind, c.email, t.anwesend FROM besprechung_teilnehmer t JOIN company c ON c.id = t.company_id
     WHERE t.besprechung_id = ${id} ORDER BY c.kind, c.name`;
   const punkte = await tx`
     SELECT p.*, e.carried, e.status_snapshot, e.text_snapshot, l.name AS location_name, l.sort AS location_sort, g.name AS gewerk_name,
@@ -118,6 +121,7 @@ export async function besprechungDetails(tx: TxSql, userId: string, id: string) 
   const row: Record<string, any> = b;
   return { ...row, id: b.id, project_id: b.project_id, number: b.number, status: b.status, version: b.version,
     title: row.title as string, held_at: row.held_at as Date | string, place: row.place as string | null,
+    bemerkung: row.bemerkung as string | null, next_at: row.next_at as Date | string | null,
     teilnehmer, punkte, maengel, can_edit: internal && b.status === 'entwurf', can_send: actor.role === 'bauleitung' && b.status === 'entwurf' };
 }
 
@@ -125,9 +129,49 @@ export async function setTeilnehmer(tx: TxSql, userId: string, id: string, compa
   const b = await loadBesprechung(tx, id);
   await requireInternal(tx, userId, b.project_id);
   if (b.status !== 'entwurf') throw new HttpError(409, 'Versendete Besprechungen sind gesperrt');
-  await tx`DELETE FROM besprechung_teilnehmer WHERE besprechung_id = ${id}`;
-  if (companyIds.length) await tx`INSERT INTO besprechung_teilnehmer ${tx(companyIds.map((company_id) => ({ besprechung_id: id, project_id: b.project_id, company_id })))}`;
+  // Only remove/add the difference so recorded attendance of remaining companies is kept.
+  if (companyIds.length) await tx`DELETE FROM besprechung_teilnehmer WHERE besprechung_id = ${id} AND company_id NOT IN ${tx(companyIds)}`;
+  else await tx`DELETE FROM besprechung_teilnehmer WHERE besprechung_id = ${id}`;
+  const have = new Set((await tx`SELECT company_id FROM besprechung_teilnehmer WHERE besprechung_id = ${id}`).map((r) => r.company_id as string));
+  const add = companyIds.filter((c) => !have.has(c));
+  if (add.length) await tx`INSERT INTO besprechung_teilnehmer ${tx(add.map((company_id) => ({ besprechung_id: id, project_id: b.project_id, company_id })))}`;
   await audit(tx, userId, b.project_id, 'besprechung', id, 'teilnehmer', meta, { companies: companyIds });
+}
+
+/** Attendance of one participating company (draft only, Bauleitung/Polier). */
+export async function setAnwesenheit(tx: TxSql, userId: string, id: string, companyId: string, anwesend: boolean | null, meta: WriteMeta) {
+  const b = await loadBesprechung(tx, id);
+  await requireInternal(tx, userId, b.project_id);
+  if (b.status !== 'entwurf') throw new HttpError(409, 'Versendete Besprechungen sind gesperrt');
+  const rows = await tx`UPDATE besprechung_teilnehmer SET anwesend = ${anwesend} WHERE besprechung_id = ${id} AND company_id = ${companyId} RETURNING company_id`;
+  if (!rows.length) throw new HttpError(404, 'Firma nimmt an dieser Besprechung nicht teil');
+  await audit(tx, userId, b.project_id, 'besprechung', id, 'anwesenheit', meta, { company: companyId, anwesend });
+}
+
+/** Header of a draft: title, date, place, remarks, next date. Version-checked, sent protocols are locked. */
+export async function patchBesprechung(tx: TxSql, userId: string, id: string, baseVersion: number, input: unknown, meta: WriteMeta) {
+  const b = await loadBesprechung(tx, id);
+  await requireInternal(tx, userId, b.project_id);
+  if (b.status !== 'entwurf') throw new HttpError(409, 'Versendete Besprechungen sind gesperrt');
+  const patch = BesprechungPatch.parse(input);
+  if (!Object.keys(patch).length) return b;
+  const [row] = await tx`UPDATE besprechung SET ${tx(patch as never)}, version = version + 1 WHERE id = ${id} AND version = ${baseVersion} AND status = 'entwurf' RETURNING *`;
+  if (!row) throw new HttpError(409, 'Die Besprechung wurde inzwischen geändert – bitte neu laden');
+  await audit(tx, userId, b.project_id, 'besprechung', id, 'geaendert', meta, { ...patch, base_version: baseVersion });
+  return row;
+}
+
+/** Calendar file for the next meeting (iPhone / Outlook). */
+export async function nextTerminIcs(tx: TxSql, userId: string, id: string) {
+  const b = await loadBesprechung(tx, id);
+  await actorFor(tx, userId, b.project_id);
+  const row = b as Record<string, unknown>;
+  if (!row.next_at) throw new HttpError(404, 'Kein nächster Termin festgelegt');
+  const [p] = await tx`SELECT name FROM project WHERE id = ${b.project_id}`;
+  return besprechungIcs({
+    uid: `${id}-next`, title: `${row.title as string} – ${p!.name as string}`, start: new Date(row.next_at as string),
+    place: row.place as string | null, description: `Folgetermin zu ${row.title as string} ${besprechungNo(b.number)}`,
+  });
 }
 
 export type PunktResult = { ok: true; punkt: Record<string, unknown> } | { ok: false; kind: 'conflict' | 'rejected'; reason: string };
@@ -195,7 +239,9 @@ async function protokollData(tx: TxSql, userId: string, id: string, draft: boole
     subtitle: `${ctx!.project} · ${formatDate(held.toISOString())} ${held.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })} Uhr${d.place ? ` · ${d.place}` : ''}`,
     ownCompany: ctx!.own as string,
     draft,
-    teilnehmer: d.teilnehmer.map((t) => t.name as string),
+    teilnehmer: d.teilnehmer.map((t) => (t.anwesend == null ? (t.name as string) : `${t.name as string} (${anwesendLabel(t.anwesend as boolean)})`)),
+    bemerkung: (d.bemerkung as string | null) ?? null,
+    nextAt: d.next_at ? `${formatDate(new Date(d.next_at as string).toISOString())} ${new Date(d.next_at as string).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })} Uhr` : null,
     punkte: punkte.map((p) => ({
       number: p.number as number,
       group: (p.location_name as string) ?? 'Allgemein',

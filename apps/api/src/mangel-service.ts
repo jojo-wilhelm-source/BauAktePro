@@ -1,6 +1,8 @@
 import type { TxSql } from '@bap/db';
 import {
   canTransition,
+  effectiveRole,
+  roleLabel,
   defaultDueDate,
   MangelCreate,
   MangelPatch,
@@ -21,6 +23,7 @@ export interface Actor {
   userId: string;
   companyId: string;
   role: ProjectRole;
+  roleLabel: string;
   deviceId: string | null;
 }
 
@@ -35,7 +38,8 @@ type Row = Record<string, unknown> & { id: string; project_id: string; version: 
 export async function actorFor(tx: TxSql, userId: string, projectId: string): Promise<Actor> {
   const [m] = await tx`SELECT role, company_id FROM project_member WHERE project_id = ${projectId} AND user_id = ${userId}`;
   if (!m) throw new HttpError(403, 'Kein Zugriff auf dieses Projekt');
-  return { userId, companyId: m.company_id as string, role: m.role as ProjectRole, deviceId: null };
+  // Projektleitung = same rights as Bauleitung: all checks use the effective role (docs/fachkonzept/01).
+  return { userId, companyId: m.company_id as string, role: effectiveRole(m.role as string), roleLabel: roleLabel(m.role as string), deviceId: null };
 }
 
 async function audit(tx: TxSql, actor: Actor, m: { id: string; project_id: string }, action: string, meta: WriteMeta, data: object) {
