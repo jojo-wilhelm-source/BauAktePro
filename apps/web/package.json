@@ -11,8 +11,8 @@
   "dependencies": {
     "@bap/domain": "workspace:*",
     "pdfjs-dist": "^5",
-    "react": "^19",
-    "react-dom": "^19"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@types/react": "^19",

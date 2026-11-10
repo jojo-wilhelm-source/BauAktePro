@@ -2,6 +2,7 @@
 
 ## Erfassen
 - Pin im Plan oder QR-Code am Raum, Fotos mit Markierung, Text oder Sprache.
+- **Genaue Verortung (entschieden 10.11.2026):** Der Plan lässt sich zoomen, der Pin sitzt auch im Zoom genau. Der **Raum wird aus der Pin-Position abgeleitet** (Raumflächen je Plan hinterlegt) und nur vorgeschlagen, die Person kann ihn ändern. Mehrere Fotos je Mangel, jedes mit Markierungen (Pfeil, Kreis, Text).
 - **Pflicht:** Ort, Gewerk, Beschreibung. **Optional:** Kategorie, Priorität, Frist.
 - Hinweis auf mögliche Doppelmeldungen.
 
@@ -49,6 +50,15 @@ Kritische Mängel haben **keine eigenen Eskalationszeiten**; sie unterscheiden s
 - Ist die Frist abgelaufen, schlägt die App in der Tabelle eine **2. Nachfrist** vor (Datum vorbelegt). Die Bauleitung übernimmt den Vorschlag, ändert das Datum oder verwirft ihn. Die gesetzte Nachfrist kommt ins Protokoll und wird dem NU mitgeteilt.
 
 > ❓ **OFFEN – Länge der 2. Nachfrist:** ANNAHME bis zur Klärung: 7 Tage ab Setzen, bei kritischen Mängeln 3 Tage, einstellbar pro Projekt und Priorität. Was passiert nach Ablauf der 2. Nachfrist (z. B. Vorschlag Ersatzvornahme/Einbehalt)? Bleiben die automatischen Nachrichten aus der Tabelle oben erhalten (Annahme: ja)?
+
+## Mangelanzeige (entschieden 10.11.2026)
+- Die Bauleitung fasst mehrere Mängel eines NU zu einer **Mangelanzeige** zusammen. Jeder Mangel wird eine nummerierte **Position** (1, 2, 3 …) mit Ort, Beschreibung, Foto und Planausschnitt mit Pin.
+- Kopf: Projekt, NU, Vertrag/Gewerk, Datum, Aufforderung zur Beseitigung bis zur **Frist** (vorbelegt aus den Mängelfristen, änderbar), Unterschrift der Bauleitung.
+- Erzeugt wird ein **PDF** im Firmenlayout. Versand per E-Mail an den NU direkt aus der App, Kopie an die Bauleitung. Das PDF wird in der Dateiablage beim Projekt und beim NU abgelegt.
+- Eine versendete Mangelanzeige ist **gesperrt** (Audit Log: wer, wann, an wen). Korrekturen sind eine neue Anzeige mit Verweis.
+- In der Mängeltabelle sieht man, in welcher Anzeige ein Mangel steht und wann sie verschickt wurde. Die gesetzte Frist wird zur Frist der Mängel.
+- Später: **2. Mangelanzeige** mit Nachfrist (siehe B7) aus denselben Positionen.
+- ❓ OFFEN (D1): Rechtlicher Wortlaut (VOB/B § 13 Abs. 5 oder BGB), Versand nur per E-Mail oder zusätzlich als Einschreiben-Vermerk.
 
 ## Weiteres
 - Mängelliste als PDF (je Gewerk, Geschoss, Abnahme).

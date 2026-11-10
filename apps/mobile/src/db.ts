@@ -1,7 +1,7 @@
 import { PowerSyncDatabase, UpdateType, type AbstractPowerSyncDatabase, type PowerSyncBackendConnector } from '@powersync/react-native';
 import { API_URL, POWERSYNC_URL } from './config';
 import { AppSchema } from './schema';
-import { dbKey, type Session } from './session';
+import { dbKey, freshSession, type Session } from './session';
 
 let instance: PowerSyncDatabase | null = null;
 
@@ -20,6 +20,7 @@ export class Connector implements PowerSyncBackendConnector {
   constructor(private session: Session, private deviceId: string) {}
 
   async fetchCredentials() {
+    this.session = await freshSession(this.session);
     return { endpoint: POWERSYNC_URL, token: this.session.token };
   }
 

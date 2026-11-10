@@ -16,5 +16,7 @@
 | [11-rechnungen-nachtraege-budget.md](11-rechnungen-nachtraege-budget.md) | Rechnungen, Nachträge, Abschläge, Budget | 3 |
 | [12-einkauf-lieferungen.md](12-einkauf-lieferungen.md) | Lieferanmeldung, Einkauf, Wareneingang | 3 |
 | [13-weitere-funktionen.md](13-weitere-funktionen.md) | Weitere Funktionen und KI | 2–4 |
+| [14-fahrtenbuch-auslagen.md](14-fahrtenbuch-auslagen.md) | Fahrtenbuch, Tanken, Baustellen-Einkäufe | 3 |
+| [15-design.md](15-design.md) | Gestaltung im Apple-Stil (iOS und Web) | alle |
 
 Stellen mit **❓ OFFEN** sind ungeklärt. Bis zur Klärung gilt die genannte Annahme oder es wird nachgefragt. Gesammelt in [../offene-punkte.md](../offene-punkte.md).

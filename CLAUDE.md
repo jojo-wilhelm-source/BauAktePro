@@ -1,8 +1,9 @@
 # Bau Akte Pro
 
-Bau-Organisationsanwendung für **ein** Bauunternehmen mit mehreren Projekten (im Datenmodell trotzdem mit `firma_id`, siehe Fachkonzept 02). Sie bündelt Mängel, Plan-Freigaben, Besprechungsprotokolle, Bautagebuch mit Bauzeitenplan, Bemusterung, Einkauf und Lieferungen, Rechnungs- und Stundenprüfung sowie eine Dateiablage. Jedes Fachobjekt ist mit einem **Ort** verknüpft (Gebäude → Geschoss → Abschnitt → Raum, dazu eine Planposition).
+Bau-Organisationsanwendung für **ein** Bauunternehmen mit mehreren Projekten, die ein Bauprojekt **von A bis Z** abdeckt (im Datenmodell trotzdem mit `firma_id`, siehe Fachkonzept 02). Sie bündelt Mängel, Plan-Freigaben, Besprechungsprotokolle, Bautagebuch mit Bauzeitenplan, Bemusterung, Einkauf und Lieferungen, Baustellen-Einkäufe (Auslagen), Fahrtenbuch mit Tanken, Rechnungs- und Stundenprüfung, Kostenübersicht sowie eine Dateiablage. Jedes Fachobjekt ist mit einem **Ort** verknüpft (Gebäude → Geschoss → Abschnitt → Raum, dazu eine Planposition).
 
 - **Geräte:** iOS-App für iPhone und iPad (voll offlinefähig), Web-App für Windows-Laptops, Browser-Portal für Externe (NU, Bauherr).
+- **Design:** durchgehend im **Apple-Stil** (Human Interface Guidelines), auch im Web. Siehe [15-design.md](docs/fachkonzept/15-design.md).
 - **Nicht Teil des Systems:** Zahlungen. Die App gibt Rechnungen frei und übergibt sie an die Buchhaltung (DATEV-Export).
 
 Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Lies vor jedem Modul das zugehörige Dokument.** Bei Widersprüchen gilt das Fachkonzept. Offene Fragen stehen gesammelt in [`docs/offene-punkte.md`](docs/offene-punkte.md).
@@ -38,6 +39,8 @@ Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Li
 | **3 Geld und Beschaffung** | 9. Verträge, Nachträge, Rechnungsprüfung, Abschläge, Freigabe an die Buchhaltung, Budget · 10. Lieferanmeldung, Einkauf, Wareneingang, Mengenabgleich |
 | **4 Ausbau** | 11. Sync-Ordner (Windows, iOS-Dateien-App) · 12. Anfragen und Angebotsvergleich, Bewertungen, KI-Funktionen, Planvergleich, weitere Schnittstellen |
 
+**Stand 10.11.2026:** Durchstich fertig. Nächste Reihenfolge (vom Nutzer gewählt): Apple-Design für Web und iOS → Mangelanzeige mit Positionen (PDF, Versand) und genaue Verortung (Zoom, Raum aus Pin) → Dateiablage mit freigegebenem Plan → Besprechungen (Bau- und NU-Besprechung) → Rechnungen (Einreichung, Prüfung, Freigabe) und Kostenübersicht → Fahrtenbuch und Baustellen-Einkäufe ([14](docs/fachkonzept/14-fahrtenbuch-auslagen.md)).
+
 **Start mit einem schmalen Durchstich** (vor der vollen Stufe 1): Projekte/Orte/Rollen → Mängel mit Plan-Pin → offline auf dem iPad erfassen → Abgleich mit dem Server → Web-Ansicht für die Bauleitung. Damit wird das Schwierigste (Offline-Abgleich) zuerst geprüft. Danach die volle Dateiablage mit Prüfketten und der Rest von Stufe 1.
 
 Spätere Stufen werden **im Datenmodell schon vorbereitet** (z. B. Anfrage → Angebot → Vergabe → Bestellung, Sync-Ordner mit denselben Rechten).
@@ -70,7 +73,7 @@ infra/           docker-compose (Postgres, PowerSync), Sync-Regeln
 | Migrationen / Testdaten | `pnpm db:migrate` · `pnpm db:seed` |
 | API / Web | `pnpm dev:api` · `pnpm dev:web` (http://localhost:5173) |
 | Tests | `pnpm test` (Rechte-Tests brauchen die laufende DB, setzen die Testdaten neu) |
-| iOS-App | `cd apps/mobile && npx expo run:ios` |
+| iOS-App | `cd apps/mobile && npx expo run:ios` (neu bauen nur bei neuen nativen Modulen; sonst `npx expo start --dev-client`, **ohne** `CI=1`, sonst lädt Metro Änderungen nicht) |
 | Sync-Sicht prüfen | `node scripts/check-sync.mjs elektro` |
 
 **Regeln im Code**
@@ -78,3 +81,5 @@ infra/           docker-compose (Postgres, PowerSync), Sync-Regeln
 - Sichtbarkeit steht an **zwei** Stellen: RLS-Policies (`packages/db/migrations`) und Sync-Regeln (`infra/powersync/sync-config.yaml`). Ändert sich eine, muss die andere mit – und ein Test in `apps/api/test/rechte.test.ts` dazu.
 - Statuswechsel nur über `packages/domain` (`canTransition`), nie direkt `status` setzen.
 - Die App schreibt Entscheidungen in `mangel_action` (Upload-Warteschlange), nicht direkt in `mangel`.
+- Design nach [15-design.md](docs/fachkonzept/15-design.md): Web nutzt die CSS-Variablen in `apps/web/src/styles.css` und `apps/web/src/ui/`, iOS nutzt `apps/mobile/src/theme.ts` und `apps/mobile/src/ui.tsx` (Systemfarben, SF Symbols). Keine fest eingebauten Farben in Bildschirmen.
+- Web und iOS müssen dieselbe React-Version haben (sonst zwei React-Kopien im Monorepo).

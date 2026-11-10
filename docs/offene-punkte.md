@@ -47,3 +47,12 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
 - [ ] **C5 – Arbeiterdaten:** Wer sieht die Nachweise, wie lange werden sie aufbewahrt? → [08](fachkonzept/08-nu-portal-stunden.md)
 - [ ] **C6 – Planserver-Anbindung:** Welches System, wann? (Zunächst nur Upload und E-Mail-Import.)
 - [ ] **C7 – Angebotsvergleich:** Stufe 2, Datenmodell vorbereiten.
+
+## D. Neue Module (10.11.2026)
+
+- [ ] **D1 – Mangelanzeige:** Rechtlicher Wortlaut (VOB/B § 13 Abs. 5 oder BGB)? Nur E-Mail oder zusätzlich Einschreiben-Vermerk? Absender-Adresse (persönlich oder z. B. maengel@firma.de)? → [04](fachkonzept/04-maengel.md)
+  **Entscheidung:**
+- [ ] **D2 – Fahrtenbuch:** Wer sieht die Fahrten anderer (Annahme: Geschäftsführung und der Fahrer selbst)? → [14](fachkonzept/14-fahrtenbuch-auslagen.md)
+  **Entscheidung:**
+- [ ] **D3 – Baustellen-Einkäufe:** Betragsgrenze für Freigabe durch die Geschäftsführung? Erstattung über Lohn oder separat? → [14](fachkonzept/14-fahrtenbuch-auslagen.md)
+  **Entscheidung:**
