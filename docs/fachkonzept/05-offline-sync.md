@@ -45,3 +45,13 @@ Nie still überschreiben: Beide Änderungen bleiben erhalten und werden zur Klä
 - Verschlüsselter lokaler Speicher, Geräte-Code bzw. Face ID.
 - Geräte lassen sich per Admin sperren und löschen.
 - Rechte werden beim nächsten Sync geprüft: Werden Rechte entzogen, verschwinden die Daten vom Gerät.
+
+## Umsetzungsstand (10.11.2026): Gerät synchronisieren
+- **Alles auf dem Gerät:** Daten aller eigenen Projekte (Mängel, Pläne, Besprechungen, Einkäufe, Fahrten, Ordner und Dokumente) kommen per Abgleich; die **Dateien** (alle Pläne, alle Mangelfotos, alle freigegebenen Dokumente) werden danach automatisch geladen – Pläne zuerst, dann Dokumente, dann Fotos.
+- ANNAHME: Statt „Ordner offline halten“ liegen zunächst **alle freigegebenen Dokumente** auf dem Gerät (Datenmengen im Test klein). Auswahl je Ordner und Speicherlimit folgen, wenn nötig (offene-punkte D7).
+- **Zwei Modi** (Mehr → Offline & Abgleich): *Automatisch* (Standard, verbunden, sobald Netz da ist) oder *Nur per Klick* (Gerät bleibt offline, gleicht nur bei „Jetzt abgleichen“ ab, z. B. um mobile Daten zu sparen).
+- **Jetzt abgleichen** (Knopf, Statusanzeige oben antippen oder Mängelliste nach unten ziehen): erst Upload der Warteschlange, dann neue Daten, dann Fotos/Belege, dann fehlende Dateien.
+- **Übersicht:** Verbindung, letzter Abgleich, was auf Upload wartet (Änderungen, Fotos, Belege), was auf dem Gerät liegt (je Art Anzahl und Speicher).
+- **Aufräumen:** Dateien, die man nicht mehr sehen darf oder die ersetzt sind (neuer Planindex, neue Dokumentversion), werden nach einem vollständigen Abgleich gelöscht – nie vorher. Selbst aufgenommene Fotos in der Upload-Warteschlange werden nie gelöscht.
+- Dokumente in der App: Mehr → Dokumente, nach Ordnern, offline lesbar (PDF mit Freigabe-Stempel und QR-Code).
+- Im Simulator geprüft (iPhone 12): manueller Modus, neues Dokument im Büro freigegeben → erst nach „Jetzt abgleichen“ auf dem Gerät, danach ohne Netz geöffnet.

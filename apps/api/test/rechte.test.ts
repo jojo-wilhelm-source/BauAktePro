@@ -621,3 +621,19 @@ describe('Besprechung: Art, Anwesenheit, Bemerkungen, nächster Termin', () => {
     expect((await call('uBauleitung', 'PUT', `/besprechungen/${id}/teilnehmer/${ID.coElektro}/anwesenheit`, { anwesend: false })).status).toBe(409);
   });
 });
+
+describe('Mängelbericht aus Auswahl, sortiert und nach Ordnern', () => {
+  const pdf = (u: keyof typeof ID, qs: string) =>
+    app.inject({ method: 'GET', url: `/projects/${ID.project}/maengel/pdf?${qs}`, headers: { authorization: `Bearer ${tokens[u]}` } });
+  it('nur ausgewählte Mängel; NU bekommt fremde Mängel auch über die Auswahl nicht', async () => {
+    const own = await pdf('uElektro', `ids=${ID.mElektro},${ID.mFliesen}&sort=firma&gruppen=firma,monat`);
+    expect(own.statusCode).toBe(200);
+    expect(own.body.length).toBeGreaterThan(1000);
+    expect((await pdf('uElektro', `ids=${ID.mFliesen}`)).statusCode).toBe(404); // RLS: not visible → nothing in the PDF
+    expect((await pdf('uBauleitung', `ids=${ID.mFliesen},${ID.mElektro}&sort=datum_neu&gruppen=firma,tag`)).statusCode).toBe(200);
+  });
+  it('ungültige Sortierung oder Ordner werden abgelehnt', async () => {
+    expect((await pdf('uBauleitung', 'sort=preis')).statusCode).toBe(422);
+    expect((await pdf('uBauleitung', 'gruppen=firma,x')).statusCode).toBe(422);
+  });
+});

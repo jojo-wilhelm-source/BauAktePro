@@ -179,12 +179,12 @@ await sql.begin(async (tx) => {
     visible_to_bauherr: false, due_date: '2026-10-28', description: '', ...extra,
   });
   await tx`INSERT INTO mangel ${tx([
-    m(ID.mFliesen, 1, { description: 'Fliesenfuge an der Dusche gerissen' }),
+    m(ID.mFliesen, 1, { description: 'Fliesenfuge an der Dusche gerissen', created_at: '2026-10-14T09:20:00Z' }),
     m(ID.mElektro, 2, { description: 'Steckdose neben Herd fehlt', location_id: ID.raumKueche, gewerk_id: ID.gwElektro,
-      assigned_company_id: ID.coElektro, pin_x: 0.22, pin_y: 0.65, priority: 'kritisch', due_date: '2026-11-06', visible_to_bauherr: true }),
+      assigned_company_id: ID.coElektro, pin_x: 0.22, pin_y: 0.65, priority: 'kritisch', due_date: '2026-11-06', visible_to_bauherr: true, created_at: '2026-11-02T07:45:00Z' }),
     m(ID.mUnconfirmed, 3, { description: 'Lichtschalter schief montiert', location_id: ID.raumWohnen, gewerk_id: ID.gwElektro,
       assigned_company_id: ID.coElektro, assignment_confirmed: false, status: 'neu', pin_x: 0.6, pin_y: 0.5,
-      created_by: ID.uBauherr, creator_role: 'bauherr', reporter_company_id: ID.coBauherr, due_date: null }),
+      created_by: ID.uBauherr, creator_role: 'bauherr', reporter_company_id: ID.coBauherr, due_date: null, created_at: '2026-11-09T15:10:00Z' }),
   ])}`;
   await tx`INSERT INTO project_counter (project_id, mangel, besprechung, punkt, stundenzettel, nachtrag, rechnung, einkauf) VALUES (${ID.project}, 3, 1, 5, 1, 1, 1, 2)`;
 

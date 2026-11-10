@@ -3,7 +3,7 @@
  * folder, uploaded automatically once online AND the Mangel itself is on the server (has a number).
  * The local file is kept as cache, so the photo stays visible on site.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { FileSystemUploadType, uploadAsync } from 'expo-file-system/legacy';
@@ -11,6 +11,7 @@ import * as Crypto from 'expo-crypto';
 import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { API_URL } from './config';
+import { fotoCacheFile } from './offline';
 import { freshSession, type Session } from './session';
 
 const dir = new Directory(Paths.document, 'fotos');
@@ -46,45 +47,55 @@ export async function queueFoto(db: AbstractPowerSyncDatabase, mangelId: string,
   return id;
 }
 
-/** Background uploader: runs whenever online and there are queued photos of Mängel that are already on the server. */
+/** Uploads queued photos of Mängel that are already on the server. Safe to call often (one run at a time). */
+let fotoBusy = false;
+export async function uploadQueuedFotos(db: AbstractPowerSyncDatabase, session: Session) {
+  if (fotoBusy) return;
+  fotoBusy = true;
+  try {
+    const queue = await db.getAll<{ id: string; mangel_id: string; uri: string; kind: string; taken_at: string }>(
+      'SELECT f.id, f.mangel_id, f.uri, f.kind, f.taken_at FROM foto_upload f JOIN mangel m ON m.id = f.mangel_id WHERE m.number IS NOT NULL AND f.error IS NULL',
+    );
+    if (!queue.length) return;
+    const s = await freshSession(session);
+    for (const q of queue) {
+      try {
+        // Native multipart upload straight from the file (fetch + FormData file parts are not supported here).
+        const res = await uploadAsync(`${API_URL}/maengel/${q.mangel_id}/fotos`, q.uri, {
+          httpMethod: 'POST',
+          uploadType: FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: 'image/jpeg',
+          parameters: { id: q.id, kind: q.kind, taken_at: q.taken_at },
+          headers: { authorization: `Bearer ${s.token}`, 'x-device-id': `ios-${s.userId.slice(-4)}` },
+        });
+        if (res.status >= 200 && res.status < 300) await db.execute('DELETE FROM foto_upload WHERE id = ?', [q.id]);
+        else if (res.status < 500) await db.execute('UPDATE foto_upload SET error = ? WHERE id = ?', [`${res.status}`, q.id]);
+      } catch {
+        break; // network gone: try again later
+      }
+    }
+  } finally {
+    fotoBusy = false;
+  }
+}
+
+/** Background uploader: runs whenever online and the queue changes. */
 export function useFotoUploader(session: Session, online: boolean) {
   const db = usePowerSync();
-  const { data: queue } = useQuery<{ id: string; mangel_id: string; uri: string; kind: string; taken_at: string }>(
-    'SELECT f.id, f.mangel_id, f.uri, f.kind, f.taken_at FROM foto_upload f JOIN mangel m ON m.id = f.mangel_id WHERE m.number IS NOT NULL',
-  );
-  const busy = useRef(false);
+  const { data: queue } = useQuery<{ n: number }>('SELECT count(*) AS n FROM foto_upload f JOIN mangel m ON m.id = f.mangel_id WHERE m.number IS NOT NULL AND f.error IS NULL');
+  const n = queue[0]?.n ?? 0;
   useEffect(() => {
-    if (!online || !queue.length || busy.current) return;
-    busy.current = true;
-    void (async () => {
-      const s = await freshSession(session);
-      for (const q of queue) {
-        try {
-          // Native multipart upload straight from the file (fetch + FormData file parts are not supported here).
-          const res = await uploadAsync(`${API_URL}/maengel/${q.mangel_id}/fotos`, q.uri, {
-            httpMethod: 'POST',
-            uploadType: FileSystemUploadType.MULTIPART,
-            fieldName: 'file',
-            mimeType: 'image/jpeg',
-            parameters: { id: q.id, kind: q.kind, taken_at: q.taken_at },
-            headers: { authorization: `Bearer ${s.token}`, 'x-device-id': `ios-${s.userId.slice(-4)}` },
-          });
-          const okStatus = res.status >= 200 && res.status < 300;
-          if (okStatus) await db.execute('DELETE FROM foto_upload WHERE id = ?', [q.id]);
-          else if (res.status < 500) await db.execute('UPDATE foto_upload SET error = ? WHERE id = ?', [`${res.status}`, q.id]);
-        } catch {
-          break; // network gone: try again on the next change
-        }
-      }
-      busy.current = false;
-    })();
-  }, [online, queue, session, db]);
+    if (online && n) void uploadQueuedFotos(db, session);
+  }, [online, n, session, db]);
 }
 
 /** Image source: the local copy if this device took it, else the server (needs network). */
 export function fotoSource(id: string, token: string) {
   const f = localFoto(id);
-  return f.exists ? { uri: f.uri } : { uri: `${API_URL}/fotos/${id}/file`, headers: { authorization: `Bearer ${token}` } };
+  if (f.exists) return { uri: f.uri };
+  const cached = fotoCacheFile(id);
+  return cached.exists ? { uri: cached.uri } : { uri: `${API_URL}/fotos/${id}/file`, headers: { authorization: `Bearer ${token}` } };
 }
 
 export function clearFotos() {
@@ -99,31 +110,39 @@ export async function queueBeleg(db: AbstractPowerSyncDatabase, kind: 'einkauf' 
   await db.execute('INSERT INTO beleg_upload (id, kind, entity_id, uri) VALUES (?, ?, ?, ?)', [id, kind, entityId, localFoto(id).uri]);
 }
 
+/** Uploads receipt photos of entries that are already on the server (nothing left for them in the local write queue). */
+let belegBusy = false;
+export async function uploadQueuedBelege(db: AbstractPowerSyncDatabase, session: Session) {
+  if (belegBusy) return;
+  belegBusy = true;
+  try {
+    const queue = await db.getAll<{ id: string; kind: string; entity_id: string; uri: string }>(
+      `SELECT b.id, b.kind, b.entity_id, b.uri FROM beleg_upload b WHERE NOT EXISTS (SELECT 1 FROM ps_crud c WHERE c.data LIKE '%' || b.entity_id || '%')`,
+    );
+    if (!queue.length) return;
+    const s = await freshSession(session);
+    for (const q of queue) {
+      try {
+        const path = q.kind === 'einkauf' ? 'einkaeufe' : 'tankvorgaenge';
+        const res = await uploadAsync(`${API_URL}/${path}/${q.entity_id}/beleg`, q.uri, {
+          httpMethod: 'POST', uploadType: FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: 'image/jpeg',
+          headers: { authorization: `Bearer ${s.token}` },
+        });
+        if (res.status >= 200 && res.status < 300) await db.execute('DELETE FROM beleg_upload WHERE id = ?', [q.id]);
+      } catch {
+        break;
+      }
+    }
+  } finally {
+    belegBusy = false;
+  }
+}
+
 export function useBelegUploader(session: Session, online: boolean) {
   const db = usePowerSync();
-  // Only entries whose own upload is through (nothing left for them in the local write queue).
-  const { data: queue } = useQuery<{ id: string; kind: string; entity_id: string; uri: string }>(
-    `SELECT b.id, b.kind, b.entity_id, b.uri FROM beleg_upload b WHERE NOT EXISTS (SELECT 1 FROM ps_crud c WHERE c.data LIKE '%' || b.entity_id || '%')`,
-  );
-  const busy = useRef(false);
+  const { data: queue } = useQuery<{ n: number }>(`SELECT count(*) AS n FROM beleg_upload b WHERE NOT EXISTS (SELECT 1 FROM ps_crud c WHERE c.data LIKE '%' || b.entity_id || '%')`);
+  const n = queue[0]?.n ?? 0;
   useEffect(() => {
-    if (!online || !queue.length || busy.current) return;
-    busy.current = true;
-    void (async () => {
-      const s = await freshSession(session);
-      for (const q of queue) {
-        try {
-          const path = q.kind === 'einkauf' ? 'einkaeufe' : 'tankvorgaenge';
-          const res = await uploadAsync(`${API_URL}/${path}/${q.entity_id}/beleg`, q.uri, {
-            httpMethod: 'POST', uploadType: FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: 'image/jpeg',
-            headers: { authorization: `Bearer ${s.token}` },
-          });
-          if (res.status >= 200 && res.status < 300) await db.execute('DELETE FROM beleg_upload WHERE id = ?', [q.id]);
-        } catch {
-          break;
-        }
-      }
-      busy.current = false;
-    })();
-  }, [online, queue, session, db]);
+    if (online && n) void uploadQueuedBelege(db, session);
+  }, [online, n, session, db]);
 }

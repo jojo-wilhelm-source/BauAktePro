@@ -1,6 +1,7 @@
 # Sync Streams: what each device receives. MUST mirror the RLS policies in
 # packages/db/migrations (docs/fachkonzept/01-rollen-rechte.md). Changing one means changing both.
 # Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
+# Rev 2026-11-11b: Dokumente offline (folders, documents, released revisions only).
 config:
   edition: 3
 
@@ -47,6 +48,10 @@ streams:
       # Mangelanzeigen incl. drafts (RLS: read for internal roles).
       - SELECT * FROM mangelanzeige WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM mangelanzeige_position WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      # Dateiablage: all folders and documents; on the device only released revisions (drafts/"Alt" stay in the web).
+      - SELECT * FROM folder WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM document WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM document_revision WHERE status = 'freigegeben' AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
 
   # Nachunternehmer: confirmed assignments to the own company + own reports. Never notes.
   nachunternehmer:
@@ -60,6 +65,10 @@ streams:
       - SELECT * FROM mangelanzeige WHERE status = 'versendet' AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
       - SELECT * FROM mangelanzeige_position WHERE anzeige_id IN (SELECT id FROM mangelanzeige WHERE status = 'versendet') AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu') AND company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
       - SELECT * FROM plan WHERE visible_to_nu = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
+      # Dateiablage: only folders released for NU, only released revisions (RLS app.folder_visible).
+      - SELECT * FROM folder WHERE visible_to_nu = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')
+      - SELECT * FROM document WHERE folder_id IN (SELECT id FROM folder WHERE visible_to_nu = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu'))
+      - SELECT * FROM document_revision WHERE status = 'freigegeben' AND document_id IN (SELECT id FROM document WHERE folder_id IN (SELECT id FROM folder WHERE visible_to_nu = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'nu')))
 
   # Bauherr: released Mängel + own reports, released plan types.
   bauherr:
@@ -70,3 +79,6 @@ streams:
       - SELECT * FROM mangel_foto WHERE mangel_id IN (SELECT id FROM mangel WHERE deleted_at IS NULL AND visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr'))
       - SELECT * FROM mangel_foto WHERE mangel_id IN (SELECT id FROM mangel WHERE deleted_at IS NULL AND reporter_company_id IN (SELECT company_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr'))
       - SELECT * FROM plan WHERE visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')
+      - SELECT * FROM folder WHERE visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')
+      - SELECT * FROM document WHERE folder_id IN (SELECT id FROM folder WHERE visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr'))
+      - SELECT * FROM document_revision WHERE status = 'freigegeben' AND document_id IN (SELECT id FROM document WHERE folder_id IN (SELECT id FROM folder WHERE visible_to_bauherr = true AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND role = 'bauherr')))

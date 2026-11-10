@@ -1,5 +1,6 @@
 export * from './roles';
 export * from './mangel';
+export * from './mangel-liste';
 export * from './format';
 export * from './location';
 export * from './mangelanzeige';

@@ -5,7 +5,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { TxSql } from '@bap/db';
-import { AnzeigeDraft, AnzeigePatch, anzeigeNo, canBePosition, formatDate, type MangelStatus } from '@bap/domain';
+import {
+  AnzeigeDraft, AnzeigePatch, anzeigeNo, canBePosition, formatDate, gruppeVon, MANGEL_GRUPPE_LABELS, MANGEL_SORT_LABELS, sortMaengel,
+  type MangelGruppe, type MangelKey, type MangelSort, type MangelStatus,
+} from '@bap/domain';
 import { renderAnzeigePdf, renderMaengelbericht, type AnzeigePdfData } from './anzeige-pdf';
 import { firstPhotos } from './foto-service';
 import { sendMail } from './mailer';
@@ -208,16 +211,36 @@ function iso(v: unknown): string | null {
 }
 
 /** Mängelbericht: selected Mängel with photo and plan crop (RLS: only visible ones end up in the PDF). */
-export async function maengelBericht(tx: TxSql, userId: string, projectId: string, ids: string[]) {
+export async function maengelBericht(
+  tx: TxSql, userId: string, projectId: string, ids: string[],
+  opts: { sort?: MangelSort; gruppen?: MangelGruppe[] } = {},
+) {
   await actorFor(tx, userId, projectId);
-  const rows = await tx`
-    SELECT m.id, m.number, m.description, m.status, m.due_date, m.plan_id, m.pin_page, m.pin_x, m.pin_y,
+  const raw = await tx`
+    SELECT m.id, m.number, m.description, m.status, m.due_date, m.nachfrist_date, m.created_at, m.plan_id, m.pin_page, m.pin_x, m.pin_y,
+           (WITH RECURSIVE up AS (SELECT id, parent_id, kind, name FROM location WHERE id = m.location_id
+                                  UNION ALL SELECT p.id, p.parent_id, p.kind, p.name FROM location p JOIN up ON p.id = up.parent_id)
+            SELECT name FROM up WHERE kind = 'geschoss' LIMIT 1) AS geschoss_name,
            l.name AS location_name, g.name AS gewerk_name, c.name AS company_name, pl.name AS plan_name, pl.plan_index, pl.file_key
     FROM mangel m JOIN location l ON l.id = m.location_id JOIN gewerk g ON g.id = m.gewerk_id
     LEFT JOIN company c ON c.id = m.assigned_company_id LEFT JOIN plan pl ON pl.id = m.plan_id
     WHERE m.project_id = ${projectId} AND m.deleted_at IS NULL ${ids.length ? tx`AND m.id IN ${tx(ids)}` : tx``}
     ORDER BY m.number`;
-  if (!rows.length) throw new HttpError(404, 'Keine Mängel gefunden');
+  if (!raw.length) throw new HttpError(404, 'Keine Mängel gefunden');
+  // Same order and folders as the list in the web app (packages/domain/mangel-liste).
+  const key = (r: (typeof raw)[number]): MangelKey => ({
+    number: r.number as number, company: (r.company_name as string) ?? null, created_at: new Date(r.created_at as string).toISOString(),
+    due: iso(r.nachfrist_date ?? r.due_date), location: r.location_name as string, geschoss: (r.geschoss_name as string) ?? null,
+    gewerk: r.gewerk_name as string, status: r.status as MangelStatus,
+  });
+  const gruppen = opts.gruppen ?? [];
+  const rows = sortMaengel(raw, opts.sort ?? 'nummer', key);
+  const groupOf = (r: (typeof raw)[number]) => (gruppen.length ? gruppen.map((g) => gruppeVon(key(r), g).label).join(' / ') : null);
+  if (gruppen.length) {
+    // Folder order first, the chosen sort inside each folder.
+    const order = new Map<string, string>(rows.map((r) => [r.id as string, gruppen.map((g) => gruppeVon(key(r), g).order).join('|')]));
+    rows.sort((a, b) => order.get(a.id as string)!.localeCompare(order.get(b.id as string)!, 'de', { numeric: true }));
+  }
   const photos = await firstPhotos(tx, rows.map((r) => r.id as string));
   const [ctx] = await tx`SELECT p.name AS project, (SELECT c.name FROM company c WHERE c.tenant_id = p.tenant_id AND c.kind = 'own' LIMIT 1) AS own FROM project p WHERE p.id = ${projectId}`;
   const { MANGEL_STATUS_LABELS } = await import('@bap/domain');
@@ -226,6 +249,9 @@ export async function maengelBericht(tx: TxSql, userId: string, projectId: strin
       title: rows.length === 1 ? `Mangel M-${String(rows[0]!.number).padStart(3, '0')}` : `Mängelbericht (${rows.length} Mängel)`,
       subtitle: ctx!.project as string,
       ownCompany: (ctx!.own as string) ?? '',
+      ordering: rows.length > 1
+        ? `Sortiert nach ${MANGEL_SORT_LABELS[opts.sort ?? 'nummer']}${gruppen.length ? ` · Ordner: ${gruppen.map((g) => MANGEL_GRUPPE_LABELS[g]).join(' / ')}` : ''}`
+        : undefined,
       items: rows.map((r) => ({
         pos: 0,
         number: r.number as number,
@@ -234,6 +260,8 @@ export async function maengelBericht(tx: TxSql, userId: string, projectId: strin
         gewerk: r.gewerk_name as string,
         company: (r.company_name as string) ?? null,
         status: MANGEL_STATUS_LABELS[r.status as keyof typeof MANGEL_STATUS_LABELS],
+        created: new Date(r.created_at as string).toISOString(),
+        group: groupOf(r),
         dueDate: iso(r.due_date),
         plan: r.file_key && r.pin_x != null
           ? { file: r.file_key as string, name: r.plan_name as string, index: r.plan_index as string, page: (r.pin_page as number) ?? 1, x: r.pin_x as number, y: r.pin_y as number }

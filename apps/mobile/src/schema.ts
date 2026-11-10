@@ -82,6 +82,10 @@ const fahrt = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datu
 const tankvorgang = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datum: column.text, liter: column.real, betrag_brutto: column.real, km_stand: column.integer, tankstelle: column.text, project_id: column.text });
 /** Receipt photos waiting for upload (einkauf / tankvorgang). Never synced. */
 const beleg_upload = new Table({ kind: column.text, entity_id: column.text, uri: column.text }, { localOnly: true });
+/** Dateiablage (docs/fachkonzept/03, 05): folders, documents and their released revisions; files are downloaded by offline.ts. */
+const folder = new Table({ project_id: column.text, parent_id: column.text, name: column.text, sort: column.integer, kind: column.text }, { indexes: { p: ['project_id'] } });
+const document = new Table({ project_id: column.text, folder_id: column.text, name: column.text, current_revision_id: column.text }, { indexes: { f: ['folder_id'] } });
+const document_revision = new Table({ document_id: column.text, project_id: column.text, version_label: column.text, file_name: column.text, mime: column.text, size_bytes: column.integer, status: column.text, decided_at: column.text });
 const sync_conflict = new Table({ project_id: column.text, entity_id: column.text, kind: column.text, reason: column.text, created_at: column.text });
 
 /**
@@ -100,7 +104,7 @@ const pending_action = new Table(
 );
 
 export const AppSchema = new Schema({
-  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, fahrzeug, fahrt, tankvorgang, beleg_upload, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
+  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, fahrzeug, fahrt, tankvorgang, beleg_upload, folder, document, document_revision, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
 });
 export type Database = (typeof AppSchema)['types'];
 export type MangelRow = Database['mangel'];

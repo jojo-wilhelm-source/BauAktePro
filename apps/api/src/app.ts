@@ -205,9 +205,14 @@ export function buildApp(sql: Sql) {
     reply.header('content-type', f.type).header('cache-control', 'private, max-age=86400');
     return reply.send(f.bytes);
   });
-  app.get<{ Params: { projectId: string }; Querystring: { ids?: string } }>('/projects/:projectId/maengel/pdf', async (req, reply) => {
+  /** Mängelbericht: ids = selection (else all visible), sort and gruppen (folders, e.g. "firma,monat") as in the list. */
+  app.get<{ Params: { projectId: string }; Querystring: { ids?: string; sort?: string; gruppen?: string } }>('/projects/:projectId/maengel/pdf', async (req, reply) => {
     const ids = (req.query.ids ?? '').split(',').filter((x) => /^[0-9a-f-]{36}$/.test(x));
-    const bytes = await asUser(sql, req.userId, (tx) => maengelBericht(tx, req.userId, req.params.projectId, ids));
+    const q = z.object({
+      sort: z.enum(['nummer', 'firma', 'datum_neu', 'datum_alt', 'frist', 'ort']).optional(),
+      gruppen: z.string().optional().transform((v) => (v ? v.split(',') : [])).pipe(z.array(z.enum(['firma', 'geschoss', 'ort', 'gewerk', 'monat', 'tag', 'status'])).max(3)),
+    }).parse(req.query);
+    const bytes = await asUser(sql, req.userId, (tx) => maengelBericht(tx, req.userId, req.params.projectId, ids, { sort: q.sort, gruppen: q.gruppen }));
     reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="Maengelbericht.pdf"');
     return reply.send(Buffer.from(bytes));
   });

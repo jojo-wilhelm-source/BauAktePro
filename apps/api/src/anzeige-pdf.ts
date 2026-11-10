@@ -30,7 +30,7 @@ export interface AnzeigePdfData {
   }[];
 }
 
-type Block = AnzeigePdfData['positions'][number] & { status?: string; company?: string | null };
+type Block = AnzeigePdfData['positions'][number] & { status?: string; company?: string | null; created?: string; group?: string | null };
 
 interface BlockCtx {
   doc: PDFDocument;
@@ -56,7 +56,7 @@ async function drawMangelBlock(c: BlockCtx, p: Block, label: string) {
   const { doc, font, bold } = c;
   const width = A4[0] - 2 * M;
   const descLines = wrap(p.description, bold, 11, width).slice(0, 4);
-  const need = 18 + descLines.length * 15 + 3 * 13 + 10 + IMG_H + 22;
+  const need = 18 + descLines.length * 15 + 4 * 13 + 10 + IMG_H + 22;
   if (c.y - need < M + 30) {
     c.page = doc.addPage(A4);
     c.y = A4[1] - M;
@@ -77,6 +77,7 @@ async function drawMangelBlock(c: BlockCtx, p: Block, label: string) {
     ['Ort', p.location],
     ['Gewerk', p.company ? `${p.gewerk} · ${p.company}` : p.gewerk],
     ['Plan', p.plan ? `${p.plan.name}, Index ${p.plan.index}` : '–'],
+    ...(p.created ? ([['Erfasst', formatDate(p.created)]] as [string, string][]) : []),
   ];
   for (const [k, v] of meta) {
     text(k, M, c.y, 9.5, font, GREY);
@@ -147,6 +148,8 @@ export interface BerichtData {
   title: string;
   subtitle: string;
   ownCompany: string;
+  /** Sorting/folders as chosen in the list, printed under the title. */
+  ordering?: string;
   items: Block[];
 }
 
@@ -166,14 +169,100 @@ export async function renderMaengelbericht(d: BerichtData, planDir: string): Pro
   page.drawText(safe(d.title), { x: M, y, size: 18, font: bold, color: INK });
   y -= 17;
   page.drawText(safe(d.subtitle), { x: M, y, size: 10.5, font, color: GREY });
-  y -= 26;
+  y -= 18;
+  if (d.ordering) {
+    page.drawText(safe(d.ordering), { x: M, y, size: 9, font, color: GREY });
+    y -= 14;
+  }
+  y -= 8;
   const ctx: BlockCtx = { doc, font, bold, planDir, planCache: new Map(), page, y };
-  for (const it of d.items) await drawMangelBlock(ctx, it, `Mangel`);
+  // Overview first (several Mängel): one line each, with the same folders as in the list.
+  if (d.items.length > 1) drawOverview(ctx, d.items);
+  let group: string | null | undefined;
+  for (const it of d.items) {
+    if (it.group && it.group !== group) drawGroupHeader(ctx, it.group, d.items.filter((x) => x.group === it.group).length);
+    group = it.group;
+    await drawMangelBlock(ctx, it, `Mangel`);
+  }
   const pages = doc.getPages();
   pages.forEach((pg, i) =>
     pg.drawText(safe(`${d.title} · ${d.subtitle} · Seite ${i + 1} von ${pages.length}`), { x: M, y: 30, size: 8.5, font, color: GREY }),
   );
   return doc.save();
+}
+
+/** Folder heading in the report ("Elektro Blitz GmbH › November 2026"). */
+function drawGroupHeader(c: BlockCtx, label: string, count: number) {
+  if (c.y < M + 30 + 60 + IMG_H) {
+    c.page = c.doc.addPage(A4);
+    c.y = A4[1] - M;
+  }
+  c.page.drawRectangle({ x: M, y: c.y - 6, width: A4[0] - 2 * M, height: 22, color: rgb(0.94, 0.95, 0.97) });
+  c.page.drawText(safe(label), { x: M + 8, y: c.y, size: 11.5, font: c.bold, color: INK });
+  const n = `${count} ${count === 1 ? 'Mangel' : 'Mängel'}`;
+  c.page.drawText(n, { x: A4[0] - M - 8 - c.font.widthOfTextAtSize(n, 9), y: c.y + 1, size: 9, font: c.font, color: GREY });
+  c.y -= 30;
+}
+
+/** Overview table: Nr. | Mangel | Firma | Ort | Erfasst | Status, grouped like the list. */
+function drawOverview(c: BlockCtx, items: Block[]) {
+  const cols = [
+    { t: 'Nr.', w: 42 },
+    { t: 'Mangel', w: 170 },
+    { t: 'Firma', w: 95 },
+    { t: 'Ort', w: 60 },
+    { t: 'Erfasst', w: 52 },
+    { t: 'Status', w: 64 },
+  ];
+  const head = () => {
+    let x = M;
+    for (const col of cols) {
+      c.page.drawText(col.t, { x, y: c.y, size: 8, font: c.bold, color: GREY });
+      x += col.w;
+    }
+    c.y -= 5;
+    c.page.drawLine({ start: { x: M, y: c.y }, end: { x: A4[0] - M, y: c.y }, thickness: 0.6, color: LINE });
+    c.y -= 11;
+  };
+  const fit = (s: string, w: number, f: PDFFont, size: number) => {
+    let t = safe(s);
+    while (t.length > 1 && f.widthOfTextAtSize(t, size) > w - 6) t = t.slice(0, -2) + '…';
+    return t;
+  };
+  c.page.drawText('Übersicht', { x: M, y: c.y, size: 12, font: c.bold, color: INK });
+  c.y -= 18;
+  head();
+  let group: string | null | undefined;
+  for (const it of items) {
+    if (c.y < M + 40) {
+      c.page = c.doc.addPage(A4);
+      c.y = A4[1] - M;
+      head();
+    }
+    if (it.group && it.group !== group) {
+      c.y -= 3;
+      c.page.drawText(fit(it.group, A4[0] - 2 * M, c.bold, 9), { x: M, y: c.y, size: 9, font: c.bold, color: INK });
+      c.y -= 13;
+      group = it.group;
+    }
+    const cells = [
+      `M-${String(it.number).padStart(3, '0')}`,
+      it.description,
+      it.company ?? '–',
+      it.location,
+      it.created ? formatDate(it.created) : '–',
+      it.status ?? '',
+    ];
+    let x = M;
+    cells.forEach((v, i) => {
+      c.page.drawText(fit(v, cols[i]!.w, c.font, 8.5), { x, y: c.y, size: 8.5, font: c.font, color: i === 0 ? GREY : INK });
+      x += cols[i]!.w;
+    });
+    c.y -= 13;
+  }
+  // Details start on a new page.
+  c.page = c.doc.addPage(A4);
+  c.y = A4[1] - M;
 }
 
 const A4: [number, number] = [595.28, 841.89];

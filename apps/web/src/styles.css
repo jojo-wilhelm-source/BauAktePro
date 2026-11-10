@@ -248,3 +248,18 @@ button.token { border: 0; cursor: pointer; }
 .warn-box strong { color: var(--red); }
 .money { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 @media (max-width: 1000px) { .docs-split { grid-template-columns: 1fr; } }
+
+/* Mängel: toolbar, selection and folder view */
+.list-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 32px 14px; }
+.list-toolbar .spacer { flex: 1; }
+.field-inline { display: inline-flex; align-items: center; gap: 6px; color: var(--label-2); font-size: 13px; }
+.table th.check, .table td.check { width: 34px; padding-right: 0; }
+.table input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; vertical-align: middle; }
+.table tr.folder-row td { background: var(--fill); font-weight: 600; padding-top: 9px; padding-bottom: 9px; }
+.table tr.folder-row td > * { vertical-align: middle; }
+.table tr.folder-row .disclosure { display: inline-flex; transition: transform .15s; color: var(--label-2); margin-right: 6px; }
+.table tr.folder-row .disclosure.open { transform: rotate(90deg); }
+.table tr.folder-row .folder-name { margin: 0 8px 0 6px; }
+.table tr.folder-row .sub { display: inline; font-weight: 400; }
+.table tr.folder-row .folder-pdf { margin-left: 12px; padding: 2px 10px; }
+button.link { border: 0; background: none; color: var(--accent); padding: 0; font: inherit; cursor: pointer; }

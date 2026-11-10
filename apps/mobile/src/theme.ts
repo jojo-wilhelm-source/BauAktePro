@@ -30,6 +30,7 @@ export const TINT = {
   indigo: '#5856D6',
   teal: '#30B0C7',
   purple: '#AF52DE',
+  pink: '#FF2D55',
 } as const;
 export type Tint = keyof typeof TINT;
 

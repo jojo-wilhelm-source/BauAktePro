@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, type MangelStatus, type Priority } from '@bap/domain';
+import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, MANGEL_GRUPPE_LABELS, MANGEL_SORT_LABELS, ordnerBaum, sortMaengel, type MangelGruppe, type MangelKey, type MangelOrdner, type MangelSort, type MangelStatus, type Priority } from '@bap/domain';
 import { api, ApiError, getToken, openPdf, setToken, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
 import { AnzeigenPage, type AnzeigeStart } from './Anzeigen';
 import { BesprechungenPage } from './Besprechungen';
@@ -330,10 +330,33 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
   const [scope, setScope] = useState<Scope>('offen');
   const [gewerk, setGewerk] = useState('');
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState<MangelSort>('nummer');
+  // List or folder view ("Unterordner"): folders by up to two levels, e.g. Firma › Monat.
+  const [view, setView] = useState<'liste' | 'ordner'>('liste');
+  const [ordner, setOrdner] = useState<MangelGruppe>('firma');
+  const [unterordner, setUnterordner] = useState<MangelGruppe | ''>('monat');
+  const [zu, setZu] = useState<Set<string>>(new Set()); // collapsed folders
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  // Geschoss of each room (for the folder level "Geschoss" and the sort by Ort).
+  const geschossOf = useMemo(() => {
+    const byId = new Map(info.locations.map((l) => [l.id, l]));
+    return (id: string): string | null => {
+      for (let l = byId.get(id); l; l = l.parent_id ? byId.get(l.parent_id) : undefined) if (l.kind === 'geschoss') return l.name;
+      return null;
+    };
+  }, [info.locations]);
+  const keyOf = useCallback(
+    (m: Mangel): MangelKey => ({
+      number: m.number, company: m.assigned_company_name, created_at: m.created_at, due: m.nachfrist_date ?? m.due_date,
+      location: m.location_name, geschoss: geschossOf(m.location_id), gewerk: m.gewerk_name, status: m.status,
+    }),
+    [geschossOf],
+  );
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return maengel.filter(
+    const list = maengel.filter(
       (m) =>
         (scope === 'alle' ||
           (scope === 'offen' && m.status !== 'abgenommen') ||
@@ -342,9 +365,107 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
         (!gewerk || m.gewerk_id === gewerk) &&
         (!needle || `${mNo(m.number)} ${m.description} ${m.location_name} ${m.assigned_company_name ?? ''}`.toLowerCase().includes(needle)),
     );
-  }, [maengel, scope, gewerk, q]);
+    return sortMaengel(list, sort, keyOf);
+  }, [maengel, scope, gewerk, q, sort, keyOf]);
+  const levels: MangelGruppe[] = unterordner && unterordner !== ordner ? [ordner, unterordner] : [ordner];
+  const tree = useMemo(() => (view === 'ordner' ? ordnerBaum(visible, levels, keyOf) : []), [view, visible, keyOf, ordner, unterordner]); // eslint-disable-line react-hooks/exhaustive-deps
   const current = maengel.find((m) => m.id === selected) ?? null;
 
+  // Selection only counts for Mängel that are still visible (filters may have hidden some).
+  const sel = visible.filter((m) => checked.has(m.id));
+  const toggle = (ids: string[], on: boolean) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) on ? next.add(id) : next.delete(id);
+      return next;
+    });
+  const allIn = (f: MangelOrdner<Mangel>): Mangel[] => [...f.items, ...f.children.flatMap(allIn)];
+  const berichtFor = (list: Mangel[]) => {
+    const params = new URLSearchParams({ ids: list.map((m) => m.id).join(','), sort });
+    if (view === 'ordner') params.set('gruppen', levels.join(','));
+    return run(() => openPdf(`/projects/${info.project.id}/maengel/pdf?${params}`), 'Mängelbericht geöffnet');
+  };
+
+  const row = (m: Mangel, indent = 0) => (
+    <tr key={m.id} className={m.id === selected ? 'selected' : ''} onClick={() => onSelect(m.id)}>
+      <td className="check" onClick={(e) => e.stopPropagation()}>
+        <input type="checkbox" aria-label={`${mNo(m.number)} auswählen`} checked={checked.has(m.id)} onChange={(e) => toggle([m.id], e.target.checked)} />
+      </td>
+      <td className="num" style={indent ? { paddingLeft: 12 + indent * 22 } : undefined}>{mNo(m.number)}</td>
+      <td>
+        <div className="desc">
+          {m.priority === 'kritisch' && <span className="tag critical">Kritisch</span>}
+          {m.description}
+        </div>
+        <div className="sub">
+          {m.location_name} · {m.gewerk_name} · erfasst {formatDate(m.created_at)}
+        </div>
+      </td>
+      <td>
+        {m.assigned_company_name ?? <span className="sub">–</span>}
+        {m.assigned_company_id && !m.assignment_confirmed && <span className="tag">Vorschlag</span>}
+        {m.anzeige_id && (
+          <div className="sub">
+            {m.anzeige_status === 'versendet' ? `${anzeigeNo(m.anzeige_number)} · ${formatDate(m.anzeige_sent_at)}` : 'In Mangelanzeige (Entwurf)'}
+          </div>
+        )}
+      </td>
+      <td>
+        <StatusPill status={m.status} />
+      </td>
+      <td>
+        <div className="tabular">{formatDate(m.nachfrist_date ?? m.due_date)}</div>
+        <div style={{ marginTop: 4 }}>
+          <AmpelPill e={m.escalation} />
+        </div>
+        {m.escalation.nachfristSuggestion && info.role === 'bauleitung' && (
+          <button
+            className="btn small"
+            style={{ marginTop: 6 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              void run(
+                () => api(`/maengel/${m.id}/nachfrist`, { method: 'POST', body: { date: m.escalation.nachfristSuggestion, base_version: m.version } }),
+                `2. Nachfrist für ${mNo(m.number)} gesetzt`,
+              );
+            }}
+          >
+            2. Nachfrist {formatDate(m.escalation.nachfristSuggestion)}
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+
+  const folderRows = (folders: MangelOrdner<Mangel>[], depth: number): ReactNode[] =>
+    folders.flatMap((f) => {
+      const items = allIn(f);
+      const n = items.filter((m) => checked.has(m.id)).length;
+      const open = !zu.has(f.path);
+      return [
+        <tr key={f.path} className="folder-row" onClick={() => setZu((prev) => { const next = new Set(prev); open ? next.add(f.path) : next.delete(f.path); return next; })}>
+          <td className="check" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              aria-label={`Ordner ${f.label} auswählen`}
+              checked={n === items.length}
+              ref={(el) => { if (el) el.indeterminate = n > 0 && n < items.length; }}
+              onChange={(e) => toggle(items.map((m) => m.id), e.target.checked)}
+            />
+          </td>
+          <td colSpan={5} style={{ paddingLeft: 12 + depth * 22 }}>
+            <span className={`disclosure ${open ? 'open' : ''}`}><Icon name="chevron" size={13} /></span>
+            <Icon name="ordner" size={16} />
+            <span className="folder-name">{f.label}</span>
+            <span className="sub">{f.count} {f.count === 1 ? 'Mangel' : 'Mängel'}</span>
+            <button className="btn small folder-pdf" onClick={(e) => { e.stopPropagation(); void berichtFor(items); }} title="Mängelbericht nur für diesen Ordner">PDF</button>
+          </td>
+        </tr>,
+        ...(open ? [...folderRows(f.children, depth + 1), ...f.items.map((m) => row(m, depth + 1))] : []),
+      ];
+    });
+
+  const allChecked = visible.length > 0 && sel.length === visible.length;
   return (
     <>
       <PageHeader eyebrow={info.project.name} title="Mängel">
@@ -359,14 +480,6 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
             </button>
           ))}
         </div>
-        <button
-          className="btn"
-          disabled={visible.length === 0}
-          onClick={() => run(() => openPdf(`/projects/${info.project.id}/maengel/pdf?ids=${visible.map((m) => m.id).join(',')}`), 'Mängelbericht geöffnet')}
-          title="PDF mit Foto und Planausschnitt je Mangel"
-        >
-          Mängelbericht (PDF)
-        </button>
         <select className="popup" value={gewerk} onChange={(e) => setGewerk(e.target.value)} aria-label="Gewerk">
           <option value="">Alle Gewerke</option>
           {info.gewerke.map((g) => (
@@ -375,12 +488,56 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
             </option>
           ))}
         </select>
+        <div className="segmented" role="tablist" aria-label="Ansicht">
+          <button className={view === 'liste' ? 'on' : ''} onClick={() => setView('liste')}>Liste</button>
+          <button className={view === 'ordner' ? 'on' : ''} onClick={() => setView('ordner')}>Ordner</button>
+        </div>
       </PageHeader>
+      <div className="list-toolbar">
+        {view === 'ordner' && (
+          <>
+            <label className="field-inline">Ordner
+              <select className="popup" value={ordner} onChange={(e) => setOrdner(e.target.value as MangelGruppe)}>
+                {(Object.keys(MANGEL_GRUPPE_LABELS) as MangelGruppe[]).map((g) => <option key={g} value={g}>{MANGEL_GRUPPE_LABELS[g]}</option>)}
+              </select>
+            </label>
+            <label className="field-inline">Unterordner
+              <select className="popup" value={unterordner} onChange={(e) => setUnterordner(e.target.value as MangelGruppe | '')}>
+                <option value="">keine</option>
+                {(Object.keys(MANGEL_GRUPPE_LABELS) as MangelGruppe[]).filter((g) => g !== ordner).map((g) => <option key={g} value={g}>{MANGEL_GRUPPE_LABELS[g]}</option>)}
+              </select>
+            </label>
+          </>
+        )}
+        <label className="field-inline">Sortieren
+          <select className="popup" value={sort} onChange={(e) => setSort(e.target.value as MangelSort)}>
+            {(Object.keys(MANGEL_SORT_LABELS) as MangelSort[]).map((k) => <option key={k} value={k}>{MANGEL_SORT_LABELS[k]}</option>)}
+          </select>
+        </label>
+        <span className="spacer" />
+        {sel.length > 0 && (
+          <button className="btn small" onClick={() => setChecked(new Set())} title="Auswahl aufheben">
+            Auswahl aufheben
+          </button>
+        )}
+        <button
+          className={`btn ${sel.length ? 'filled' : ''}`}
+          disabled={visible.length === 0}
+          onClick={() => void berichtFor(sel.length ? sel : visible)}
+          title="PDF mit Übersicht, Foto und Planausschnitt je Mangel – in der Reihenfolge und Ordnung der Ansicht"
+        >
+          {sel.length ? `Mängelbericht (${sel.length} ausgewählt)` : `Mängelbericht (alle ${visible.length})`}
+        </button>
+      </div>
       <div className="split">
         <div className="card">
           <table className="table">
             <thead>
               <tr>
+                <th className="check">
+                  <input type="checkbox" aria-label="Alle auswählen" checked={allChecked} ref={(el) => { if (el) el.indeterminate = sel.length > 0 && !allChecked; }}
+                    onChange={(e) => toggle(visible.map((m) => m.id), e.target.checked)} />
+                </th>
                 <th>Nr.</th>
                 <th>Mangel</th>
                 <th>Nachunternehmer</th>
@@ -388,55 +545,7 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
                 <th>Frist</th>
               </tr>
             </thead>
-            <tbody>
-              {visible.map((m) => (
-                <tr key={m.id} className={m.id === selected ? 'selected' : ''} onClick={() => onSelect(m.id)}>
-                  <td className="num">{mNo(m.number)}</td>
-                  <td>
-                    <div className="desc">
-                      {m.priority === 'kritisch' && <span className="tag critical">Kritisch</span>}
-                      {m.description}
-                    </div>
-                    <div className="sub">
-                      {m.location_name} · {m.gewerk_name}
-                    </div>
-                  </td>
-                  <td>
-                    {m.assigned_company_name ?? <span className="sub">–</span>}
-                    {m.assigned_company_id && !m.assignment_confirmed && <span className="tag">Vorschlag</span>}
-                    {m.anzeige_id && (
-                      <div className="sub">
-                        {m.anzeige_status === 'versendet' ? `${anzeigeNo(m.anzeige_number)} · ${formatDate(m.anzeige_sent_at)}` : 'In Mangelanzeige (Entwurf)'}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <StatusPill status={m.status} />
-                  </td>
-                  <td>
-                    <div className="tabular">{formatDate(m.nachfrist_date ?? m.due_date)}</div>
-                    <div style={{ marginTop: 4 }}>
-                      <AmpelPill e={m.escalation} />
-                    </div>
-                    {m.escalation.nachfristSuggestion && info.role === 'bauleitung' && (
-                      <button
-                        className="btn small"
-                        style={{ marginTop: 6 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void run(
-                            () => api(`/maengel/${m.id}/nachfrist`, { method: 'POST', body: { date: m.escalation.nachfristSuggestion, base_version: m.version } }),
-                            `2. Nachfrist für ${mNo(m.number)} gesetzt`,
-                          );
-                        }}
-                      >
-                        2. Nachfrist {formatDate(m.escalation.nachfristSuggestion)}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            <tbody>{view === 'ordner' ? folderRows(tree, 0) : visible.map((m) => row(m))}</tbody>
           </table>
           {visible.length === 0 && <div className="empty">Keine Mängel in dieser Ansicht</div>}
         </div>

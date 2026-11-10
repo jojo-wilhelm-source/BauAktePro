@@ -1,6 +1,6 @@
 import '@azure/core-asynciterator-polyfill';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, Image, LogBox, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { BlurView } from 'expo-blur';
@@ -23,10 +23,14 @@ import {
   type Priority,
   type ProjectRole,
 } from '@bap/domain';
-import { Connector, openDatabase } from './src/db';
+import { openDatabase } from './src/db';
 import { BesprechungTab } from './src/BesprechungTab';
 import { PlanScreen } from './src/PlanScreen';
-import { clearPlanFiles, usePlanFiles, type PlanFiles } from './src/planStore';
+import { usePlanFiles, type PlanFiles } from './src/planStore';
+import { clearOfflineFiles } from './src/offline';
+import { SyncProvider, useSync } from './src/sync';
+import { SyncCenter, useSyncLabel } from './src/SyncCenter';
+import { DokumenteScreen } from './src/DokumenteScreen';
 import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoUploader, type Picked } from './src/fotoStore';
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import type { MangelRow } from './src/schema';
@@ -51,7 +55,6 @@ const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal
 /** Modules of the full product that are not built yet (CLAUDE.md, Umsetzungsreihenfolge). */
 /** Modules that live in the web app for now (desk work). */
 const IM_WEB: [SFSymbol, Tint, string][] = [
-  ['folder', 'blue', 'Dokumente'],
   ['building.2', 'gray', 'Nachunternehmer'],
   ['doc.plaintext', 'teal', 'Nachträge & Rechnungen'],
   ['chart.bar', 'green', 'Kosten'],
@@ -81,12 +84,6 @@ export default function App() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!db || !session) return;
-    void db.connect(new Connector(session, `ios-${session.userId.slice(-4)}`));
-    return () => void db.disconnect();
-  }, [db, session]);
-
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
@@ -96,16 +93,18 @@ export default function App() {
         <Login onLogin={setSession} />
       ) : (
         <PowerSyncContext.Provider value={db}>
-          <Main
-            session={session}
-            onLogout={async () => {
-              await db.disconnectAndClear(); // device data belongs to the user: remove on logout
-              clearPlanFiles();
-              clearFotos();
-              await logout();
-              setSession(null);
-            }}
-          />
+          <SyncProvider key={session.userId} session={session}>
+            <Main
+              session={session}
+              onLogout={async () => {
+                await db.disconnectAndClear(); // device data belongs to the user: remove on logout
+                clearOfflineFiles();
+                clearFotos();
+                await logout();
+                setSession(null);
+              }}
+            />
+          </SyncProvider>
         </PowerSyncContext.Provider>
       )}
     </SafeAreaProvider>
@@ -176,12 +175,16 @@ function useSyncState() {
   return { status, pending, tint, short };
 }
 
+/** Header pill: tap opens "Offline & Abgleich". */
 function SyncPill() {
-  const { tint, short } = useSyncState();
+  const { tint, text } = useSyncLabel();
+  const { openCenter } = useSync();
   return (
-    <Pill tint={tint} dot>
-      {short}
-    </Pill>
+    <Pressable hitSlop={8} onPress={() => openCenter(true)}>
+      <Pill tint={tint} dot>
+        {text}
+      </Pill>
+    </Pressable>
   );
 }
 
@@ -256,7 +259,8 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   );
   const { data: plans } = useQuery<{ id: string; name: string; plan_index: string }>('SELECT id, name, plan_index FROM plan WHERE project_id = ? ORDER BY name', [pid]);
   // All plans of the project are kept on the device, so they work on site without network.
-  const { files: planFiles, loading: plansLoading } = usePlanFiles(plans, session, status.connected);
+  const { files: planFiles, loading: plansLoading } = usePlanFiles(plans);
+  const sync = useSync();
   // Photos taken offline go up automatically once online and the Mangel is on the server.
   useFotoUploader(session, status.connected);
   useBelegUploader(session, status.connected);
@@ -321,6 +325,9 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
       )}
       <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }} />
 
+      <Modal visible={sync.centerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => sync.openCenter(false)}>
+        <SyncCenter onClose={() => sync.openCenter(false)} />
+      </Modal>
       <Modal visible={!!current} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelected(null)}>
         {current && <Detail m={current} me={me} token={session.token} pendingFor={pending.find((p) => p.mangel_id === current.id)} onClose={() => setSelected(null)} />}
       </Modal>
@@ -340,6 +347,7 @@ const SCOPES: [Scope, string][] = [
 ];
 
 function MaengelTab({ project, maengel, pending, onSelect }: { project: string; maengel: Mangel[]; pending: Pending[]; onSelect: (id: string) => void }) {
+  const { syncNow, syncing } = useSync();
   const [scope, setScope] = useState(0);
   const [q, setQ] = useState('');
   const visible = useMemo(() => {
@@ -358,6 +366,8 @@ function MaengelTab({ project, maengel, pending, onSelect }: { project: string; 
       keyExtractor={(m) => m.id}
       contentContainerStyle={{ paddingBottom: 120 }}
       keyboardDismissMode="on-drag"
+      // Pull down: sync now (upload, download, files).
+      refreshControl={<RefreshControl refreshing={syncing} onRefresh={() => void syncNow()} />}
       ListHeaderComponent={
         <LargeHeader eyebrow={project} title="Mängel" right={<SyncPill />}>
           <SearchField value={q} onChange={setQ} />
@@ -492,11 +502,12 @@ function MehrTab(props: {
   onLogout: () => void;
   plansOnDevice: string;
 }) {
-  const { status, pending, tint, short } = useSyncState();
+  const { tint, text } = useSyncLabel();
+  const { syncNow, syncing, openCenter, mode } = useSync();
   const role = props.memberships.find((m) => m.project_id === props.projectId)?.role;
   const project = props.memberships.find((m) => m.project_id === props.projectId);
   const intern = !!role && role !== 'nu' && role !== 'bauherr';
-  const [open, setOpen] = useState<'einkauf' | 'fahrt' | null>(null);
+  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | null>(null);
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
       <LargeHeader title="Mehr" />
@@ -521,11 +532,14 @@ function MehrTab(props: {
             <Row key={m.project_id} label={m.name} subtitle={roleLabel(m.role)} checked={m.project_id === props.projectId} onPress={() => props.onProject(m.project_id)} />
           ))}
         </Section>
-        <Section title="Abgleich" footer="Pläne und Mängel sind auf dem Gerät gespeichert und verschlüsselt. Änderungen werden übertragen, sobald eine Verbindung besteht.">
-          <Row icon="arrow.triangle.2.circlepath" iconBg={tint} label="Status" value={short} />
-          <Row icon="tray.and.arrow.up" iconBg="blue" label="Ausstehende Änderungen" value={String(pending)} />
+        <Section title="Abgleich" footer={mode === 'auto' ? 'Automatisch, sobald Netz da ist. Pläne, Mängel, Fotos und Dokumente liegen verschlüsselt auf dem Gerät.' : 'Nur per Klick: Das Gerät gleicht erst ab, wenn du „Jetzt abgleichen“ tippst.'}>
+          <Row icon="arrow.triangle.2.circlepath" iconBg={tint} label="Status" value={text} />
           <Row icon="map" iconBg="indigo" label="Pläne auf dem Gerät" value={props.plansOnDevice} />
-          <Row icon="clock" iconBg="gray" label="Letzter Abgleich" value={status.lastSyncedAt ? status.lastSyncedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '–'} />
+          <Row icon="arrow.clockwise" iconBg="blue" label={syncing ? 'Gleicht ab …' : 'Jetzt abgleichen'} tone="accent" value={syncing ? <ActivityIndicator /> : undefined} onPress={syncing ? undefined : () => void syncNow()} />
+          <Row icon="internaldrive" iconBg="gray" label="Offline & Abgleich" chevron onPress={() => openCenter(true)} />
+        </Section>
+        <Section title="Ablage">
+          <Row icon="folder" iconBg="teal" label="Dokumente" subtitle="Freigegebene Stände, offline lesbar" chevron onPress={() => setOpen('dokumente')} />
         </Section>
         {intern && (
           <Section title="Auf der Baustelle" footer="Funktioniert auch ohne Netz. Die Bauleitung gibt Einkäufe im Web frei.">
@@ -538,6 +552,9 @@ function MehrTab(props: {
             <Row key={label} icon={icon} iconBg={bg} label={<Text style={[T.body, { color: C.label2 }]}>{label}</Text>} />
           ))}
         </Section>
+        <Modal visible={open === 'dokumente'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
+          <DokumenteScreen projectId={props.projectId} onClose={() => setOpen(null)} />
+        </Modal>
         <Modal visible={open === 'einkauf'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <EinkaufScreen projectId={props.projectId} userId={props.session.userId} userName={props.session.name ?? props.session.email} onClose={() => setOpen(null)} />
         </Modal>

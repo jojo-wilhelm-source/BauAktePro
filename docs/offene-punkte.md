@@ -62,3 +62,5 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
   **Entscheidung:**
 - [ ] **D6 – Baubesprechung mit Bauherr:** Sieht der Bauherr die nicht internen Punkte der Baubesprechung im Portal (Annahme bisher: nein, nur das Protokoll-PDF)? Bekommt er eine eigene Aufgabenliste? → [09](fachkonzept/09-besprechungen.md)
   **Entscheidung:**
+- [ ] **D7 – Offline-Speicher:** Sollen wirklich alle Dokumente und Fotos aufs Gerät, oder nur gewählte Ordner („offline halten“)? Speicherlimit je Gerät? Große Dateien nur im WLAN laden (Annahme bisher: alles, auch mobil)? → [05](fachkonzept/05-offline-sync.md)
+  **Entscheidung:**

@@ -71,3 +71,9 @@ Kritische Mängel haben **keine eigenen Eskalationszeiten**; sie unterscheiden s
 - **Bauleitung:** Liste + Plan + Filter + Ampel
 - **NU:** nur eigene Mängel
 - **Bauherr:** eigene und abnahmerelevante Mängel, ohne interne Notizen
+
+## Umsetzungsstand (10.11.2026): Liste, Ordner, Mängelbericht
+- **Sortieren** nach Nummer, Firma, Datum (neueste/älteste zuerst), Frist, Ort.
+- **Ordner-Ansicht** (separate Ansicht neben der Liste): Ordner und Unterordner nach Firma, Geschoss, Raum, Gewerk, Monat, Tag oder Status (z. B. Firma › Monat), auf- und zuklappbar.
+- **Auswahl** per Häkchen (einzeln, ganzer Ordner, alle). Der **Mängelbericht** enthält nur die ausgewählten Mängel (ohne Auswahl: alle der Ansicht), in derselben Reihenfolge und mit denselben Ordnern als Überschriften, vorne eine Übersicht. Je Ordner gibt es einen eigenen „PDF“-Knopf.
+- Rechte: Der Bericht enthält nur, was die Person sehen darf (RLS); ein NU bekommt fremde Mängel auch über eine manipulierte Auswahl nicht.

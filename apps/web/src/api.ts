@@ -59,6 +59,7 @@ export interface Mangel {
   pin_x: number | null;
   pin_y: number | null;
   created_by_name: string;
+  created_at: string;
   version: number;
   escalation: { stage: string; ampel: 'gruen' | 'gelb' | 'rot' | 'grau'; label: string; nachfristSuggestion: string | null };
   allowed_transitions: MangelStatus[];
