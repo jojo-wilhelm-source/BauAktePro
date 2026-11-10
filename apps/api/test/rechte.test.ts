@@ -165,3 +165,77 @@ describe('Audit Log', () => {
     })).rejects.toThrow(/permission denied/);
   });
 });
+
+describe('Mangelanzeige', () => {
+  const draft = (extra: object = {}) => ({
+    id: randomUUID(), project_id: ID.project, company_id: ID.coFliesen, mangel_ids: [ID.mFliesen], deadline: '2026-11-24', ...extra,
+  });
+  const list = async (user: keyof typeof ID) => (await call(user, 'GET', `/projects/${ID.project}/mangelanzeigen`)).body as any[];
+
+  it('nur die Bauleitung erstellt Anzeigen (Polier, NU, Bauherr nicht)', async () => {
+    for (const u of ['uPolier', 'uFliesen', 'uBauherr'] as const) {
+      expect((await call(u, 'POST', '/mangelanzeigen', draft())).status).toBe(403);
+    }
+    expect((await call('uBauleitung', 'POST', '/mangelanzeigen', draft())).status).toBe(200);
+  });
+
+  it('nur bestätigt zugewiesene Mängel desselben NU werden Positionen', async () => {
+    expect((await call('uBauleitung', 'POST', '/mangelanzeigen', draft({ mangel_ids: [ID.mElektro] }))).status).toBe(422);
+    expect((await call('uBauleitung', 'POST', '/mangelanzeigen', draft({ company_id: ID.coElektro, mangel_ids: [ID.mUnconfirmed] }))).status).toBe(422);
+  });
+
+  it('NU sieht keine Entwürfe, nach dem Versand nur die eigene Anzeige; Bauherr sieht keine', async () => {
+    const d = draft();
+    await call('uBauleitung', 'POST', '/mangelanzeigen', d);
+    expect(await list('uFliesen')).toEqual([]);
+    expect((await call('uFliesen', 'GET', `/mangelanzeigen/${d.id}`)).status).toBe(404);
+
+    const sent = await call('uBauleitung', 'POST', `/mangelanzeigen/${d.id}/send`, { base_version: 1 });
+    expect(sent.status).toBe(200);
+    expect(sent.body.status).toBe('versendet');
+    expect(sent.body.number).toBe(1);
+    expect(sent.body.recipient_email).toBe('buero@fliesen-fuchs.example.test');
+
+    expect((await list('uFliesen')).map((a) => a.id)).toEqual([d.id]);
+    expect(await list('uElektro')).toEqual([]);
+    expect(await list('uBauherr')).toEqual([]);
+  });
+
+  it('Versand setzt die Frist der Mängel, protokolliert und legt die Mail ab', async () => {
+    const d = draft();
+    await call('uBauleitung', 'POST', '/mangelanzeigen', d);
+    const sent = await call('uBauleitung', 'POST', `/mangelanzeigen/${d.id}/send`, { base_version: 1 });
+    expect(sent.body.mail.devFile).toMatch(/storage\/outbox\/.*\.eml$/);
+    const m = (await maengel('uBauleitung')).find((x) => x.id === ID.mFliesen);
+    expect(String(m.due_date).slice(0, 10)).toBe('2026-11-24');
+    expect(m.anzeige_number).toBe(1);
+    const log = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${ID.uBauleitung}, true)`;
+      return tx`SELECT entity, action FROM audit_log WHERE entity_id IN (${d.id}, ${ID.mFliesen}) ORDER BY id`;
+    });
+    expect(log.map((l) => `${l.entity}:${l.action}`)).toEqual(['mangelanzeige:erstellt', 'mangel:frist', 'mangelanzeige:versendet']);
+  });
+
+  it('versendete Anzeigen sind gesperrt (API und Datenbank)', async () => {
+    const d = draft();
+    await call('uBauleitung', 'POST', '/mangelanzeigen', d);
+    await call('uBauleitung', 'POST', `/mangelanzeigen/${d.id}/send`, { base_version: 1 });
+    expect((await call('uBauleitung', 'PATCH', `/mangelanzeigen/${d.id}`, { base_version: 2, deadline: '2027-01-01' })).status).toBe(409);
+    expect((await call('uBauleitung', 'POST', `/mangelanzeigen/${d.id}/send`, { base_version: 2 })).status).toBe(409);
+    const changed = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${ID.uBauleitung}, true)`;
+      await tx`SET LOCAL ROLE bap_app`;
+      return tx`UPDATE mangelanzeige SET note = 'still geändert' WHERE id = ${d.id}`;
+    });
+    expect(changed.count).toBe(0); // RLS: sent rows are not updatable
+  });
+
+  it('Entwurf als PDF mit Wasserzeichen abrufbar', async () => {
+    const d = draft();
+    await call('uBauleitung', 'POST', '/mangelanzeigen', d);
+    const res = await app.inject({ method: 'GET', url: `/mangelanzeigen/${d.id}/pdf`, headers: { authorization: `Bearer ${tokens.uBauleitung}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+  });
+});

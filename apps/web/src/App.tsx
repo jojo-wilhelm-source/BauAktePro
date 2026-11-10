@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { formatDate, MANGEL_STATUS_LABELS, PRIORITIES, ROLE_LABELS, type MangelStatus, type Priority } from '@bap/domain';
+import { anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, type MangelStatus, type Priority } from '@bap/domain';
 import { api, ApiError, getToken, setToken, type Conflict, type Mangel, type Me, type ProjectInfo } from './api';
+import { AnzeigenPage, type AnzeigeStart } from './Anzeigen';
 import { PlanView } from './PlanView';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
+import { PageHeader, type Run } from './ui/layout';
 
 const TEST_USERS = [
   ['bauleitung@example.test', 'Bea Bauleitung', 'Bauleitung'],
@@ -15,11 +17,10 @@ const TEST_USERS = [
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'maengel' | 'plaene' | 'hinweise';
+type Module = 'maengel' | 'anzeigen' | 'plaene' | 'hinweise';
 
 /** Modules of the full product (CLAUDE.md, Umsetzungsreihenfolge) that are not built yet. */
 const COMING: { icon: IconName; label: string }[] = [
-  { icon: 'anzeige', label: 'Mangelanzeigen' },
   { icon: 'ordner', label: 'Dokumente' },
   { icon: 'besprechung', label: 'Besprechungen' },
   { icon: 'firmen', label: 'Nachunternehmer' },
@@ -113,6 +114,11 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number } | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  const [anzeigeStart, setAnzeigeStart] = useState<AnzeigeStart | null>(null);
+  const startAnzeige = (s: AnzeigeStart) => {
+    setAnzeigeStart(s);
+    setModule('anzeigen');
+  };
 
   const reload = useCallback(async () => {
     const [i, m, c] = await Promise.all([
@@ -171,6 +177,7 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
         </div>
         <div className="side-section">Baustelle</div>
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
         {nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
         <div className="side-section">In Vorbereitung</div>
@@ -198,7 +205,20 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
           <p className="loading">Projekt wird geladen …</p>
         ) : (
           <>
-            {module === 'maengel' && <MaengelPage info={info} maengel={maengel} selected={selected} onSelect={setSelected} run={run} />}
+            {module === 'maengel' && <MaengelPage info={info} maengel={maengel} selected={selected} onSelect={setSelected} run={run} onAnzeige={startAnzeige} />}
+            {module === 'anzeigen' && (
+              <AnzeigenPage
+                info={info}
+                maengel={maengel}
+                run={run}
+                start={anzeigeStart}
+                onStartHandled={() => setAnzeigeStart(null)}
+                onOpenMangel={(id) => {
+                  setSelected(id);
+                  setModule('maengel');
+                }}
+              />
+            )}
             {module === 'plaene' && (
               <PlanPage info={info} maengel={maengel} selected={selected} onSelect={setSelected} draft={draft} onPick={setDraft} run={run} />
             )}
@@ -231,18 +251,6 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
   );
 }
 
-type Run = (fn: () => Promise<unknown>, ok: string) => Promise<void>;
-
-function PageHeader({ eyebrow, title, children }: { eyebrow: string; title: string; children?: ReactNode }) {
-  return (
-    <header className="page-header">
-      <div className="eyebrow">{eyebrow}</div>
-      <h1>{title}</h1>
-      {children && <div className="toolbar">{children}</div>}
-    </header>
-  );
-}
-
 type Scope = 'offen' | 'ueberfaellig' | 'erledigt' | 'alle';
 const SCOPES: [Scope, string][] = [
   ['offen', 'Offen'],
@@ -251,7 +259,7 @@ const SCOPES: [Scope, string][] = [
   ['alle', 'Alle'],
 ];
 
-function MaengelPage({ info, maengel, selected, onSelect, run }: { info: ProjectInfo; maengel: Mangel[]; selected: string | null; onSelect: (id: string) => void; run: Run }) {
+function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { info: ProjectInfo; maengel: Mangel[]; selected: string | null; onSelect: (id: string) => void; run: Run; onAnzeige: (s: AnzeigeStart) => void }) {
   const [scope, setScope] = useState<Scope>('offen');
   const [gewerk, setGewerk] = useState('');
   const [q, setQ] = useState('');
@@ -321,6 +329,11 @@ function MaengelPage({ info, maengel, selected, onSelect, run }: { info: Project
                   <td>
                     {m.assigned_company_name ?? <span className="sub">–</span>}
                     {m.assigned_company_id && !m.assignment_confirmed && <span className="tag">Vorschlag</span>}
+                    {m.anzeige_id && (
+                      <div className="sub">
+                        {m.anzeige_status === 'versendet' ? `${anzeigeNo(m.anzeige_number)} · ${formatDate(m.anzeige_sent_at)}` : 'In Mangelanzeige (Entwurf)'}
+                      </div>
+                    )}
                   </td>
                   <td>
                     <StatusPill status={m.status} />
@@ -352,7 +365,7 @@ function MaengelPage({ info, maengel, selected, onSelect, run }: { info: Project
           </table>
           {visible.length === 0 && <div className="empty">Keine Mängel in dieser Ansicht</div>}
         </div>
-        <Inspector m={current} info={info} run={run} />
+        <Inspector m={current} info={info} run={run} onAnzeige={onAnzeige} />
       </div>
     </>
   );
@@ -399,7 +412,7 @@ function PlanPage(props: {
   );
 }
 
-function Inspector({ m, info, run }: { m: Mangel | null; info: ProjectInfo; run: Run }) {
+function Inspector({ m, info, run, onAnzeige }: { m: Mangel | null; info: ProjectInfo; run: Run; onAnzeige?: (s: AnzeigeStart) => void }) {
   const candidates = m
     ? info.gewerkCompanies.filter((gc) => gc.gewerk_id === m.gewerk_id).map((gc) => info.companies.find((c) => c.id === gc.company_id)!).filter(Boolean)
     : [];
@@ -504,6 +517,26 @@ function Inspector({ m, info, run }: { m: Mangel | null; info: ProjectInfo; run:
         </div>
       )}
 
+      {(m.anzeige_id || (onAnzeige && info.role === 'bauleitung' && m.assigned_company_id && canBePosition(m, m.assigned_company_id))) && (
+        <div>
+          <div className="group-title">Mangelanzeige</div>
+          <div className="group">
+            {m.anzeige_id && (
+              <div className="row">
+                <span className="k">{m.anzeige_status === 'versendet' ? anzeigeNo(m.anzeige_number) : 'Entwurf'}</span>
+                <span className="v">{m.anzeige_status === 'versendet' ? `versendet ${formatDate(m.anzeige_sent_at)}` : 'noch nicht versendet'}</span>
+              </div>
+            )}
+            {onAnzeige && info.role === 'bauleitung' && m.assigned_company_id && canBePosition(m, m.assigned_company_id) && (
+              <button className="row action" onClick={() => onAnzeige({ companyId: m.assigned_company_id!, mangelIds: [m.id] })}>
+                {m.anzeige_id ? 'Neue Mangelanzeige mit diesem Mangel' : 'Mangelanzeige erstellen'}
+                <Icon name="chevron" size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div>
         <div className="group-title">Protokoll</div>
         <div className="group">
@@ -581,7 +614,9 @@ function HinweisePage({ info, conflicts, run }: { info: ProjectInfo; conflicts: 
 
 function NewMangelSheet({ info, pos, onCancel, onSave }: { info: ProjectInfo; pos: { page: number; x: number; y: number }; onCancel: () => void; onSave: (body: object) => void }) {
   const rooms = info.locations.filter((l) => l.kind === 'raum');
-  const [f, setF] = useState({ description: '', location_id: rooms[0]?.id ?? '', gewerk_id: info.gewerke[0]?.id ?? '', priority: 'normal' as Priority });
+  // Genaue Verortung: the room under the pin is suggested (docs/fachkonzept/04); the person can change it.
+  const suggested = info.plans[0] ? roomAt(info.locationAreas, { plan_id: info.plans[0].id, page: pos.page, x: pos.x, y: pos.y }) : null;
+  const [f, setF] = useState({ description: '', location_id: suggested ?? rooms[0]?.id ?? '', gewerk_id: info.gewerke[0]?.id ?? '', priority: 'normal' as Priority });
   const proposal = info.gewerkCompanies.find((gc) => gc.gewerk_id === f.gewerk_id)?.company_id;
   const save = () =>
     onSave({
@@ -651,7 +686,9 @@ function NewMangelSheet({ info, pos, onCancel, onSave }: { info: ProjectInfo; po
                 </select>
               </div>
             </div>
-            <div className="footnote">NU-Vorschlag aus dem Gewerk: {info.companies.find((c) => c.id === proposal)?.name ?? '–'}. Die Bauleitung bestätigt die Zuweisung.</div>
+            <div className="footnote">
+              {suggested ? (f.location_id === suggested ? 'Raum aus der Pin-Position übernommen. ' : 'Raum abweichend von der Pin-Position gewählt. ') : 'Kein Raum an dieser Stelle hinterlegt, bitte wählen. '}
+              NU-Vorschlag aus dem Gewerk: {info.companies.find((c) => c.id === proposal)?.name ?? '–'}. Die Bauleitung bestätigt die Zuweisung.</div>
           </div>
         </div>
       </div>

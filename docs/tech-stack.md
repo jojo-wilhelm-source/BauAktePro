@@ -7,6 +7,9 @@
 - **Abweichung Drizzle:** Migrationen sind reine SQL-Dateien (`packages/db/migrations`), Zugriff über `postgres` (postgres.js). Grund: RLS-Policies, Funktionen und Rollen lassen sich in SQL klarer pflegen. Drizzle kann für typisierte Abfragen später ergänzt werden.
 - **Anmeldung:** nur Test-Login ohne Passwort (`/auth/dev-login`, in Produktion abgeschaltet). Better Auth kommt mit dem nächsten Modul.
 - **Lokale Verschlüsselung:** SQLCipher über op-sqlite, Schlüssel im iOS-Schlüsselbund.
+- **Mindestgerät (10.11.2026):** Die iOS-App braucht **iOS 16.4**, also iPhone 8 / SE (2. Gen.) oder neuer, iPad ab 6. Generation. Das iPhone 7 (max. iOS 15) wird nicht unterstützt. Getestet wird auf iPhone 12 (6,1 Zoll) und iPad Pro 11 Zoll.
+- **Pläne offline:** Alle Pläne eines Projekts werden bei Verbindung automatisch auf das Gerät geladen (`apps/mobile/src/planStore.ts`, expo-file-system).
+- **Mangelanzeige:** PDF mit pdf-lib (Planausschnitt als Vektor eingebettet), Versand per nodemailer; in der Entwicklung landen Mails als .eml in `storage/outbox/`, in Produktion über `SMTP_URL` (deutscher Anbieter).
 - **Offen – Plan mit Zoom:** Im Durchstich wird der Plan ohne Zoom angezeigt, damit die Pins sicher sitzen. Zoom + Pins braucht eine eigene native PDFKit-Ansicht. Das ist der nächste Prüfpunkt.
 
 ## Ausgangslage

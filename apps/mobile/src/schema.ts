@@ -35,6 +35,11 @@ const mangel = new Table(
   { indexes: { project: ['project_id'] } },
 );
 const mangel_note = new Table({ mangel_id: column.text, project_id: column.text, text: column.text, created_at: column.text });
+/** Room areas on plans: the device derives the room from a pin, also offline. */
+const location_area = new Table({ project_id: column.text, location_id: column.text, plan_id: column.text, page: column.integer, x0: column.real, y0: column.real, x1: column.real, y1: column.real });
+/** Mangelanzeigen: readable offline (internal: all; NU: only those sent to the own company). Written via the API. */
+const mangelanzeige = new Table({ project_id: column.text, number: column.integer, company_id: column.text, status: column.text, deadline: column.text, sent_at: column.text });
+const mangelanzeige_position = new Table({ anzeige_id: column.text, project_id: column.text, pos: column.integer, mangel_id: column.text }, { indexes: { mangel: ['mangel_id'] } });
 const sync_conflict = new Table({ project_id: column.text, entity_id: column.text, kind: column.text, reason: column.text, created_at: column.text });
 
 /**
@@ -53,7 +58,7 @@ const pending_action = new Table(
 );
 
 export const AppSchema = new Schema({
-  project, project_member, company, location, gewerk, gewerk_company, plan, mangel, mangel_note, sync_conflict, mangel_action, pending_action,
+  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangelanzeige, mangelanzeige_position, sync_conflict, mangel_action, pending_action,
 });
 export type Database = (typeof AppSchema)['types'];
 export type MangelRow = Database['mangel'];

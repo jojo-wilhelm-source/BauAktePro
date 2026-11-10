@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Pdf from 'react-native-pdf';
-import { API_URL } from './config';
 import type { MangelRow } from './schema';
 import { AMPEL_TINT, C, TINT } from './theme';
 
 interface Props {
   planId: string;
-  token: string;
+  /** Local file on the device (planStore). null: not downloaded yet. */
+  fileUri: string | null;
+  downloading: boolean;
   maengel: (MangelRow & { id: string })[];
   ampel: (m: MangelRow) => 'gruen' | 'gelb' | 'rot' | 'grau';
   onSelect: (id: string) => void;
@@ -28,14 +29,25 @@ function Pin({ color, label }: { color: string; label: string }) {
 /**
  * Plan with pins. The page is shown fitted to the width without zoom, so pins can be overlaid with
  * relative coordinates. Zoom + pins comes with the native PDFKit view (next step, docs/fachkonzept/04).
- * The file is cached on the device (cache: true) and stays available offline after the first load.
+ * The file comes from the device (planStore), so the plan works without network.
  */
-export function PlanScreen({ planId, token, maengel, ampel, onSelect, onPick }: Props) {
+export function PlanScreen({ planId, fileUri, downloading, maengel, ampel, onSelect, onPick }: Props) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const [ratio, setRatio] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const height = box && ratio ? Math.min(box.w / ratio, box.h) : 0;
   const width = box && ratio ? height * ratio : 0;
+
+  if (!fileUri) {
+    return (
+      <View style={[styles.wrap, { alignItems: 'center', padding: 32, gap: 10 }]}>
+        {downloading ? <ActivityIndicator /> : null}
+        <Text style={styles.info}>
+          {downloading ? 'Plan wird auf das Gerät geladen …' : 'Dieser Plan ist noch nicht auf dem Gerät. Er wird automatisch geladen, sobald wieder Netz da ist.'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap} onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
@@ -43,7 +55,7 @@ export function PlanScreen({ planId, token, maengel, ampel, onSelect, onPick }: 
       {box && (
         <View style={{ width: width || box.w, height: height || box.h, alignSelf: 'center' }}>
           <Pdf
-            source={{ uri: `${API_URL}/plans/${planId}/file`, headers: { authorization: `Bearer ${token}` }, cache: true }}
+            source={{ uri: fileUri }}
             style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}
             singlePage
             scale={1}
@@ -80,7 +92,8 @@ export function PlanScreen({ planId, token, maengel, ampel, onSelect, onPick }: 
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.card, justifyContent: 'center' },
-  error: { color: C.red, padding: 12 },
+  error: { color: C.red, padding: 12, position: 'absolute', top: 0, left: 0, right: 0 },
+  info: { color: C.label2, fontSize: 15, textAlign: 'center' },
   pin: {
     width: PIN,
     height: PIN,

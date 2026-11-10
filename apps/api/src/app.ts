@@ -1,14 +1,13 @@
 import { createReadStream } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { ZodError, z } from 'zod';
 import { asUser, ADMIN_URL, connect, type Sql } from '@bap/db';
 import { allowedTransitions, escalation, type MangelStatus, type Priority, type ProjectRole } from '@bap/domain';
 import { issueToken, jwks, verifyToken } from './auth';
+import { anzeigeDetails, anzeigePdf, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { actorFor, createMangel, HttpError, patchMangel, setNachfrist, transitionMangel, type WriteMeta } from './mangel-service';
 
-const PLAN_DIR = fileURLToPath(new URL('../../../storage/plans/', import.meta.url));
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -81,8 +80,9 @@ export function buildApp(sql: Sql) {
         locations: await tx`SELECT id, parent_id, kind, name FROM location WHERE project_id = ${p} ORDER BY sort, name`,
         gewerke: await tx`SELECT id, name FROM gewerk WHERE project_id = ${p} ORDER BY name`,
         gewerkCompanies: await tx`SELECT gc.gewerk_id, gc.company_id FROM gewerk_company gc JOIN gewerk g ON g.id = gc.gewerk_id WHERE g.project_id = ${p}`,
-        companies: await tx`SELECT DISTINCT c.id, c.name, c.kind FROM company c JOIN project_member pm ON pm.company_id = c.id WHERE pm.project_id = ${p} ORDER BY c.name`,
+        companies: await tx`SELECT DISTINCT c.id, c.name, c.kind, c.email FROM company c JOIN project_member pm ON pm.company_id = c.id WHERE pm.project_id = ${p} ORDER BY c.name`,
         plans: await tx`SELECT id, location_id, name, plan_index, page_count FROM plan WHERE project_id = ${p} ORDER BY name`,
+        locationAreas: await tx`SELECT location_id, plan_id, page, x0, y0, x1, y1 FROM location_area WHERE project_id = ${p}`,
       };
     }),
   );
@@ -91,8 +91,13 @@ export function buildApp(sql: Sql) {
     asUser(sql, req.userId, async (tx) => {
       const actor = await actorFor(tx, req.userId, req.params.projectId);
       const rows = await tx`
-        SELECT m.*, l.name AS location_name, g.name AS gewerk_name, c.name AS assigned_company_name, u.name AS created_by_name
+        SELECT m.*, l.name AS location_name, g.name AS gewerk_name, c.name AS assigned_company_name, u.name AS created_by_name,
+               an.id AS anzeige_id, an.number AS anzeige_number, an.status AS anzeige_status, an.sent_at AS anzeige_sent_at
         FROM mangel m
+        LEFT JOIN LATERAL (
+          SELECT a.id, a.number, a.status, a.sent_at FROM mangelanzeige_position p JOIN mangelanzeige a ON a.id = p.anzeige_id
+          WHERE p.mangel_id = m.id ORDER BY (a.status = 'versendet') DESC, a.created_at DESC LIMIT 1
+        ) an ON true
         JOIN location l ON l.id = m.location_id
         JOIN gewerk g ON g.id = m.gewerk_id
         LEFT JOIN company c ON c.id = m.assigned_company_id
@@ -154,6 +159,33 @@ export function buildApp(sql: Sql) {
     if (!plan) throw new HttpError(404, 'Plan nicht gefunden');
     reply.header('content-type', 'application/pdf');
     return reply.send(createReadStream(PLAN_DIR + (plan.file_key as string).replace(/[^a-z0-9._-]/gi, '')));
+  });
+
+  // --- Mangelanzeigen (docs/fachkonzept/04-maengel.md) --------------------------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/mangelanzeigen', async (req) =>
+    asUser(sql, req.userId, async (tx) => {
+      await actorFor(tx, req.userId, req.params.projectId);
+      return tx`
+        SELECT a.id, a.number, a.status, a.deadline, a.company_id, c.name AS company_name, a.recipient_email, a.sent_at, a.created_at, a.version,
+               (SELECT count(*)::int FROM mangelanzeige_position p WHERE p.anzeige_id = a.id) AS positions
+        FROM mangelanzeige a JOIN company c ON c.id = a.company_id
+        WHERE a.project_id = ${req.params.projectId} ORDER BY a.created_at DESC`;
+    }),
+  );
+  app.get<{ Params: { id: string } }>('/mangelanzeigen/:id', async (req) => asUser(sql, req.userId, (tx) => anzeigeDetails(tx, req.params.id)));
+  app.post('/mangelanzeigen', async (req) => asUser(sql, req.userId, (tx) => createAnzeige(tx, req.userId, req.body, meta(req))));
+  app.patch<{ Params: { id: string } }>('/mangelanzeigen/:id', async (req) => {
+    const { base_version, ...fields } = z.object({ base_version: z.number().int() }).passthrough().parse(req.body);
+    return asUser(sql, req.userId, (tx) => patchAnzeige(tx, req.userId, req.params.id, base_version, fields, meta(req)));
+  });
+  app.post<{ Params: { id: string } }>('/mangelanzeigen/:id/send', async (req) => {
+    const { base_version } = z.object({ base_version: z.number().int() }).parse(req.body);
+    return asUser(sql, req.userId, (tx) => sendAnzeige(tx, req.userId, req.params.id, base_version, meta(req)));
+  });
+  app.get<{ Params: { id: string } }>('/mangelanzeigen/:id/pdf', async (req, reply) => {
+    const pdf = await asUser(sql, req.userId, (tx) => anzeigePdf(tx, req.userId, req.params.id));
+    reply.header('content-type', 'application/pdf').header('content-disposition', `inline; filename="${pdf.name}"`);
+    return reply.send(typeof pdf.bytes === 'string' ? createReadStream(pdf.bytes) : Buffer.from(pdf.bytes));
   });
 
   /**

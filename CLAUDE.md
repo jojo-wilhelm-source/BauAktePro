@@ -2,7 +2,7 @@
 
 Bau-Organisationsanwendung für **ein** Bauunternehmen mit mehreren Projekten, die ein Bauprojekt **von A bis Z** abdeckt (im Datenmodell trotzdem mit `firma_id`, siehe Fachkonzept 02). Sie bündelt Mängel, Plan-Freigaben, Besprechungsprotokolle, Bautagebuch mit Bauzeitenplan, Bemusterung, Einkauf und Lieferungen, Baustellen-Einkäufe (Auslagen), Fahrtenbuch mit Tanken, Rechnungs- und Stundenprüfung, Kostenübersicht sowie eine Dateiablage. Jedes Fachobjekt ist mit einem **Ort** verknüpft (Gebäude → Geschoss → Abschnitt → Raum, dazu eine Planposition).
 
-- **Geräte:** iOS-App für iPhone und iPad (voll offlinefähig), Web-App für Windows-Laptops, Browser-Portal für Externe (NU, Bauherr).
+- **Geräte:** iOS-App für iPhone und iPad (voll offlinefähig, ab iOS 16.4: iPhone 8/SE 2 oder neuer; Testgeräte iPhone 12 und iPad Pro 11), Web-App für Windows-Laptops, Browser-Portal für Externe (NU, Bauherr).
 - **Design:** durchgehend im **Apple-Stil** (Human Interface Guidelines), auch im Web. Siehe [15-design.md](docs/fachkonzept/15-design.md).
 - **Nicht Teil des Systems:** Zahlungen. Die App gibt Rechnungen frei und übergibt sie an die Buchhaltung (DATEV-Export).
 
@@ -13,7 +13,7 @@ Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Li
 1. **Der Ort ist das Kernobjekt.** Fachobjekte hängen an Projekt + Ort + Gewerk. QR-Codes und Plan-Pins führen direkt zum Ort.
 2. **Rollen gelten pro Projekt**, zusätzlich gibt es eine Firmenrolle (Einkauf, Geschäftsführung).
 3. **Unveränderlichkeit und Protokoll.** Freigaben, Abnahmen, Unterschriften, Statuswechsel und Rechteänderungen kommen ins Audit Log (Person, Zeit, Gerät). Gesperrte Objekte werden nie still geändert: Korrekturen sind neue Einträge mit Vermerk. Löschen bedeutet Papierkorb, wiederherstellen darf die Bauleitung.
-4. **Offline zuerst** auf der Baustelle. Wird automatisch abgeglichen, Konflikte werden nie still überschrieben.
+4. **Offline zuerst** auf der Baustelle: alles, was dort passiert, geht ohne Netz und wird später automatisch hochgeladen (Tabelle in [05](docs/fachkonzept/05-offline-sync.md)). Wird automatisch abgeglichen, Konflikte werden nie still überschrieben.
 5. **Merkfunktion und Vorlagen.** Abschaltbar pro Benutzer und Feld, Ebene persönlich / Projekt / Firma. Eigene Felder lassen sich überall ergänzen.
 6. **Benachrichtigung, wenn jemand betroffen ist.**
 7. **Sichtbarkeit pro Objekt:** intern / Bauherr / NU, wird **serverseitig** gefiltert.

@@ -26,13 +26,13 @@ async function makePlanPdf() {
 }
 
 await sql.begin(async (tx) => {
-  await tx`TRUNCATE tenant, company, app_user, project, project_member, location, gewerk, gewerk_company, plan, mangel, mangel_note, audit_log, sync_conflict, project_counter CASCADE`;
+  await tx`TRUNCATE mangelanzeige_position, mangelanzeige, location_area, tenant, company, app_user, project, project_member, location, gewerk, gewerk_company, plan, mangel, mangel_note, audit_log, sync_conflict, project_counter CASCADE`;
   await tx`INSERT INTO tenant (id, name) VALUES (${ID.tenant}, 'Muster Bau GmbH')`;
   await tx`INSERT INTO company ${tx([
-    { id: ID.coOwn, tenant_id: ID.tenant, name: 'Muster Bau GmbH', kind: 'own' },
-    { id: ID.coElektro, tenant_id: ID.tenant, name: 'Elektro Blitz GmbH', kind: 'nu' },
-    { id: ID.coFliesen, tenant_id: ID.tenant, name: 'Fliesen Fuchs GmbH', kind: 'nu' },
-    { id: ID.coBauherr, tenant_id: ID.tenant, name: 'Wohnbau Süd AG', kind: 'bauherr' },
+    { id: ID.coOwn, tenant_id: ID.tenant, name: 'Muster Bau GmbH', kind: 'own', email: null },
+    { id: ID.coElektro, tenant_id: ID.tenant, name: 'Elektro Blitz GmbH', kind: 'nu', email: 'info@elektro-blitz.example.test' },
+    { id: ID.coFliesen, tenant_id: ID.tenant, name: 'Fliesen Fuchs GmbH', kind: 'nu', email: 'buero@fliesen-fuchs.example.test' },
+    { id: ID.coBauherr, tenant_id: ID.tenant, name: 'Wohnbau Süd AG', kind: 'bauherr', email: null },
   ])}`;
   await tx`INSERT INTO app_user ${tx([
     { id: ID.uBauleitung, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'bauleitung@example.test', name: 'Bea Bauleitung' },
@@ -71,6 +71,16 @@ await sql.begin(async (tx) => {
   ])}`;
   await tx`INSERT INTO plan (id, project_id, location_id, name, plan_index, file_key, visible_to_nu, visible_to_bauherr)
            VALUES (${ID.planEg}, ${ID.project}, ${ID.eg}, 'Grundriss EG', 'A', 'grundriss-eg-a.pdf', true, true)`;
+  // Room areas = the rectangles drawn in makePlanPdf (page 1191×842 pt, converted to top-left relative coordinates).
+  const area = (location_id: string, x0: number, yTop: number, x1: number, yBottom: number) => ({
+    project_id: ID.project, location_id, plan_id: ID.planEg, page: 1,
+    x0: x0 / 1191, x1: x1 / 1191, y0: 1 - yTop / 842, y1: 1 - yBottom / 842,
+  });
+  await tx`INSERT INTO location_area ${tx([
+    area(ID.raumBad, 80, 720, 430, 420),
+    area(ID.raumKueche, 80, 420, 430, 120),
+    area(ID.raumWohnen, 430, 720, 1080, 120),
+  ])}`;
   const m = (id: string, n: number, extra: Record<string, unknown>) => ({
     id, project_id: ID.project, number: n, location_id: ID.raumBad, gewerk_id: ID.gwFliesen, priority: 'normal',
     status: 'zugewiesen', plan_id: ID.planEg, pin_page: 1, pin_x: 0.2, pin_y: 0.3, assigned_company_id: ID.coFliesen,

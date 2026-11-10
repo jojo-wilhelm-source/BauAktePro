@@ -1,6 +1,6 @@
 import '@azure/core-asynciterator-polyfill';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, LogBox, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { BlurView } from 'expo-blur';
@@ -10,6 +10,8 @@ import { PowerSyncContext, usePowerSync, useQuery, useStatus } from '@powersync/
 import type { PowerSyncDatabase } from '@powersync/react-native';
 import {
   allowedTransitions,
+  anzeigeNo,
+  roomAt,
   escalation,
   formatDate,
   MANGEL_STATUS_LABELS,
@@ -21,10 +23,14 @@ import {
 } from '@bap/domain';
 import { Connector, openDatabase } from './src/db';
 import { PlanScreen } from './src/PlanScreen';
+import { clearPlanFiles, usePlanFiles, type PlanFiles } from './src/planStore';
 import type { MangelRow } from './src/schema';
 import { loadSession, login, logout, type Session } from './src/session';
 import { AMPEL_TINT, C, STATUS_TINT, T, TINT, type Tint } from './src/theme';
 import { Pill, Row, SearchField, Section, Segmented, SheetBar } from './src/ui';
+
+// Being offline on site is the normal case, not an error: keep the dev overlay quiet about it.
+LogBox.ignoreLogs(['[PowerSync]: Sync error', '[PowerSync]: Could not POST streaming', 'Initial connect attempt']);
 
 const TEST_USERS = [
   ['polier@example.test', 'Paul Polier', 'Polier'],
@@ -91,6 +97,7 @@ export default function App() {
             session={session}
             onLogout={async () => {
               await db.disconnectAndClear(); // device data belongs to the user: remove on logout
+              clearPlanFiles();
               await logout();
               setSession(null);
             }}
@@ -243,6 +250,8 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
     [pid],
   );
   const { data: plans } = useQuery<{ id: string; name: string; plan_index: string }>('SELECT id, name, plan_index FROM plan WHERE project_id = ? ORDER BY name', [pid]);
+  // All plans of the project are kept on the device, so they work on site without network.
+  const { files: planFiles, loading: plansLoading } = usePlanFiles(plans, session, status.connected);
   const { data: pending } = useQuery<Pending>('SELECT * FROM pending_action');
   const { data: conflicts } = useQuery<{ id: string; reason: string; kind: string; entity_id: string; created_at: string }>(
     'SELECT * FROM sync_conflict WHERE project_id = ? ORDER BY created_at DESC',
@@ -281,7 +290,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {tab === 'maengel' && <MaengelTab project={membership.name} maengel={maengel} pending={pending} onSelect={setSelected} />}
-      {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} token={session.token} onSelect={setSelected} onPick={setDraft} />}
+      {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} files={planFiles} downloading={plansLoading} onSelect={setSelected} onPick={setDraft} />}
       {tab === 'hinweise' && <HinweiseTab project={membership.name} conflicts={conflicts} />}
       {tab === 'mehr' && (
         <MehrTab
@@ -290,6 +299,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
           projectId={pid}
           onProject={setProjectId}
           onLogout={onLogout}
+          plansOnDevice={`${Object.keys(planFiles).length} von ${plans.length}`}
         />
       )}
       <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }} />
@@ -390,7 +400,8 @@ function PlaeneTab(props: {
   project: string;
   plans: { id: string; name: string; plan_index: string }[];
   maengel: Mangel[];
-  token: string;
+  files: PlanFiles;
+  downloading: boolean;
   onSelect: (id: string) => void;
   onPick: (p: { page: number; x: number; y: number; planId: string }) => void;
 }) {
@@ -412,7 +423,8 @@ function PlaeneTab(props: {
         <View style={st.planCard}>
           <PlanScreen
             planId={plan.id}
-            token={props.token}
+            fileUri={props.files[plan.id] ?? null}
+            downloading={props.downloading}
             maengel={props.maengel}
             ampel={(m) => escOf(m).ampel}
             onSelect={props.onSelect}
@@ -461,6 +473,7 @@ function MehrTab(props: {
   projectId: string;
   onProject: (id: string) => void;
   onLogout: () => void;
+  plansOnDevice: string;
 }) {
   const { status, pending, tint, short } = useSyncState();
   const role = props.memberships.find((m) => m.project_id === props.projectId)?.role;
@@ -491,6 +504,7 @@ function MehrTab(props: {
         <Section title="Abgleich" footer="Pläne und Mängel sind auf dem Gerät gespeichert und verschlüsselt. Änderungen werden übertragen, sobald eine Verbindung besteht.">
           <Row icon="arrow.triangle.2.circlepath" iconBg={tint} label="Status" value={short} />
           <Row icon="tray.and.arrow.up" iconBg="blue" label="Ausstehende Änderungen" value={String(pending)} />
+          <Row icon="map" iconBg="indigo" label="Pläne auf dem Gerät" value={props.plansOnDevice} />
           <Row icon="clock" iconBg="gray" label="Letzter Abgleich" value={status.lastSyncedAt ? status.lastSyncedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '–'} />
         </Section>
         <Section title="In Vorbereitung">
@@ -509,6 +523,11 @@ function MehrTab(props: {
 function Detail({ m, me, pendingFor, onClose }: { m: Mangel; me: Me; pendingFor?: { payload: string }; onClose: () => void }) {
   const db = usePowerSync();
   const { data: notes } = useQuery<{ id: string; text: string }>('SELECT id, text FROM mangel_note WHERE mangel_id = ?', [m.id]);
+  const { data: anzeigen } = useQuery<{ number: number | null; status: string; sent_at: string | null }>(
+    `SELECT a.number, a.status, a.sent_at FROM mangelanzeige_position p JOIN mangelanzeige a ON a.id = p.anzeige_id
+     WHERE p.mangel_id = ? ORDER BY a.status = 'versendet' DESC, a.sent_at DESC`,
+    [m.id],
+  );
   const e = escOf(m);
   const transitions = m.number
     ? allowedTransitions(me, { status: statusOf(m), createdBy: m.created_by ?? '', creatorRole: (m.creator_role ?? 'polier') as ProjectRole, assignedCompanyId: m.assigned_company_id ?? null }).filter(
@@ -563,6 +582,19 @@ function Detail({ m, me, pendingFor, onClose }: { m: Mangel; me: Me; pendingFor?
             }
           />
         </Section>
+        {anzeigen.length > 0 && (
+          <Section title="Mangelanzeige">
+            {anzeigen.map((a, i) => (
+              <Row
+                key={i}
+                icon="doc.text"
+                iconBg={a.status === 'versendet' ? 'green' : 'orange'}
+                label={a.status === 'versendet' ? anzeigeNo(a.number) : 'Entwurf'}
+                value={a.status === 'versendet' && a.sent_at ? `versendet ${formatDate(a.sent_at)}` : 'noch nicht versendet'}
+              />
+            ))}
+          </Section>
+        )}
         {pendingFor ? (
           <Section footer="Die Entscheidung wird beim nächsten Abgleich gegen den aktuellen Stand geprüft.">
             <Row
@@ -601,10 +633,16 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
     [projectId],
   );
   const [description, setDescription] = useState('');
+  const { data: areas } = useQuery<{ location_id: string; plan_id: string; page: number; x0: number; y0: number; x1: number; y1: number }>(
+    'SELECT location_id, plan_id, page, x0, y0, x1, y1 FROM location_area WHERE plan_id = ?',
+    [pos.planId],
+  );
+  // Genaue Verortung: the room under the pin is the suggestion (works offline, areas are on the device).
+  const suggested = roomAt(areas, { plan_id: pos.planId, page: pos.page, x: pos.x, y: pos.y });
   const [room, setRoom] = useState<string | null>(null);
   const [gewerk, setGewerk] = useState<string | null>(null);
   const [priority, setPriority] = useState<Priority>('normal');
-  const roomId = room ?? rooms[0]?.id;
+  const roomId = room ?? suggested ?? rooms[0]?.id;
   const g = useMemo(() => gewerke.find((x) => x.id === (gewerk ?? gewerke[0]?.id)), [gewerke, gewerk]);
   const valid = !!description.trim() && !!roomId && !!g;
 
@@ -640,7 +678,10 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
             <Segmented values={PRIORITIES.map((p) => PRIORITY_LABELS[p])} index={PRIORITIES.indexOf(priority)} onChange={(i) => setPriority(PRIORITIES[i]!)} />
           </View>
         </Section>
-        <Section title="Ort">
+        <Section
+          title="Ort"
+          footer={suggested ? (roomId === suggested ? 'Aus der Position auf dem Plan übernommen.' : 'Abweichend von der Position auf dem Plan gewählt.') : 'An dieser Stelle ist kein Raum hinterlegt.'}
+        >
           {rooms.map((r) => (
             <Row key={r.id} label={r.name} checked={r.id === roomId} onPress={() => setRoom(r.id)} />
           ))}

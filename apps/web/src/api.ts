@@ -1,4 +1,4 @@
-import type { MangelStatus, Priority, ProjectRole } from '@bap/domain';
+import type { AnzeigeStatus, LocationArea, MangelStatus, Priority, ProjectRole } from '@bap/domain';
 
 const TOKEN_KEY = 'bap.token';
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -33,8 +33,9 @@ export interface ProjectInfo {
   locations: { id: string; parent_id: string | null; kind: string; name: string }[];
   gewerke: { id: string; name: string }[];
   gewerkCompanies: { gewerk_id: string; company_id: string }[];
-  companies: { id: string; name: string; kind: string }[];
+  companies: { id: string; name: string; kind: string; email: string | null }[];
   plans: { id: string; location_id: string; name: string; plan_index: string; page_count: number }[];
+  locationAreas: LocationArea[];
 }
 export interface Mangel {
   id: string;
@@ -61,6 +62,54 @@ export interface Mangel {
   escalation: { stage: string; ampel: 'gruen' | 'gelb' | 'rot' | 'grau'; label: string; nachfristSuggestion: string | null };
   allowed_transitions: MangelStatus[];
   notes: { text: string; created_at: string }[];
+  anzeige_id: string | null;
+  anzeige_number: number | null;
+  anzeige_status: AnzeigeStatus | null;
+  anzeige_sent_at: string | null;
+  created_by: string;
+}
+export interface AnzeigeListItem {
+  id: string;
+  number: number | null;
+  status: AnzeigeStatus;
+  deadline: string;
+  company_id: string;
+  company_name: string;
+  recipient_email: string | null;
+  sent_at: string | null;
+  created_at: string;
+  version: number;
+  positions: number;
+}
+export interface AnzeigeDetail extends Omit<AnzeigeListItem, 'positions'> {
+  note: string | null;
+  anzeige_no: string;
+  company_email: string | null;
+  created_by_name: string;
+  sent_by_name: string | null;
+  positions: AnzeigePosition[];
+}
+export interface AnzeigePosition {
+  pos: number;
+  mangel_id: string;
+  number: number;
+  description: string;
+  status: MangelStatus;
+  location_name: string;
+  gewerk_name: string;
+}
+
+/** Opens a PDF from the API in a new tab without putting the token into the URL. */
+export async function openPdf(path: string) {
+  const win = window.open('', '_blank');
+  const res = await fetch(`/api${path}`, { headers: { authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) {
+    win?.close();
+    throw new ApiError(res.status, await res.json().catch(() => null));
+  }
+  const url = URL.createObjectURL(await res.blob());
+  if (win) win.location.href = url;
+  else window.location.href = url;
 }
 export interface Conflict {
   id: string;
