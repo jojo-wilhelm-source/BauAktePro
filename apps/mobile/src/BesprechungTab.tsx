@@ -71,9 +71,19 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
 
   const internal = role === 'bauleitung' || role === 'polier';
   const editable = internal && m?.status === 'entwurf';
+  // Foldable areas (as in the web): the head shows the number of Punkte per firm.
+  const [zu, setZu] = useState<Set<string>>(new Set());
+  const toggle = (k: string) => setZu((z) => { const n = new Set(z); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const zaehle = (list: PunktRow[]) => {
+    const c = new Map<string, number>();
+    for (const p of list) c.set(p.responsible_name ?? 'Allgemein', (c.get(p.responsible_name ?? 'Allgemein') ?? 0) + 1);
+    return [...c.entries()].sort((a, b) => b[1] - a[1]);
+  };
   const groups = useMemo(() => {
     const map = new Map<string, PunktRow[]>();
-    for (const p of punkte) {
+    // Within an area: Allgemeine Punkte first, then per firm.
+    const sorted = [...punkte].sort((a, b) => (a.responsible_name ? 1 : 0) - (b.responsible_name ? 1 : 0) || (a.responsible_name ?? '').localeCompare(b.responsible_name ?? '', 'de') || (a.number ?? 0) - (b.number ?? 0));
+    for (const p of sorted) {
       const k = p.location_name ?? 'Allgemein';
       map.set(k, [...(map.get(k) ?? []), p]);
     }
@@ -136,7 +146,16 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
         </View>
         <View style={{ paddingHorizontal: 16 }}>
           {groups.map(([name, list]) => (
-            <Section key={name} title={name}>
+            <View key={name} style={{ marginBottom: 6 }}>
+              <Pressable onPress={() => toggle(name)} style={s.groupHead} accessibilityLabel={`${name} ${zu.has(name) ? 'aufklappen' : 'einklappen'}`}>
+                <SymbolView name={zu.has(name) ? 'chevron.right' : 'chevron.down'} size={13} tintColor={C.label2 as unknown as string} />
+                <Text style={[T.sectionHeader, { marginLeft: 6, marginBottom: 0 }]}>{name}</Text>
+                <Text style={[T.footnote, { marginLeft: 6 }]}>{list.length} {list.length === 1 ? 'Punkt' : 'Punkte'}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginLeft: 'auto', justifyContent: 'flex-end', flexShrink: 1 }}>
+                  {zaehle(list).map(([k, n]) => <Pill key={k} tint="gray">{`${k} ${n}`}</Pill>)}
+                </View>
+              </Pressable>
+              {!zu.has(name) && <Section>
               {list.map((p) => {
                 const pend = pending.find((x) => x.punkt_id === p.id);
                 const st = m.status === 'versendet' ? (p.status_snapshot ?? p.status) : (pend?.status ?? p.status);
@@ -182,7 +201,8 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
                   </View>
                 );
               })}
-            </Section>
+            </Section>}
+            </View>
           ))}
           {editable && <Text style={[T.footnote, { marginHorizontal: 16 }]}>Status antippen: 🟥 Blockiert · 🟧 Wichtig · 🟨 In Arbeit · 🟩 Erledigt · ⬜ Nicht fällig. Funktioniert auch ohne Netz.</Text>}
         </View>
@@ -252,6 +272,7 @@ function NewPunkt({ projectId, besprechungId, userId, onClose }: { projectId: st
 }
 
 const s = StyleSheet.create({
+  groupHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
   chipText: { fontSize: 13, fontWeight: '600' },
