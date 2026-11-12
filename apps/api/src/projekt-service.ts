@@ -217,12 +217,12 @@ export async function addLocation(tx: TxSql, userId: string, input: unknown, met
 }
 
 export async function renameLocation(tx: TxSql, userId: string, id: string, input: unknown, meta: WriteMeta) {
-  const { name, sort } = z.object({ name: z.string().trim().min(1).max(120).optional(), sort: z.number().int().optional() }).parse(input);
+  const { name, sort, nummer } = z.object({ name: z.string().trim().min(1).max(120).optional(), sort: z.number().int().optional(), nummer: z.string().trim().max(30).nullish() }).parse(input);
   const [l] = await tx`SELECT * FROM location WHERE id = ${id}`;
   if (!l) throw new HttpError(404, 'Ort nicht gefunden');
   await requireLeitung(tx, userId, l.project_id as string);
-  const [row] = await tx`UPDATE location SET name = ${name ?? l.name}, sort = ${sort ?? l.sort} WHERE id = ${id} RETURNING *`;
-  await audit(tx, userId, l.project_id as string, 'location', id, 'geaendert', meta, { from: l.name, name, sort });
+  const [row] = await tx`UPDATE location SET name = ${name ?? l.name}, sort = ${sort ?? l.sort}, nummer = ${nummer === undefined ? l.nummer : nummer || null} WHERE id = ${id} RETURNING *`;
+  await audit(tx, userId, l.project_id as string, 'location', id, 'geaendert', meta, { from: l.name, name, sort, nummer });
   return row;
 }
 

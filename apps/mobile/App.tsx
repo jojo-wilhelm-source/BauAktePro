@@ -1,6 +1,6 @@
 import '@azure/core-asynciterator-polyfill';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, Image, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Linking, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { BlurView } from 'expo-blur';
@@ -13,6 +13,7 @@ import {
   anzeigeNo,
   effectiveRole,
   roleLabel,
+  raumAusCode,
   roomAt,
   escalation,
   formatDate,
@@ -35,6 +36,7 @@ import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoU
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import { BautagebuchScreen } from './src/BautagebuchScreen';
 import { KontakteScreen } from './src/KontakteScreen';
+import { RaumScanner } from './src/RaumScanner';
 import type { MangelRow } from './src/schema';
 import { loadSession, lockEnabled, logout, onSessionExpired, setLockEnabled, type Session } from './src/session';
 import { LockGate, LoginScreen } from './src/AnmeldungScreens';
@@ -263,6 +265,18 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   const [tab, setTab] = useState<Tab>('maengel');
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number; planId: string } | null>(null);
+  // New Mangel without a plan (from the list or a room QR code / link): optional room preselected.
+  const [ohnePlan, setOhnePlan] = useState<{ room: string | null } | null>(null);
+  useEffect(() => {
+    // Room label scanned with the iPhone camera or opened as link (bau-akte-pro://raum/<id> or https://…/raum/<id>).
+    const open = (url: string | null | undefined) => {
+      const id = url ? raumAusCode(url) : null;
+      if (id) { setTab('maengel'); setOhnePlan({ room: id }); }
+    };
+    void Linking.getInitialURL().then(open);
+    const sub = Linking.addEventListener('url', (e) => open(e.url));
+    return () => sub.remove();
+  }, []);
   const current = maengel.find((m) => m.id === selected);
 
   if (!membership) {
@@ -281,7 +295,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {tab === 'maengel' && <MaengelTab project={membership.name} maengel={maengel} pending={pending} onSelect={setSelected} />}
+      {tab === 'maengel' && <MaengelTab project={membership.name} maengel={maengel} pending={pending} onSelect={setSelected} onNew={me.role === 'bauherr' ? undefined : () => setOhnePlan({ room: null })} />}
       {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} files={planFiles} downloading={plansLoading} onSelect={setSelected} onPick={setDraft} />}
       {tab === 'besprechung' && (
         <BesprechungTab
@@ -314,6 +328,9 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
       <Modal visible={!!draft} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDraft(null)}>
         {draft && <NewMangel projectId={pid} pos={draft} me={me} onClose={() => setDraft(null)} />}
       </Modal>
+      <Modal visible={!!ohnePlan} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOhnePlan(null)}>
+        {ohnePlan && <NewMangel projectId={pid} pos={null} initialRoom={ohnePlan.room} me={me} onClose={() => setOhnePlan(null)} />}
+      </Modal>
     </View>
   );
 }
@@ -326,7 +343,7 @@ const SCOPES: [Scope, string][] = [
   ['alle', 'Alle'],
 ];
 
-function MaengelTab({ project, maengel, pending, onSelect }: { project: string; maengel: Mangel[]; pending: Pending[]; onSelect: (id: string) => void }) {
+function MaengelTab({ project, maengel, pending, onSelect, onNew }: { project: string; maengel: Mangel[]; pending: Pending[]; onSelect: (id: string) => void; onNew?: () => void }) {
   const { syncNow, syncing } = useSync();
   const [scope, setScope] = useState(0);
   const [q, setQ] = useState('');
@@ -349,7 +366,9 @@ function MaengelTab({ project, maengel, pending, onSelect }: { project: string; 
       // Pull down: sync now (upload, download, files).
       refreshControl={<RefreshControl refreshing={syncing} onRefresh={() => void syncNow()} />}
       ListHeaderComponent={
-        <LargeHeader eyebrow={project} title="Mängel" right={<SyncPill />}>
+        <LargeHeader eyebrow={project} title="Mängel" right={<View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {onNew && <Pressable onPress={onNew} hitSlop={10} accessibilityLabel="Neuer Mangel ohne Plan"><SymbolView name="plus.circle.fill" size={28} tintColor={C.accent} /></Pressable>}
+          <SyncPill /></View>}>
           <SearchField value={q} onChange={setQ} />
           <Segmented values={SCOPES.map(([, l]) => l)} index={scope} onChange={setScope} />
         </LargeHeader>
@@ -700,7 +719,7 @@ function Detail({ m, me, token, pendingFor, onClose }: { m: Mangel; me: Me; toke
   );
 }
 
-function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { page: number; x: number; y: number; planId: string }; me: Me; onClose: () => void }) {
+function NewMangel({ projectId, pos, me, onClose, initialRoom }: { projectId: string; pos: { page: number; x: number; y: number; planId: string } | null; me: Me; onClose: () => void; initialRoom?: string | null }) {
   const db = usePowerSync();
   const { data: rooms } = useQuery<{ id: string; name: string }>("SELECT id, name FROM location WHERE project_id = ? AND kind = 'raum' ORDER BY sort", [projectId]);
   const { data: gewerke } = useQuery<{ id: string; name: string; company_id: string | null; company_name: string | null }>(
@@ -712,11 +731,12 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
   const [description, setDescription] = useState('');
   const { data: areas } = useQuery<{ location_id: string; plan_id: string; page: number; x0: number; y0: number; x1: number; y1: number }>(
     'SELECT location_id, plan_id, page, x0, y0, x1, y1 FROM location_area WHERE plan_id = ?',
-    [pos.planId],
+    [pos?.planId ?? ''],
   );
   // Genaue Verortung: the room under the pin is the suggestion (works offline, areas are on the device).
-  const suggested = roomAt(areas, { plan_id: pos.planId, page: pos.page, x: pos.x, y: pos.y });
-  const [room, setRoom] = useState<string | null>(null);
+  const suggested = pos ? roomAt(areas, { plan_id: pos.planId, page: pos.page, x: pos.x, y: pos.y }) : null;
+  const [room, setRoom] = useState<string | null>(initialRoom ?? null);
+  const [scan, setScan] = useState(false);
   const [gewerk, setGewerk] = useState<string | null>(null);
   const [priority, setPriority] = useState<Priority>('normal');
   const [foto, setFoto] = useState<Picked | null>(null);
@@ -732,7 +752,7 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
       `INSERT INTO mangel (id, project_id, location_id, gewerk_id, description, priority, status, plan_id, pin_page, pin_x, pin_y,
          assigned_company_id, assignment_confirmed, reporter_company_id, created_by, creator_role, created_at, version, visible_to_bauherr)
        VALUES (?, ?, ?, ?, ?, ?, 'neu', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, 0)`,
-      [mangelId, projectId, roomId, g!.id, description.trim(), priority, pos.planId, pos.page, pos.x, pos.y, g!.company_id, me.companyId, me.userId, me.role, new Date().toISOString()],
+      [mangelId, projectId, roomId, g!.id, description.trim(), priority, pos?.planId ?? null, pos?.page ?? null, pos?.x ?? null, pos?.y ?? null, g!.company_id, me.companyId, me.userId, me.role, new Date().toISOString()],
     );
     // The photo waits locally until the Mangel itself is on the server, then it is uploaded.
     if (foto) await queueFoto(db, mangelId, foto, me.role === 'nu' ? 'nachweis' : 'mangel');
@@ -766,12 +786,16 @@ function NewMangel({ projectId, pos, me, onClose }: { projectId: string; pos: { 
         </Section>
         <Section
           title="Ort"
-          footer={suggested ? (roomId === suggested ? 'Aus der Position auf dem Plan übernommen.' : 'Abweichend von der Position auf dem Plan gewählt.') : 'An dieser Stelle ist kein Raum hinterlegt.'}
+          footer={room && room === initialRoom ? 'Per QR-Code am Raum gewählt.' : suggested ? (roomId === suggested ? 'Aus der Position auf dem Plan übernommen.' : 'Abweichend von der Position auf dem Plan gewählt.') : pos ? 'An dieser Stelle ist kein Raum hinterlegt.' : 'Ohne Plan: Raum per QR-Code scannen oder aus der Liste wählen.'}
         >
+          <Row icon="qrcode.viewfinder" iconBg="blue" label="Raum per QR-Code" tone="accent" onPress={() => setScan(true)} />
           {rooms.map((r) => (
             <Row key={r.id} label={r.name} checked={r.id === roomId} onPress={() => setRoom(r.id)} />
           ))}
         </Section>
+        <Modal visible={scan} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setScan(false)}>
+          <RaumScanner known={(id) => rooms.find((r) => r.id === id)?.name ?? null} onRoom={(id) => { setRoom(id); setScan(false); }} onClose={() => setScan(false)} />
+        </Modal>
         <Section title="Gewerk" footer={`NU-Vorschlag: ${g?.company_name ?? '–'}. Die Bauleitung bestätigt die Zuweisung. Der Mangel wird auch ohne Netz gespeichert.`}>
           {gewerke.map((x) => (
             <Row key={x.id} label={x.name} checked={x.id === g?.id} onPress={() => setGewerk(x.id)} />

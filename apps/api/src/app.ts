@@ -13,6 +13,7 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
 import { angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser } from './admin-service';
@@ -179,6 +180,15 @@ export function buildApp(sql: Sql) {
     asUser(sql, req.userId, (tx) => bauherrFreigabe(tx, req.userId, req.params.id, z.object({ freigabe: z.boolean() }).parse(req.body).freigabe, meta(req))));
   app.post<{ Params: { id: string } }>('/besprechungen/:id/gegenzeichnen', async (req) => asUser(sql, req.userId, (tx) => bauherrGegenzeichnen(tx, req.userId, req.params.id, req.body, meta(req))));
 
+  // --- Raum-QR-Etiketten -----------------------------------------------------------------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/etiketten-format', async (req) => asUser(sql, req.userId, (tx) => getEtikettenFormat(tx, req.userId, req.params.projectId)));
+  app.put<{ Params: { projectId: string } }>('/projects/:projectId/etiketten-format', async (req) => asUser(sql, req.userId, (tx) => saveEtikettenFormat(tx, req.userId, req.params.projectId, req.body)));
+  app.get<{ Params: { projectId: string }; Querystring: { unter?: string; format?: string } }>('/projects/:projectId/raum-etiketten.pdf', async (req, reply) => {
+    const bytes = await asUser(sql, req.userId, (tx) => etikettenPdf(tx, req.userId, req.params.projectId, req.query));
+    reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="Raum-Etiketten.pdf"');
+    return reply.send(Buffer.from(bytes));
+  });
+
   // --- Einkauf: LV, Anfragen, Preisspiegel ------------------------------------------------
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/lv', async (req) => asUser(sql, req.userId, (tx) => listLv(tx, req.userId, req.params.projectId)));
   app.put('/lv', async (req) => asUser(sql, req.userId, (tx) => saveLv(tx, req.userId, req.body, meta(req))));
@@ -281,7 +291,7 @@ export function buildApp(sql: Sql) {
         role: actor.role,
         roleLabel: actor.roleLabel,
         companyId: actor.companyId,
-        locations: await tx`SELECT id, parent_id, kind, name FROM location WHERE project_id = ${p} ORDER BY sort, name`,
+        locations: await tx`SELECT id, parent_id, kind, name, nummer FROM location WHERE project_id = ${p} ORDER BY sort, name`,
         gewerke: await tx`SELECT id, name FROM gewerk WHERE project_id = ${p} ORDER BY name`,
         gewerkCompanies: await tx`SELECT gc.gewerk_id, gc.company_id FROM gewerk_company gc JOIN gewerk g ON g.id = gc.gewerk_id WHERE g.project_id = ${p}`,
         companies: await tx`

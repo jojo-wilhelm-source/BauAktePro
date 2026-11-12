@@ -1140,3 +1140,15 @@ describe('Einkauf: LV, Anfrage per Link, Preisspiegel', () => {
     expect((await pub(tEl, 'POST', { name: 'Erik', preise: { [b.positionen[0]!.id]: 1 } })).status).toBe(409);
   });
 });
+
+describe('Raum-QR-Etiketten', () => {
+  it('PDF für Bauleitung und Polier, nicht für NU; Format nur Leitung; unpassendes Raster abgelehnt', async () => {
+    const r = await app.inject({ method: 'GET', url: `/projects/${ID.project}/raum-etiketten.pdf`, headers: { authorization: `Bearer ${tokens.uPolier}` } });
+    expect(r.headers['content-type']).toBe('application/pdf');
+    expect((await call('uElektro', 'GET', `/projects/${ID.project}/raum-etiketten.pdf`)).status).toBe(403);
+    expect((await call('uPolier', 'PUT', `/projects/${ID.project}/etiketten-format`, { spalten: 3 })).status).toBe(403);
+    expect((await call('uBauleitung', 'PUT', `/projects/${ID.project}/etiketten-format`, { spalten: 6, zeilen: 16, rand_links_mm: 50 })).status).toBe(422);
+    expect((await call('uBauleitung', 'PUT', `/projects/${ID.project}/etiketten-format`, { spalten: 3, zeilen: 10 })).body.spalten).toBe(3);
+    expect((await call('uPolier', 'GET', `/projects/${ID.project}/etiketten-format`)).body.zeilen).toBe(10);
+  });
+});

@@ -11,6 +11,7 @@ import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
 import { BautagebuchPage } from './Bautagebuch';
 import { KontaktePage } from './Kontakte';
 import { AngebotPage, AusschreibungPage } from './Ausschreibung';
+import { EtikettenPage } from './Etiketten';
 import { KostenPage } from './Kosten';
 import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
 import { FreimeldungPage } from './Freimeldung';
@@ -29,7 +30,7 @@ import { PageHeader, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -70,6 +71,11 @@ export function App() {
   // Public pages: QR-Freimeldung, invitation link and password reset (work without being signed in).
   const fm = window.location.pathname.match(/^\/freimeldung\/([A-Za-z0-9_-]{30,80})$/);
   if (fm) return <FreimeldungPage token={fm[1]!} />;
+  const raum = window.location.pathname.match(/^\/raum\/([0-9a-f-]{36})$/i);
+  if (raum) {
+    sessionStorage.setItem('bap.raum', raum[1]!.toLowerCase());
+    window.history.replaceState(null, '', '/');
+  }
   const an = window.location.pathname.match(/^\/angebot\/([A-Za-z0-9_-]{30,80})$/);
   if (an) return <AngebotPage token={an[1]!} />;
   const invite = window.location.pathname.match(/^\/einladung\/([A-Za-z0-9_-]{20,})$/);
@@ -190,12 +196,14 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
         {me.fahrtenbuch && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
         {info && info.role === 'nu' && nav('ausschreibung', 'rechnung', 'Anfragen')}
+        {info && info.role === 'polier' && nav('etiketten', 'plan', 'Raum-QR-Etiketten')}
         {info && info.role !== 'bauherr' && nav('kontakte', 'zugang', info.role === 'nu' ? 'Kontakte meiner Firma' : 'Kontakte')}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
         {info && info.role === 'bauleitung' && (
           <>
             <div className="side-section">Projekt</div>
             {nav('struktur', 'firmen', 'Projekt & Struktur')}
+            {nav('etiketten', 'plan', 'Raum-QR-Etiketten')}
             {nav('zugaenge', 'zugang', 'Zugänge')}
           </>
         )}
@@ -300,6 +308,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'stunden' && <StundenPage info={info} run={run} />}
             {module === 'einreichungen' && <EinreichungenPage info={info} run={run} />}
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
+            {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'ausschreibung' && <AusschreibungPage info={info} run={run} />}
             {module === 'kontakte' && <KontaktePage info={info} run={run} />}
             {module === 'bautagebuch' && <BautagebuchPage info={info} run={run} />}
@@ -362,7 +371,12 @@ const SCOPES: [Scope, string][] = [
 function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { info: ProjectInfo; maengel: Mangel[]; selected: string | null; onSelect: (id: string) => void; run: Run; onAnzeige: (s: AnzeigeStart) => void }) {
   const [scope, setScope] = useState<Scope>('offen');
   const [gewerk, setGewerk] = useState('');
-  const [q, setQ] = useState('');
+  // Opened via a room QR code in the browser (/raum/<id>): the list starts filtered to that room.
+  const [q, setQ] = useState(() => {
+    const id = sessionStorage.getItem('bap.raum');
+    sessionStorage.removeItem('bap.raum');
+    return (id && info.locations.find((l) => l.id === id)?.name) || '';
+  });
   const [sort, setSort] = useState<MangelSort>('nummer');
   // List or folder view ("Unterordner"): folders by up to two levels, e.g. Firma › Monat.
   const [view, setView] = useState<'liste' | 'ordner'>('liste');

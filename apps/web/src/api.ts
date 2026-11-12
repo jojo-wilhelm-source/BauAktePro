@@ -81,7 +81,7 @@ export interface ProjectInfo {
   role: ProjectRole;
   roleLabel: string;
   companyId: string;
-  locations: { id: string; parent_id: string | null; kind: string; name: string }[];
+  locations: { id: string; parent_id: string | null; kind: string; name: string; nummer?: string | null }[];
   gewerke: { id: string; name: string }[];
   gewerkCompanies: { gewerk_id: string; company_id: string }[];
   companies: { id: string; name: string; kind: string; email: string | null }[];

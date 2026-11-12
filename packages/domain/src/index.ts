@@ -10,3 +10,4 @@ export * from './kosten';
 export * from './bautagebuch';
 export * from './rechte';
 export * from './lv';
+export * from './etiketten';

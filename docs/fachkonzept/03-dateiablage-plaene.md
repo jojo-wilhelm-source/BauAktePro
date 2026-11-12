@@ -56,3 +56,9 @@ Rot = offen, Orange = in Arbeit, Grün = erledigt, Blau = Info/Besprechungspunkt
 - **Ordner-Art:** Jeder Ordner ist „Pläne“ oder „Dokumente“; Unterordner erben die Art. Ein PDF in einem Planordner wird automatisch ein **Plan** und erscheint unter „Pläne“, gruppiert nach Ordner. Der Ort kommt aus dem Ordner („Ort der Pläne“), sonst aus dem Dateinamen (z. B. „OG 1“), sonst das erste Geschoss (ANNAHME).
 - Jeder Upload landet „Zur Prüfung“; erst die Freigabe macht ihn zum gültigen Stand, der alte wandert nach „Alt“.
 - Ordner anlegen: Bau- und Projektleitung (Fehler „Interner Fehler“ behoben, Regressionstest vorhanden).
+
+## Raum-QR-Etiketten (entschieden 12.11.2026)
+- Unter „Raum-QR-Etiketten“ (Bau-/Projektleitung, Polier) ein PDF mit einem Etikett je Raum: QR-Code links, rechts wählbar Raumname, Raumnummer, Geschoss, Gebäude, Projekt. Standard 2 × 8 = 16 je A4-Seite; Spalten, Zeilen, Ränder, Abstände, QR-Größe, Schrift und Rahmen frei einstellbar (Vorschau live, Format je Projekt speicherbar durch die Leitung). Auswahl: alle Räume oder ein Geschoss/Gebäude.
+- Raumnummern werden dort bzw. in der Struktur gepflegt.
+- Der QR-Code enthält den Link …/raum/<id>. In der App: beim neuen Mangel „Raum per QR-Code“ (Kamera, offline) – ohne Plan möglich (+ in der Mängelliste). Mit der iPhone-Kamera gescannt öffnet er die App direkt mit einem neuen Mangel in diesem Raum; im Browser die Mängelliste des Raums.
+- ANNAHME: Dieselbe Raumwahl per QR bekommt die Fotodokumentation, sobald sie gebaut ist.
