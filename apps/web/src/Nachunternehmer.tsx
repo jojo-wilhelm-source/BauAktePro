@@ -121,7 +121,7 @@ function NuSheet({ info, nu, run, onClose }: { info: ProjectInfo; nu: Nu | null;
         {field('name', 'Firma', 'z. B. Maler Meier GmbH')}
         {field('contact_person', 'Ansprechpartner')}
         {field('phone', 'Telefon')}
-        {field('email', 'E-Mail', 'für Mangelanzeigen und Protokolle')}
+        {field('email', 'E-Mail', 'für Benachrichtigungen, Mangelanzeigen, Protokolle')}
         {field('address', 'Adresse')}
       </div>
       <div>

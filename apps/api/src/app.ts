@@ -5,7 +5,7 @@ import multipart from '@fastify/multipart';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { ZodError, z } from 'zod';
 import { asUser, ADMIN_URL, connect, type Sql } from '@bap/db';
-import { allowedTransitions, escalation, type MangelStatus, type Priority, type ProjectRole } from '@bap/domain';
+import { aktiveModule, allowedTransitions, escalation, type MangelStatus, type Priority, type ProjectRole } from '@bap/domain';
 import { issueToken, jwks, verifyToken } from './auth';
 import { addFoto, fotoFile } from './foto-service';
 import { createFolder, decideDocument, documentFile, dokumenteTree, smartUpload, uploadDocument } from './dokumente-service';
@@ -13,11 +13,12 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
-import { adminOverview, adminUpdateUser } from './admin-service';
+import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
+import { adminAssign, adminOverview, adminUpdateUser } from './admin-service';
 import { startPage } from './start-service';
 import { addFoto as addTbFoto, addNachtrag, berichtPdf, fotoFile as tbFotoFile, getBericht, listBerichte, saveBericht, signBericht, vorschlag } from './bautagebuch-service';
 import { changeLink, linkInfo, listFreimeldungen, publicAnzeige, publicFoto, submitFreimeldung } from './freimeldung-service';
-import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, zugaenge } from './anmeldung';
+import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, updateMember, zugaenge } from './anmeldung';
 import {
   addGewerk, addLocation, canCreateProject, createProject, deleteGewerk, deleteLocation, nuKandidaten, nuUebernehmen, renameGewerk,
   renameLocation, renameProject, structure, takeOverStructure,
@@ -140,14 +141,16 @@ export function buildApp(sql: Sql) {
   app.get('/me', async (req) =>
     asUser(sql, req.userId, async (tx) => {
       const [user] = await tx`
-        SELECT u.id, u.name, u.email, u.is_admin, u.company_admin, c.name AS company, c.kind AS company_kind
+        SELECT u.id, u.name, u.email, u.is_admin, u.company_admin, u.fahrtenbuch, c.name AS company, c.kind AS company_kind
         FROM app_user u JOIN company c ON c.id = u.company_id WHERE u.id = ${req.userId}`;
       // RLS: members see their projects; the administrator sees all projects of the company.
       const projects = await tx`
-        SELECT p.id, p.name, coalesce(pm.role, 'admin') AS role FROM project p
-        LEFT JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${req.userId}
+        SELECT p.id, p.name, coalesce(pm.role, 'admin') AS role, pm.m_plaene, pm.m_dokumente, pm.m_besprechungen, pm.m_bautagebuch, pm.m_stunden, pm.m_nachtraege, pm.m_kosten
+        FROM project p LEFT JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${req.userId}
         ORDER BY p.name`;
-      return { user, projects, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
+      // Areas switched on for this person (role + switches); the UI hides the rest, RLS enforces it.
+      const list = projects.map((p) => ({ id: p.id, name: p.name, role: p.role, module: aktiveModule(p.role as string, p as never) }));
+      return { user, projects: list, fahrtenbuch: !!user?.fahrtenbuch || !!user?.is_admin, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
     }),
   );
 
@@ -197,6 +200,11 @@ export function buildApp(sql: Sql) {
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/zugaenge', async (req) => asUser(sql, req.userId, (tx) => zugaenge(tx, req.userId, req.params.projectId)));
   app.post('/einladungen', async (req) => asUser(sql, req.userId, (tx) => invite(tx, req.userId, req.body, meta(req))));
   app.post<{ Params: { id: string } }>('/einladungen/:id/zurueckziehen', async (req) => asUser(sql, req.userId, (tx) => revokeInvitation(tx, req.userId, req.params.id, meta(req))));
+  app.get<{ Querystring: { project?: string } }>('/kontakte', async (req) => asUser(sql, req.userId, (tx) => listKontakte(tx, req.query.project)));
+  app.put('/kontakte', async (req) => asUser(sql, req.userId, (tx) => saveKontakt(tx, req.userId, req.body)));
+  app.delete<{ Params: { id: string } }>('/kontakte/:id', async (req) => asUser(sql, req.userId, (tx) => removeKontakt(tx, req.params.id)));
+  app.patch<{ Params: { id: string } }>('/mitglieder/:id', async (req) => asUser(sql, req.userId, (tx) => updateMember(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.post<{ Params: { id: string } }>('/admin/users/:id/projekte', async (req) => asUser(sql, req.userId, (tx) => adminAssign(tx, req.userId, req.params.id, req.body, meta(req))));
   app.delete<{ Params: { id: string } }>('/mitglieder/:id', async (req) => asUser(sql, req.userId, (tx) => removeMember(tx, req.userId, req.params.id, meta(req))));
 
   // --- Projekte und Struktur (docs/fachkonzept/01, 02) --------------------------------

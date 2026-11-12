@@ -47,3 +47,11 @@ Rollen gelten **pro Projekt**. Zusätzlich gibt es **Firmenrollen** für die pro
 - **Firmen-Admin eines Nachunternehmers**: lädt weitere Personen seiner Firma (oder für seine Firma tätige Handwerker) in die Projekte seiner Firma ein – immer als Nachunternehmer seiner Firma; sieht und verwaltet nur die eigenen Leute („Mitarbeiter einladen“).
 - **NU-Portal**: Startseite „Was ist zu tun?“ mit Kennzahlen, offenen Mängeln (überfällige zuerst, mit nächstem Schritt), erhaltenen Mangelanzeigen, Besprechungspunkten und eigenen Einreichungen/Stundenzetteln.
 
+
+## Rechte pro Person, Zuordnung, Kontakte (entschieden 12.11.2026)
+
+- **Administrator** ordnet jede Person einzelnen Projekten mit Rolle zu (Seite „Benutzer & Projekte“). Jede Person sieht nur ihre Projekte. Der Administrator selbst behält Zugang zu allen Projekten (ANNAHME: zum Einrichten nötig).
+- **Bereiche pro Person:** Die Rolle legt fest, was jemand darf. Pro Projektmitglied lassen sich Pläne, Dokumente, Besprechungen, Bautagebuch, Stundenzettel, Nachträge & Rechnungen und Kosten zusätzlich abschalten. Schalter nehmen nur Rechte weg (RLS als RESTRICTIVE-Policy, Sync-Regeln über `m_*`-Spalten). Bau-/Projektleitung für alle im Projekt, der NU-Firmen-Admin für die eigenen Leute (Rolle bleibt NU).
+- **Fahrtenbuch** schaltet der Administrator pro Person frei.
+- **Geschäftsführung** hat keinen Zugang; die Mängel-Eskalation endet bei der Bauleitung.
+- **Kontakte:** Jede Firma pflegt Vorarbeiter und Monteure mit Telefon (NU im Portal, Leitung auch). Eigene Mitarbeiter sehen alle und rufen aus der App direkt an. Die E-Mail der Firma ist die Adresse für Benachrichtigungen.

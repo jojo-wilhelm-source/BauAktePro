@@ -51,7 +51,7 @@ await sql.begin(async (tx) => {
   await tx`UPDATE document SET current_revision_id = NULL`;
   for (const t of [
     'auth_session', 'auth_account', 'auth_verification', 'einladung', 'freimeldung', 'anzeige_link', 'tagesbericht_action', 'tagesbericht_foto', 'tagesbericht_nachtrag', 'tagesbericht',
-    'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
+    'company_kontakt', 'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
     'einreichung', 'stundenzettel_zeile', 'stundenzettel', 'document_revision', 'document', 'folder',
     'besprechung_eintrag', 'besprechung_punkt', 'besprechung_teilnehmer', 'besprechung', 'plan_revision',
     'mangelanzeige_position', 'mangelanzeige', 'location_area', 'mangel_foto', 'mangel_note', 'mangel', 'sync_conflict', 'audit_log',
@@ -78,6 +78,8 @@ await sql.begin(async (tx) => {
   // Administrator of the whole app (all projects, all users) and the two NU owners as firm admins.
   await tx`UPDATE app_user SET is_admin = true WHERE id = ${ID.uAdmin}`;
   await tx`UPDATE app_user SET company_admin = true WHERE id IN (${ID.uElektro}, ${ID.uFliesen})`;
+  // Fahrtenbuch is granted per person by the administrator.
+  await tx`UPDATE app_user SET fahrtenbuch = true WHERE id IN (${ID.uPolier}, ${ID.uBauleitung}, ${ID.uProjektleitung})`;
   // Real sign-in for local testing: every test user has the same development password (never used in production).
   const pw = await hashPassword(TEST_PASSWORD);
   await tx`INSERT INTO auth_account ${tx(
@@ -200,6 +202,13 @@ await sql.begin(async (tx) => {
       created_by: ID.uBauherr, creator_role: 'bauherr', reporter_company_id: ID.coBauherr, due_date: null, created_at: '2026-11-09T15:10:00Z' }),
   ])}`;
   await tx`INSERT INTO project_counter (project_id, mangel, besprechung, punkt, stundenzettel, nachtrag, rechnung, einkauf) VALUES (${ID.project}, 3, 1, 5, 1, 1, 1, 2)`;
+
+  // Contacts of the NU on site (callable from the app).
+  await tx`INSERT INTO company_kontakt ${tx([
+    { id: '00000000-0000-4000-8000-000000000e51', tenant_id: ID.tenant, company_id: ID.coElektro, name: 'Klaus Kabel', funktion: 'Vorarbeiter', telefon: '+49 711 555 0101', created_by: ID.uElektro },
+    { id: '00000000-0000-4000-8000-000000000e52', tenant_id: ID.tenant, company_id: ID.coElektro, name: 'Murat Strom', funktion: 'Monteur', telefon: '+49 711 555 0102', created_by: ID.uElektro },
+    { id: '00000000-0000-4000-8000-000000000e53', tenant_id: ID.tenant, company_id: ID.coFliesen, name: 'Lena Fuge', funktion: 'Vorarbeiterin', telefon: '+49 711 555 0201', created_by: ID.uFliesen },
+  ] as never)}`;
 
   // Baustellen-Einkäufe and Fahrtenbuch (docs/fachkonzept/14).
   await tx`INSERT INTO einkauf ${tx([

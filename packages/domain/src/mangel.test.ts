@@ -43,8 +43,8 @@ describe('Eskalation in der Mängeltabelle', () => {
     expect(e.nachfristSuggestion).toBeNull();
     expect(e.label).toContain('2. Nachfrist');
   });
-  it('Stufen Bauleitung und Geschäftsführung', () => {
+  it('ab 7 Tagen Stufe Bauleitung, keine Geschäftsführung mehr', () => {
     expect(escalation({ status: 'zugewiesen', due_date: '2026-11-01', nachfrist_date: null, priority: 'normal' }, today).stage).toBe('an_bauleitung');
-    expect(escalation({ status: 'zugewiesen', due_date: '2026-10-20', nachfrist_date: null, priority: 'normal' }, today).stage).toBe('an_gf');
+    expect(escalation({ status: 'zugewiesen', due_date: '2026-10-20', nachfrist_date: null, priority: 'normal' }, today).stage).toBe('an_bauleitung');
   });
 });

@@ -2,7 +2,13 @@ import { column, Schema, Table } from '@powersync/react-native';
 
 /** Local SQLite schema. Synced tables mirror Postgres (filtered by infra/powersync/sync-config.yaml). */
 const project = new Table({ tenant_id: column.text, name: column.text });
-const project_member = new Table({ project_id: column.text, user_id: column.text, company_id: column.text, role: column.text });
+const project_member = new Table({
+  project_id: column.text, user_id: column.text, company_id: column.text, role: column.text,
+  // Areas switched off per person (0 = off); the server sends no data for them anyway.
+  m_plaene: column.integer, m_dokumente: column.integer, m_besprechungen: column.integer, m_bautagebuch: column.integer,
+});
+/** Contacts of the firms on site, callable from the app. */
+const company_kontakt = new Table({ company_id: column.text, name: column.text, funktion: column.text, telefon: column.text, email: column.text, aktiv: column.integer });
 const company = new Table({ name: column.text, kind: column.text });
 const location = new Table({ project_id: column.text, parent_id: column.text, kind: column.text, name: column.text, sort: column.integer });
 const gewerk = new Table({ project_id: column.text, name: column.text });
@@ -125,6 +131,7 @@ const tagesbericht_lokal = new Table(
 );
 
 export const AppSchema = new Schema({
+  company_kontakt,
   tagesbericht, tagesbericht_nachtrag, tagesbericht_action, tagesbericht_lokal,
   project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, fahrzeug, fahrt, tankvorgang, beleg_upload, folder, document, document_revision, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
 });

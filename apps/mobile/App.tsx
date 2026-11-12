@@ -34,6 +34,7 @@ import { DokumenteScreen } from './src/DokumenteScreen';
 import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoUploader, type Picked } from './src/fotoStore';
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import { BautagebuchScreen } from './src/BautagebuchScreen';
+import { KontakteScreen } from './src/KontakteScreen';
 import type { MangelRow } from './src/schema';
 import { loadSession, lockEnabled, logout, onSessionExpired, setLockEnabled, type Session } from './src/session';
 import { LockGate, LoginScreen } from './src/AnmeldungScreens';
@@ -191,11 +192,11 @@ const TABS: [Tab, SFSymbol, string][] = [
   ['mehr', 'ellipsis.circle', 'Mehr'],
 ];
 
-function TabBar({ tab, onTab, badges }: { tab: Tab; onTab: (t: Tab) => void; badges: Partial<Record<Tab, number>> }) {
+function TabBar({ tab, onTab, badges, hidden = [] }: { tab: Tab; onTab: (t: Tab) => void; badges: Partial<Record<Tab, number>>; hidden?: Tab[] }) {
   const insets = useSafeAreaInsets();
   return (
     <BlurView intensity={90} tint="systemChromeMaterial" style={[st.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      {TABS.map(([id, icon, label]) => {
+      {TABS.filter(([id]) => !hidden.includes(id)).map(([id, icon, label]) => {
         const active = tab === id;
         return (
           <Pressable key={id} style={st.tabItem} onPress={() => onTab(id)}>
@@ -221,8 +222,8 @@ type Pending = { id: string; mangel_id: string; payload: string; base_version: n
 function Main({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const db = usePowerSync();
   const { status } = useSyncState();
-  const { data: memberships } = useQuery<{ project_id: string; role: ProjectRole; company_id: string; name: string }>(
-    'SELECT pm.project_id, pm.role, pm.company_id, p.name FROM project_member pm JOIN project p ON p.id = pm.project_id WHERE pm.user_id = ? ORDER BY p.name DESC',
+  const { data: memberships } = useQuery<{ project_id: string; role: ProjectRole; company_id: string; name: string; m_plaene: number | null; m_dokumente: number | null; m_besprechungen: number | null; m_bautagebuch: number | null }>(
+    'SELECT pm.project_id, pm.role, pm.company_id, pm.m_plaene, pm.m_dokumente, pm.m_besprechungen, pm.m_bautagebuch, p.name FROM project_member pm JOIN project p ON p.id = pm.project_id WHERE pm.user_id = ? ORDER BY p.name DESC',
     [session.userId],
   );
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -301,7 +302,8 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
           plansOnDevice={`${Object.keys(planFiles).length} von ${plans.length}`}
         />
       )}
-      <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }} />
+      <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }}
+        hidden={[...(membership?.m_plaene === 0 ? ['plaene' as const] : []), ...(membership?.m_besprechungen === 0 ? ['besprechung' as const] : [])]} />
 
       <Modal visible={sync.centerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => sync.openCenter(false)}>
         <SyncCenter onClose={() => sync.openCenter(false)} />
@@ -474,7 +476,7 @@ function HinweiseTab({ project, conflicts }: { project: string; conflicts: { id:
 
 function MehrTab(props: {
   session: Session;
-  memberships: { project_id: string; role: ProjectRole; name: string }[];
+  memberships: { project_id: string; role: ProjectRole; name: string; m_dokumente?: number | null; m_bautagebuch?: number | null }[];
   projectId: string;
   onProject: (id: string) => void;
   onLogout: () => void;
@@ -485,7 +487,10 @@ function MehrTab(props: {
   const role = props.memberships.find((m) => m.project_id === props.projectId)?.role;
   const project = props.memberships.find((m) => m.project_id === props.projectId);
   const intern = !!role && role !== 'nu' && role !== 'bauherr';
-  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | 'bautagebuch' | null>(null);
+  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | 'bautagebuch' | 'kontakte' | null>(null);
+  // Fahrtenbuch: vehicles only reach the device if the administrator granted it to this person.
+  const { data: fz } = useQuery<{ n: number }>('SELECT count(*) AS n FROM fahrzeug');
+  const fahrtenbuch = (fz[0]?.n ?? 0) > 0;
   const [lock, setLock] = useState(true);
   useEffect(() => void lockEnabled().then(setLock), []);
   return (
@@ -519,13 +524,14 @@ function MehrTab(props: {
           <Row icon="internaldrive" iconBg="gray" label="Offline & Abgleich" chevron onPress={() => openCenter(true)} />
         </Section>
         <Section title="Ablage">
-          <Row icon="folder" iconBg="teal" label="Dokumente" subtitle="Freigegebene Stände, offline lesbar" chevron onPress={() => setOpen('dokumente')} />
+          {project?.m_dokumente !== 0 && <Row icon="folder" iconBg="teal" label="Dokumente" subtitle="Freigegebene Stände, offline lesbar" chevron onPress={() => setOpen('dokumente')} />}
+          {intern && <Row icon="person.crop.circle" iconBg="green" label="Kontakte" subtitle="Vorarbeiter und Monteure anrufen" chevron onPress={() => setOpen('kontakte')} />}
         </Section>
         {intern && (
           <Section title="Auf der Baustelle" footer="Funktioniert auch ohne Netz. Die Bauleitung zeichnet Tagesberichte gegen und gibt Einkäufe frei.">
-            <Row icon="book.closed" iconBg="blue" label="Bautagebuch" subtitle="Tagesbericht mit Unterschrift" chevron onPress={() => setOpen('bautagebuch')} />
+            {project?.m_bautagebuch !== 0 && <Row icon="book.closed" iconBg="blue" label="Bautagebuch" subtitle="Tagesbericht mit Unterschrift" chevron onPress={() => setOpen('bautagebuch')} />}
             <Row icon="cart" iconBg="orange" label="Einkauf erfassen" chevron onPress={() => setOpen('einkauf')} />
-            <Row icon="car" iconBg="purple" label="Fahrtenbuch und Tanken" chevron onPress={() => setOpen('fahrt')} />
+            {fahrtenbuch && <Row icon="car" iconBg="purple" label="Fahrtenbuch und Tanken" chevron onPress={() => setOpen('fahrt')} />}
           </Section>
         )}
         <Section title="Im Web" footer="Diese Bereiche sind für den Schreibtisch gedacht und in der Web-App verfügbar.">
@@ -535,6 +541,9 @@ function MehrTab(props: {
         </Section>
         <Modal visible={open === 'dokumente'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <DokumenteScreen projectId={props.projectId} onClose={() => setOpen(null)} />
+        </Modal>
+        <Modal visible={open === 'kontakte'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
+          <KontakteScreen onClose={() => setOpen(null)} />
         </Modal>
         <Modal visible={open === 'bautagebuch'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <BautagebuchScreen projectId={props.projectId} role={role} onClose={() => setOpen(null)} />

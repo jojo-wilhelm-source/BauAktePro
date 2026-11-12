@@ -41,7 +41,7 @@ Typen Text, Auswahl, Zahl, Datum, Ja/Nein; je Gewerk/Projekt; Pflicht oder optio
 | 2 Tage vor Fristende | Erinnerung an den NU |
 | Fristende | Status „überfällig“, Nachricht an NU und Polier |
 | +7 Tage | Meldung an die Bauleitung |
-| +14 Tage | Meldung an die Geschäftsführung und Eintrag in die NU-Bewertung |
+| +14 Tage | entfällt (entschieden 12.11.2026: keine Eskalation an die Geschäftsführung, sie hat keinen Zugang) |
 
 Kritische Mängel haben **keine eigenen Eskalationszeiten**; sie unterscheiden sich nur durch die kürzere Frist (Startwert 3 Tage).
 

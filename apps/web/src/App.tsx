@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, MANGEL_GRUPPE_LABELS, MANGEL_SORT_LABELS, ordnerBaum, sortMaengel, type MangelGruppe, type MangelKey, type MangelOrdner, type MangelSort, type MangelStatus, type Priority } from '@bap/domain';
+import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, MANGEL_GRUPPE_LABELS, MANGEL_SORT_LABELS, ordnerBaum, sortMaengel, type MangelGruppe, type Modul, type MangelKey, type MangelOrdner, type MangelSort, type MangelStatus, type Priority } from '@bap/domain';
 import { api, ApiError, ensureFreshToken, getToken, openPdf, signOut, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
 import { AnzeigenPage, type AnzeigeStart } from './Anzeigen';
 import { BesprechungenPage } from './Besprechungen';
@@ -9,6 +9,7 @@ import { StundenPage } from './Stunden';
 import { NachunternehmerPage } from './Nachunternehmer';
 import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
 import { BautagebuchPage } from './Bautagebuch';
+import { KontaktePage } from './Kontakte';
 import { KostenPage } from './Kosten';
 import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
 import { FreimeldungPage } from './Freimeldung';
@@ -27,7 +28,7 @@ import { PageHeader, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -139,6 +140,8 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
   };
 
   const open = maengel.filter((m) => m.status !== 'abgenommen').length;
+  const mods = me.projects.find((p) => p.id === projectId)?.module ?? [];
+  const has = (m: Modul) => mods.includes(m);
   const nav = (id: Module, icon: IconName, label: string, extra?: ReactNode) => (
     <button className={`side-item ${module === id ? 'active' : ''}`} onClick={() => setModule(id)}>
       <Icon name={icon} />
@@ -171,17 +174,18 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
-        {nav('besprechungen', 'besprechung', 'Besprechungen')}
-        {nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
-        {nav('dokumente', 'ordner', 'Dokumente')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier') && has('bautagebuch') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
+        {has('besprechungen') && nav('besprechungen', 'besprechung', 'Besprechungen')}
+        {has('plaene') && nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
+        {has('dokumente') && nav('dokumente', 'ordner', 'Dokumente')}
         {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('nachunternehmer', 'firmen', 'Nachunternehmer')}
-        {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('stunden', 'kosten', 'Stundenzettel')}
-        {info && (info.role === 'bauleitung' || info.role === 'nu') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && <div className="side-section">Geld und Betrieb</div>}
-        {info && info.role === 'bauleitung' && nav('kosten', 'kosten', 'Kosten')}
+        {info && info.role !== 'bauherr' && info.role !== 'einkauf' && has('stunden') && nav('stunden', 'kosten', 'Stundenzettel')}
+        {info && (info.role === 'bauleitung' || info.role === 'nu') && has('nachtraege') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf' || me.fahrtenbuch) && <div className="side-section">Geld und Betrieb</div>}
+        {info && info.role === 'bauleitung' && has('kosten') && nav('kosten', 'kosten', 'Kosten')}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
+        {me.fahrtenbuch && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
+        {info && info.role !== 'bauherr' && nav('kontakte', 'zugang', info.role === 'nu' ? 'Kontakte meiner Firma' : 'Kontakte')}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
         {info && info.role === 'bauleitung' && (
           <>
@@ -291,6 +295,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'stunden' && <StundenPage info={info} run={run} />}
             {module === 'einreichungen' && <EinreichungenPage info={info} run={run} />}
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
+            {module === 'kontakte' && <KontaktePage info={info} run={run} />}
             {module === 'bautagebuch' && <BautagebuchPage info={info} run={run} />}
             {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}
             {module === 'fahrtenbuch' && <FahrtenbuchPage info={info} run={run} />}

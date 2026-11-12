@@ -1,3 +1,4 @@
+import type { Modul } from '@bap/domain';
 import type { AnzeigeStatus, LocationArea, MangelStatus, PlanRevisionStatus, Priority, ProjectRole, PunktStatus } from '@bap/domain';
 
 const TOKEN_KEY = 'bap.token';
@@ -68,8 +69,10 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 
 export interface Me {
   user: { id: string; name: string; email: string; company: string };
-  projects: { id: string; name: string; role: ProjectRole }[];
+  projects: { id: string; name: string; role: ProjectRole; module: Modul[] }[];
   canCreateProject: boolean;
+  /** Fahrtenbuch granted by the administrator. */
+  fahrtenbuch: boolean;
   isAdmin: boolean;
   companyAdmin: boolean;
 }

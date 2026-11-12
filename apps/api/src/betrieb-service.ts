@@ -187,6 +187,7 @@ export async function belegFile(tx: TxSql, kind: 'einkauf' | 'tankvorgang', id: 
 export async function fahrtenbuch(tx: TxSql, userId: string) {
   const [me] = await tx`SELECT u.id, c.kind FROM app_user u JOIN company c ON c.id = u.company_id WHERE u.id = ${userId}`;
   if (me?.kind !== 'own') throw new HttpError(403, 'Das Fahrtenbuch gehört zur eigenen Firma');
+  if (!(await tx`SELECT app.has_fahrtenbuch() AS ok`)[0]?.ok) throw new HttpError(403, 'Das Fahrtenbuch ist für Sie nicht freigeschaltet (Administrator)');
   const [{ leitung }] = (await tx`SELECT app.is_leitung_any() AS leitung`) as unknown as [{ leitung: boolean }];
   const fahrzeuge = await tx`
     SELECT f.*, u.name AS fahrer_name, app.fahrzeug_last_km(f.id) AS last_km FROM fahrzeug f LEFT JOIN app_user u ON u.id = f.fahrer_id
@@ -241,6 +242,7 @@ export async function addTanken(tx: TxSql, userId: string, input: unknown) {
 export async function kosten(tx: TxSql, userId: string, projectId: string) {
   const actor = await actorFor(tx, userId, projectId);
   if (actor.role !== 'bauleitung') throw new HttpError(403, 'Die Kostenübersicht sehen Bau- und Projektleitung');
+  if (!(await tx`SELECT app.has_module(${projectId}, 'kosten') AS ok`)[0]?.ok) throw new HttpError(403, 'Die Kostenübersicht ist für Sie abgeschaltet');
   const gewerke = await tx`SELECT id, name, budget_net::float AS budget FROM gewerk WHERE project_id = ${projectId} ORDER BY name`;
   const gc = await tx`SELECT gc.gewerk_id, gc.company_id FROM gewerk_company gc JOIN gewerk g ON g.id = gc.gewerk_id WHERE g.project_id = ${projectId}`;
   const vertraege = await tx`SELECT company_id, gewerk_id, amount_net::float AS a FROM vertrag WHERE project_id = ${projectId}`;

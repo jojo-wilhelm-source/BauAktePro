@@ -96,7 +96,7 @@ export const MangelPatch = MangelCreate.omit({ id: true, project_id: true }).par
 export type MangelPatch = z.infer<typeof MangelPatch>;
 
 /** Escalation stage shown in the Mängel table (docs 04, "Anzeige in der Mängeltabelle"). */
-export type EscalationStage = 'keine_frist' | 'erledigt' | 'laeuft' | 'bald_faellig' | 'ueberfaellig' | 'an_bauleitung' | 'an_gf';
+export type EscalationStage = 'keine_frist' | 'erledigt' | 'laeuft' | 'bald_faellig' | 'ueberfaellig' | 'an_bauleitung';
 export interface Escalation {
   stage: EscalationStage;
   /** Days overdue (positive) or remaining (negative). */
@@ -126,8 +126,8 @@ export function escalation(
   if (days < -2) return { stage: 'laeuft', daysOverdue: days, ampel: 'gruen', label: `${prefix}läuft (${-days} Tage)`, nachfristSuggestion: null };
   if (days <= 0) return { stage: 'bald_faellig', daysOverdue: days, ampel: 'gelb', label: days === 0 ? `${prefix}heute fällig` : `${prefix}in ${-days} Tagen fällig`, nachfristSuggestion: null };
   if (days < 7) return { stage: 'ueberfaellig', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig seit ${days} Tagen`, nachfristSuggestion: suggestion };
-  if (days < 14) return { stage: 'an_bauleitung', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig ${days} Tage – Bauleitung`, nachfristSuggestion: suggestion };
-  return { stage: 'an_gf', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig ${days} Tage – Geschäftsführung`, nachfristSuggestion: suggestion };
+  // Decided 12.11.2026: no escalation to the Geschäftsführung; from day 7 the Bauleitung is the last stage.
+  return { stage: 'an_bauleitung', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig ${days} Tage – Bauleitung`, nachfristSuggestion: suggestion };
 }
 
 export function defaultDueDate(priority: Priority, from: Date = new Date()): string {

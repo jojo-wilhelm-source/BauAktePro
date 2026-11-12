@@ -1,6 +1,6 @@
 /** Zugänge (docs/fachkonzept/01): invite people into the project, open invitations, remove access. Leitung only. */
 import { useCallback, useEffect, useState } from 'react';
-import { formatDate, roleLabel, type ProjectRole as BaseRole } from '@bap/domain';
+import { formatDate, MODUL_LABELS, MODULE_JE_ROLLE, roleLabel, type Modul, type ProjectRole as BaseRole, type Rolle } from '@bap/domain';
 
 /** Project roles incl. Projektleitung (same rights as Bauleitung, stored as its own role). */
 type ProjectRole = BaseRole | 'projektleitung';
@@ -9,7 +9,7 @@ import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 
 interface Data {
-  mitglieder: { id: string; role: ProjectRole; user_id: string; name: string; email: string; company: string; company_kind: string; ich: boolean }[];
+  mitglieder: ({ id: string; role: ProjectRole; user_id: string; name: string; email: string; company: string; company_kind: string; ich: boolean } & Partial<Record<`m_${Modul}`, boolean>>)[];
   einladungen: { id: string; email: string; name: string | null; role: ProjectRole; created_at: string; expires_at: string; company: string; invited_by: string }[];
   firmen: { id: string; name: string; kind: 'nu' | 'bauherr' }[];
   /** NU firm admin: only own firm, invites always as Nachunternehmer. */
@@ -30,6 +30,7 @@ export function ZugaengePage({ info, run }: { info: ProjectInfo; run: Run }) {
   const [d, setD] = useState<Data | null>(null);
   const [inviting, setInviting] = useState(false);
   const [remove, setRemove] = useState<Data['mitglieder'][number] | null>(null);
+  const [rechte, setRechte] = useState<Data['mitglieder'][number] | null>(null);
   const load = useCallback(async () => setD(await api<Data>(`/projects/${info.project.id}/zugaenge`)), [info.project.id]);
   useEffect(() => void load(), [load]);
   const runAndLoad: Run = async (fn, ok) => {
@@ -71,6 +72,7 @@ export function ZugaengePage({ info, run }: { info: ProjectInfo; run: Run }) {
                   </span>
                   <span className="actions">
                     <span className="v">{roleLabel(m.role)}</span>
+                    {!m.ich && <button className="btn small" onClick={() => setRechte(m)}>Rechte</button>}
                     {!m.ich && <button className="btn small destructive" onClick={() => setRemove(m)}>Zugang entziehen</button>}
                   </span>
                 </div>
@@ -78,7 +80,8 @@ export function ZugaengePage({ info, run }: { info: ProjectInfo; run: Run }) {
             </div>
           </div>
         ))}
-        <div className="footnote">Eingeladene bekommen eine E-Mail mit einem Link (14 Tage gültig) und wählen ihr Passwort selbst. Wer schon einen Zugang hat, wird direkt hinzugefügt. Jede Änderung steht im Protokoll.</div>
+        {rechte && <RechteSheet m={rechte} firmAdmin={!!d.firmAdmin} onClose={() => setRechte(null)} run={runAndLoad} />}
+        <div className="footnote">Die Rolle legt fest, was jemand darf; einzelne Bereiche lassen sich pro Person abschalten. Eingeladene bekommen eine E-Mail mit einem Link (14 Tage gültig) und wählen ihr Passwort selbst. Wer schon einen Zugang hat, wird direkt hinzugefügt. Jede Änderung steht im Protokoll.</div>
       </div>
       {inviting && <InviteSheet info={info} firmen={d.firmen} firmAdmin={!!d.firmAdmin} run={runAndLoad} onClose={() => setInviting(false)} />}
       {remove && (
@@ -140,6 +143,41 @@ function InviteSheet({ info, firmen, firmAdmin, run, onClose }: { info: ProjectI
           )}
         </>
       )}
+    </Sheet>
+  );
+}
+
+/** Role and switchable areas of one person (Leitung: everyone; NU firm admin: own staff, role stays NU). */
+function RechteSheet({ m, firmAdmin, onClose, run }: { m: Data['mitglieder'][number]; firmAdmin: boolean; onClose: () => void; run: Run }) {
+  const [role, setRole] = useState<ProjectRole>(m.role);
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(Object.keys(MODUL_LABELS).map((k) => [k, m[`m_${k as Modul}`] !== false])));
+  const roles = ROLES.filter(([r]) => (m.company_kind === 'own' ? ['polier', 'bauleitung', 'projektleitung', 'einkauf'].includes(r) : r === m.company_kind));
+  const erlaubt = (MODULE_JE_ROLLE[role as Rolle] ?? []).filter((x) => !firmAdmin || (x !== 'kosten' && x !== 'bautagebuch'));
+  return (
+    <Sheet title={`Rechte · ${m.name}`} primary="Sichern" onCancel={onClose}
+      onPrimary={() => run(async () => {
+        const body: Record<string, unknown> = Object.fromEntries(erlaubt.map((x) => [`m_${x}`, on[x]]));
+        if (role !== m.role) body.role = role;
+        await api(`/mitglieder/${m.id}`, { method: 'PATCH', body });
+        onClose();
+      }, 'Rechte gespeichert')}>
+      {!firmAdmin && roles.length > 1 && (
+        <div className="group" style={{ marginBottom: 16 }}>
+          <div className="row"><span className="k">Rolle</span>
+            <select value={role} onChange={(e) => setRole(e.target.value as ProjectRole)}>{roles.map(([r, l]) => <option key={r} value={r}>{l}</option>)}</select>
+          </div>
+        </div>
+      )}
+      <div className="group-title">Bereiche</div>
+      <div className="group">
+        {erlaubt.map((x) => (
+          <label key={x} className="row" style={{ cursor: 'pointer' }}>
+            <span className="k">{MODUL_LABELS[x]}</span>
+            <input type="checkbox" className="switch" checked={on[x]} onChange={(e) => setOn({ ...on, [x]: e.target.checked })} />
+          </label>
+        ))}
+      </div>
+      <div className="footnote">Mängel sieht jede Rolle im eigenen Rahmen. Abgeschaltete Bereiche verschwinden in Web und App; der Server liefert sie nicht mehr aus. Die Änderung steht im Protokoll.</div>
     </Sheet>
   );
 }

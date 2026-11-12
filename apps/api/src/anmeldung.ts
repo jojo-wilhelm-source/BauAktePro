@@ -303,7 +303,7 @@ export async function zugaenge(tx: TxSql, userId: string, projectId: string) {
   if (firmAdmin) {
     // The firm admin sees and manages only the people of his own firm.
     const mitglieder = await tx`
-      SELECT pm.id, pm.role, u.id AS user_id, u.name, u.email, c.name AS company, c.kind AS company_kind, pm.user_id = ${userId} AS ich
+      SELECT pm.id, pm.role, pm.m_plaene, pm.m_dokumente, pm.m_besprechungen, pm.m_bautagebuch, pm.m_stunden, pm.m_nachtraege, pm.m_kosten, u.id AS user_id, u.name, u.email, c.name AS company, c.kind AS company_kind, pm.user_id = ${userId} AS ich
       FROM project_member pm JOIN app_user u ON u.id = pm.user_id JOIN company c ON c.id = pm.company_id
       WHERE pm.project_id = ${projectId} AND pm.company_id = ${a.companyId} ORDER BY u.name`;
     const einladungen = await tx`
@@ -314,7 +314,7 @@ export async function zugaenge(tx: TxSql, userId: string, projectId: string) {
     return { mitglieder, einladungen, firmen, firmAdmin: true };
   }
   const mitglieder = await tx`
-    SELECT pm.id, pm.role, u.id AS user_id, u.name, u.email, c.name AS company, c.kind AS company_kind, pm.user_id = ${userId} AS ich
+    SELECT pm.id, pm.role, pm.m_plaene, pm.m_dokumente, pm.m_besprechungen, pm.m_bautagebuch, pm.m_stunden, pm.m_nachtraege, pm.m_kosten, u.id AS user_id, u.name, u.email, c.name AS company, c.kind AS company_kind, pm.user_id = ${userId} AS ich
     FROM project_member pm JOIN app_user u ON u.id = pm.user_id JOIN company c ON c.id = pm.company_id
     WHERE pm.project_id = ${projectId} ORDER BY c.kind = 'own' DESC, c.name, u.name`;
   const einladungen = await tx`
@@ -354,4 +354,41 @@ export async function removeMember(tx: TxSql, userId: string, memberId: string, 
   await tx`DELETE FROM project_member WHERE id = ${memberId}`;
   await audit(tx, userId, m.project_id as string, 'project_member', memberId, 'zugang_entzogen', meta, { email: m.email, role: m.role });
   return { ok: true };
+}
+
+const MemberPatch = z.object({
+  role: z.enum(['bauleitung', 'projektleitung', 'polier', 'einkauf', 'nu', 'bauherr']).optional(),
+  m_plaene: z.boolean().optional(), m_dokumente: z.boolean().optional(), m_besprechungen: z.boolean().optional(), m_bautagebuch: z.boolean().optional(),
+  m_stunden: z.boolean().optional(), m_nachtraege: z.boolean().optional(), m_kosten: z.boolean().optional(),
+});
+
+/**
+ * Change the role and the switchable areas of a member (rights change, audited). Bau-/Projektleitung for everyone in
+ * the project; the NU firm admin only for the own staff and never the role (stays NU).
+ */
+export async function updateMember(tx: TxSql, userId: string, memberId: string, input: unknown, meta: WriteMeta) {
+  const d = MemberPatch.parse(input);
+  const [m] = await tx`SELECT pm.*, u.email, c.kind AS company_kind FROM project_member pm JOIN app_user u ON u.id = pm.user_id JOIN company c ON c.id = pm.company_id WHERE pm.id = ${memberId}`;
+  if (!m) throw new HttpError(404, 'Mitglied nicht gefunden');
+  const a = await actorFor(tx, userId, m.project_id as string);
+  const firmAdmin = a.role === 'nu' && m.company_id === a.companyId && m.role === 'nu' && (await tx`SELECT app.is_company_admin() AS ok`)[0]?.ok === true;
+  if (a.role !== 'bauleitung' && !firmAdmin) throw new HttpError(403, 'Rechte ändern Bau- und Projektleitung oder der Firmen-Admin');
+  if (firmAdmin && d.role && d.role !== 'nu') throw new HttpError(403, 'Der Firmen-Admin vergibt nur Rechte innerhalb der eigenen Firma');
+  if (firmAdmin && (d.m_kosten !== undefined || d.m_bautagebuch !== undefined)) throw new HttpError(403, 'Diese Bereiche gibt es für Nachunternehmer nicht');
+  if (d.role) {
+    // Roles must fit the firm: own staff → internal roles, NU firm → nu, Bauherr firm → bauherr.
+    const fits = m.company_kind === 'own' ? ['bauleitung', 'projektleitung', 'polier', 'einkauf'].includes(d.role) : d.role === m.company_kind;
+    if (!fits) throw new HttpError(422, 'Diese Rolle passt nicht zur Firma der Person');
+    if ((m.role === 'bauleitung' || m.role === 'projektleitung') && d.role !== 'bauleitung' && d.role !== 'projektleitung') {
+      const [{ n }] = (await tx`SELECT count(*)::int AS n FROM project_member WHERE project_id = ${m.project_id} AND role IN ('bauleitung', 'projektleitung')`) as unknown as [{ n: number }];
+      if (n <= 1) throw new HttpError(422, 'Ein Projekt braucht mindestens eine Bau- oder Projektleitung');
+    }
+    if (m.user_id === userId) throw new HttpError(422, 'Die eigene Rolle kann man nicht ändern');
+  }
+  const patch = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined));
+  if (!Object.keys(patch).length) return m;
+  const [row] = await tx`UPDATE project_member SET ${tx(patch as never)} WHERE id = ${memberId} RETURNING *`;
+  await audit(tx, userId, m.project_id as string, 'project_member', memberId, 'rechte_geaendert', meta,
+    { email: m.email, from: Object.fromEntries(Object.keys(patch).map((k) => [k, m[k]])), to: patch });
+  return row;
 }

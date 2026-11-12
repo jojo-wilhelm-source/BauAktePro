@@ -966,3 +966,44 @@ describe('Bautagebuch', () => {
     expect(k?.reason).toMatch(/schon einen Tagesbericht/);
   });
 });
+
+describe('Rechte pro Person', () => {
+  const member = async (user: string) => (await adminSql`SELECT id FROM project_member WHERE project_id = ${ID.project} AND user_id = ${user}`)[0]!.id as string;
+  it('Leitung schaltet Dokumente für den Polier ab: Server liefert nichts mehr; /me zeigt den Bereich nicht', async () => {
+    const id = await member(ID.uPolier);
+    expect((await call('uBauleitung', 'PATCH', `/mitglieder/${id}`, { m_dokumente: false })).status).toBe(200);
+    const tree = await call('uPolier', 'GET', `/projects/${ID.project}/dokumente`);
+    expect(tree.status === 403 || (tree.body.folders ?? tree.body.ordner ?? []).length === 0).toBe(true);
+    expect((await adminSql`SELECT count(*)::int AS n FROM audit_log WHERE entity = 'project_member' AND action = 'rechte_geaendert'`)[0]!.n).toBe(1);
+    const me = await call('uPolier', 'GET', '/me');
+    expect(me.body.projects.find((p: any) => p.id === ID.project).module).not.toContain('dokumente');
+  });
+  it('Polier und NU ohne Firmen-Admin dürfen keine Rechte ändern; Firmen-Admin nur eigene Leute und keine Rolle', async () => {
+    const id = await member(ID.uElektro);
+    expect((await call('uPolier', 'PATCH', `/mitglieder/${id}`, { m_plaene: false })).status).toBe(403);
+    expect((await call('uElektro', 'PATCH', `/mitglieder/${await member(ID.uFliesen)}`, { m_plaene: false })).status).toBe(403);
+    expect((await call('uElektro', 'PATCH', `/mitglieder/${await member(ID.uPolier)}`, { m_plaene: false })).status).toBe(403);
+  });
+  it('Rolle muss zur Firma passen; letzte Leitung bleibt', async () => {
+    expect((await call('uBauleitung', 'PATCH', `/mitglieder/${await member(ID.uElektro)}`, { role: 'polier' })).status).toBe(422);
+    expect((await call('uBauleitung', 'PATCH', `/mitglieder/${await member(ID.uPolier)}`, { role: 'einkauf' })).status).toBe(200);
+  });
+  it('Admin ordnet Benutzer Projekten zu; nur der Admin', async () => {
+    const [p2] = await adminSql`SELECT id FROM project WHERE id <> ${ID.project} LIMIT 1`;
+    if (!p2) return;
+    expect((await call('uBauleitung', 'POST', `/admin/users/${ID.uPolier}/projekte`, { project_id: p2.id, role: 'polier' })).status).toBe(403);
+    expect((await call('uAdmin', 'POST', `/admin/users/${ID.uPolier}/projekte`, { project_id: p2.id, role: 'polier' })).status).toBe(200);
+    expect((await call('uPolier', 'GET', '/me')).body.projects.map((p: any) => p.id)).toContain(p2.id);
+  });
+  it('Fahrtenbuch nur für freigeschaltete Personen', async () => {
+    expect((await call('uPolier', 'GET', '/fahrtenbuch')).status).toBe(200);
+    await call('uAdmin', 'PATCH', `/admin/users/${ID.uPolier}`, { fahrtenbuch: false });
+    expect((await call('uPolier', 'GET', '/fahrtenbuch')).status).toBe(403);
+  });
+  it('Kontakte: NU pflegt eigene, sieht keine fremden; Polier sieht alle', async () => {
+    expect((await call('uElektro', 'GET', '/kontakte')).body.every((k: any) => k.company_id === ID.coElektro)).toBe(true);
+    expect((await call('uPolier', 'GET', `/kontakte?project=${ID.project}`)).body.length).toBe(3);
+    expect((await call('uElektro', 'PUT', '/kontakte', { id: randomUUID(), company_id: ID.coFliesen, name: 'Fremd' })).status).toBe(403);
+    expect((await call('uElektro', 'PUT', '/kontakte', { id: randomUUID(), company_id: ID.coElektro, name: 'Neuer Monteur', telefon: '0711 1234' })).status).toBe(200);
+  });
+});
