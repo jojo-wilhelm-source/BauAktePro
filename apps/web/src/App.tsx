@@ -174,7 +174,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier') && has('bautagebuch') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'bauherr') && has('bautagebuch') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
         {has('besprechungen') && nav('besprechungen', 'besprechung', 'Besprechungen')}
         {has('plaene') && nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
         {has('dokumente') && nav('dokumente', 'ordner', 'Dokumente')}

@@ -123,6 +123,8 @@ const tagesbericht = new Table(
 );
 /** Photos on Besprechungspunkte (metadata; files via the API). */
 const besprechung_punkt_foto = new Table({ punkt_id: column.text, project_id: column.text, caption: column.text, created_at: column.text }, { indexes: { p: ['punkt_id'] } });
+/** Bautagebuch templates (company and project). */
+const tagesbericht_vorlage = new Table({ project_id: column.text, name: column.text, inhalt: column.text, aktiv: column.integer });
 const tagesbericht_nachtrag = new Table({ bericht_id: column.text, project_id: column.text, text: column.text, created_by: column.text, created_at: column.text }, { indexes: { b: ['bericht_id'] } });
 const tagesbericht_action = new Table({ bericht_id: column.text, action: column.text, payload: column.text, base_version: column.integer, occurred_at: column.text }, { insertOnly: true });
 const tagesbericht_lokal = new Table(
@@ -133,6 +135,7 @@ const tagesbericht_lokal = new Table(
 );
 
 export const AppSchema = new Schema({
+  tagesbericht_vorlage,
   besprechung_punkt_foto,
   company_kontakt,
   tagesbericht, tagesbericht_nachtrag, tagesbericht_action, tagesbericht_lokal,

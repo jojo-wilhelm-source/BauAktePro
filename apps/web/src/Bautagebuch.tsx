@@ -4,7 +4,7 @@
  * in the app, also offline; the web is for the office and for countersigning.
  */
 import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { formatDate, isPlausibleSignature, wochentag, type Signature } from '@bap/domain';
+import { formatDate, isPlausibleSignature, TB_ABSCHNITT_LABELS, TB_ABSCHNITTE, wochentag, type Signature, type TbAbschnitt } from '@bap/domain';
 import { api, openPdf, type ProjectInfo } from './api';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
@@ -17,8 +17,10 @@ interface Detail {
   leistungen: { text: string; ort?: string; gewerk?: string }[]; lieferungen: string | null; behinderungen: string | null; besonderheiten: string | null;
   status: 'entwurf' | 'unterschrieben'; version: number; signed_by_name: string | null; signed_at: string | null; countersigned_by_name: string | null; countersigned_at: string | null;
   nachtraege: { id: string; text: string; created_at: string; name: string }[]; can_edit: boolean; can_countersign: boolean; created_by_name: string;
+  can_release?: boolean; can_bauherr_sign?: boolean; bauherr_freigabe?: boolean; bauherr_abschnitte?: TbAbschnitt[]; bauherr_signed_at?: string | null;
 }
-interface Vorschlag { bereich: string | null; personal: Personal[]; geraete: { name: string; anzahl: number }[]; firmen: { id: string; name: string }[]; maengelHeute: string[] }
+interface Vorlage { id: string; name: string; project_id: string | null; inhalt: Partial<Detail> }
+interface Vorschlag { vorlagen: Vorlage[]; bereich: string | null; personal: Personal[]; geraete: { name: string; anzahl: number }[]; firmen: { id: string; name: string }[]; maengelHeute: string[] }
 
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 const dt = (s: string) => new Date(s).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
@@ -30,10 +32,14 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
   const [draft, setDraft] = useState<Detail | null>(null);
   const [firmen, setFirmen] = useState<{ id: string; name: string }[]>([]);
   const [hint, setHint] = useState<string[]>([]);
-  const [sign, setSign] = useState<'unterschreiben' | 'gegenzeichnen' | null>(null);
+  const [sign, setSign] = useState<'unterschreiben' | 'gegenzeichnen' | 'bauherr' | null>(null);
   const [nachtrag, setNachtrag] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [vorlagen, setVorlagen] = useState<Vorlage[]>([]);
+  const [vorlageSheet, setVorlageSheet] = useState(false);
+  const [freigabe, setFreigabe] = useState(false);
   const leitung = info.role === 'bauleitung';
+  const bauherr = info.role === 'bauherr';
 
   const reload = useCallback(async () => setList(await api<ListItem[]>(`/projects/${info.project.id}/tagesberichte`)), [info.project.id]);
   useEffect(() => void reload(), [reload]);
@@ -44,10 +50,11 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
   }, []);
 
   /** New day: prefilled from the last report (personnel, equipment, area). */
-  const neu = async (datum: string) => {
+  const neu = async (datum: string, vorlage?: Vorlage) => {
     const existing = list.find((l) => l.datum === datum);
     if (existing) return open(existing.id);
     const v = await api<Vorschlag>(`/projects/${info.project.id}/tagesberichte/vorschlag?datum=${datum}`);
+    setVorlagen(v.vorlagen);
     setFirmen(v.firmen);
     setHint(v.maengelHeute);
     setSel(null);
@@ -56,11 +63,13 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
       id: crypto.randomUUID(), project_id: info.project.id, datum, bereich: v.bereich, wetter: {}, personal: v.personal, geraete: v.geraete, leistungen: [{ text: '' }],
       lieferungen: null, behinderungen: null, besonderheiten: null, status: 'entwurf', version: 0, signed_by_name: null, signed_at: null, countersigned_by_name: null,
       countersigned_at: null, nachtraege: [], can_edit: true, can_countersign: false, created_by_name: '',
+      // A template fills in what it contains (on top of the Vortag-Übernahme).
+      ...(vorlage?.inhalt ?? {}),
     });
   };
   useEffect(() => {
-    if (draft && firmen.length === 0) void api<Vorschlag>(`/projects/${info.project.id}/tagesberichte/vorschlag?datum=${draft.datum}`).then((v) => setFirmen(v.firmen));
-  }, [draft, firmen.length, info.project.id]);
+    if (!bauherr && firmen.length === 0) void api<Vorschlag>(`/projects/${info.project.id}/tagesberichte/vorschlag?datum=${today()}`).then((v) => { setFirmen(v.firmen); setVorlagen(v.vorlagen); });
+  }, [bauherr, firmen.length, info.project.id]);
 
   const set = (patch: Partial<Detail>) => {
     setDraft((d) => (d ? { ...d, ...patch } : d));
@@ -79,6 +88,10 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
     if (!draft || !sign) return;
     const kind = sign;
     setSign(null);
+    if (kind === 'bauherr') {
+      void run(async () => { await api(`/tagesberichte/${draft.id}/bauherr-gegenzeichnen`, { method: 'POST', body: { signature: s } }); await reload(); await open(draft.id); }, 'Gegengezeichnet');
+      return;
+    }
     void run(async () => {
       if (dirty && kind === 'unterschreiben') await api('/tagesberichte', { method: 'PUT', body: { ...draft, leistungen: draft.leistungen.filter((l) => l.text.trim()), version: draft.version || undefined } });
       const cur = await api<Detail>(`/tagesberichte/${draft.id}`);
@@ -93,8 +106,14 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
   return (
     <>
       <PageHeader eyebrow={info.project.name} title="Bautagebuch"
-        action={<button className="btn filled" onClick={() => void neu(today())}><Icon name="plus" size={16} /> Heute</button>}>
-        <label className="field-inline">Anderer Tag <input type="date" max={today()} onChange={(e) => e.target.value && void neu(e.target.value)} /></label>
+        action={!bauherr && <button className="btn filled" onClick={() => void neu(today())}><Icon name="plus" size={16} /> Heute</button>}>
+        {!bauherr && <label className="field-inline">Anderer Tag <input type="date" max={today()} onChange={(e) => e.target.value && void neu(e.target.value)} /></label>}
+        {!bauherr && vorlagen.length > 0 && (
+          <select className="popup" value="" onChange={(e) => { const v = vorlagen.find((x) => x.id === e.target.value); if (v) void neu(today(), v); }}>
+            <option value="">Heute aus Vorlage …</option>
+            {vorlagen.map((v) => <option key={v.id} value={v.id}>{v.name}{v.project_id ? '' : ' (Firma)'}</option>)}
+          </select>
+        )}
         {leitung && <span className="sub" style={{ fontSize: 13 }}>{list.filter((l) => l.status === 'unterschrieben' && !l.countersigned_at).length} zum Gegenzeichnen</span>}
       </PageHeader>
       <div className="split tb">
@@ -189,7 +208,12 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
                 {t.status === 'unterschrieben' && <button className="btn" onClick={() => setNachtrag(true)}><Icon name="plus" size={16} /> Nachtrag</button>}
                 {t.can_countersign && <button className="btn filled" onClick={() => setSign('gegenzeichnen')}><Icon name="stift" size={16} /> Gegenzeichnen</button>}
                 {sel && <button className="btn" onClick={() => void openPdf(`/tagesberichte/${t.id}/pdf`)}><Icon name="anzeige" size={16} /> PDF</button>}
+                {!bauherr && <button className="btn plain" onClick={() => setVorlageSheet(true)}>Als Vorlage speichern</button>}
+                {t.can_release && <button className="btn" onClick={() => setFreigabe(true)}>{t.bauherr_freigabe ? 'Bauherr-Freigabe ändern' : 'Für Bauherrn freigeben'}</button>}
+                {bauherr && t.can_bauherr_sign && <button className="btn filled" onClick={() => setSign('bauherr')}><Icon name="stift" size={16} /> Gegenzeichnen</button>}
               </div>
+              {t.bauherr_freigabe && <div className="footnote">Für den Bauherrn freigegeben: {(t.bauherr_abschnitte ?? []).map((a) => TB_ABSCHNITT_LABELS[a]).join(', ')}{t.bauherr_signed_at ? ` · vom Bauherrn gegengezeichnet am ${dt(t.bauherr_signed_at)}` : ''}</div>}
+              {sel && <div className="footnote">Das PDF liegt automatisch unter Dokumente › Bautagebuch › Jahr › KW (neue Version bei Gegenzeichnung oder Nachtrag).</div>}
               {t.signed_at && <div className="footnote">Unterschrieben von {t.signed_by_name} am {dt(t.signed_at)}{t.countersigned_at ? ` · gegengezeichnet von ${t.countersigned_by_name} am ${dt(t.countersigned_at)}` : ''}. Gesperrt – Ergänzungen nur als Nachtrag.</div>}
             </div>
           ) : (
@@ -213,6 +237,9 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
           <div className="footnote">Unterschriften dienen der Dokumentation; ob sie rechtsverbindlich sind, ist noch zu klären.</div>
         </aside>
       </div>
+      {vorlageSheet && t && <VorlageSheet projectId={info.project.id} leitung={leitung} t={t} onClose={() => setVorlageSheet(false)}
+        run={async (fn, ok) => { await run(fn, ok); const v = await api<Vorschlag>(`/projects/${info.project.id}/tagesberichte/vorschlag?datum=${today()}`); setVorlagen(v.vorlagen); }} />}
+      {freigabe && t && <FreigabeSheet t={t} onClose={() => setFreigabe(false)} run={async (fn, ok) => { await run(fn, ok); await reload(); await open(t.id); }} />}
       {sign && <SignatureSheet title={sign === 'unterschreiben' ? 'Tagesbericht unterschreiben' : 'Gegenzeichnen'} onCancel={() => setSign(null)} onDone={doSign} />}
       {nachtrag && t && <NachtragSheet onCancel={() => setNachtrag(false)} onOk={(text) => { setNachtrag(false); void run(async () => { await api(`/tagesberichte/${t.id}/nachtrag`, { method: 'POST', body: { text } }); await open(t.id); await reload(); }, 'Nachtrag gespeichert'); }} />}
     </>
@@ -265,6 +292,59 @@ export function SignatureSheet({ title, onCancel, onDone }: { title: string; onC
         <span className="footnote" style={{ padding: 0 }}>Mit Finger, Stift oder Maus unterschreiben. Danach ist der Bericht gesperrt.</span>
         <button className="btn plain small" onClick={() => { strokes.current = []; setCount(0); draw(); }}>Löschen</button>
       </div>
+    </Sheet>
+  );
+}
+
+function VorlageSheet({ projectId, leitung, t, onClose, run }: { projectId: string; leitung: boolean; t: Detail; onClose: () => void; run: Run }) {
+  const [name, setName] = useState('');
+  const [firma, setFirma] = useState(false);
+  const [teile, setTeile] = useState({ bereich: true, personal: true, geraete: true, leistungen: false, wetter: false });
+  return (
+    <Sheet title="Als Vorlage speichern" primary="Sichern" primaryDisabled={name.trim().length < 2} onCancel={onClose}
+      onPrimary={() => run(async () => {
+        const inhalt: Record<string, unknown> = {};
+        if (teile.bereich) inhalt.bereich = t.bereich;
+        if (teile.personal) inhalt.personal = t.personal;
+        if (teile.geraete) inhalt.geraete = t.geraete;
+        if (teile.leistungen) inhalt.leistungen = t.leistungen.filter((l) => l.text.trim());
+        if (teile.wetter) inhalt.wetter = t.wetter;
+        await api('/tagesbericht-vorlagen', { method: 'PUT', body: { id: crypto.randomUUID(), name: name.trim(), project_id: firma ? null : projectId, inhalt } });
+        onClose();
+      }, 'Vorlage gespeichert')}>
+      <div className="group">
+        <div className="row"><span className="k">Name</span><input autoFocus placeholder="z. B. Standard Rohbau" value={name} onChange={(e) => setName(e.target.value)} /></div>
+        {leitung && <label className="row"><span className="k">Für die ganze Firma</span><input type="checkbox" className="switch" checked={firma} onChange={(e) => setFirma(e.target.checked)} /></label>}
+      </div>
+      <div className="group-title" style={{ marginTop: 16 }}>Übernehmen</div>
+      <div className="group">
+        {(Object.keys(teile) as (keyof typeof teile)[]).map((k) => (
+          <label key={k} className="row"><span className="k">{{ bereich: 'Bereich', personal: 'Personal', geraete: 'Geräte', leistungen: 'Leistungen', wetter: 'Wetter' }[k]}</span>
+            <input type="checkbox" className="switch" checked={teile[k]} onChange={(e) => setTeile({ ...teile, [k]: e.target.checked })} /></label>
+        ))}
+      </div>
+      <div className="footnote">Vorlagen erscheinen beim Anlegen unter „Heute aus Vorlage …“ – im Web und in der App.</div>
+    </Sheet>
+  );
+}
+
+function FreigabeSheet({ t, onClose, run }: { t: Detail; onClose: () => void; run: Run }) {
+  const [ab, setAb] = useState<Set<TbAbschnitt>>(new Set(t.bauherr_abschnitte ?? ['wetter', 'leistungen']));
+  const send = (freigabe: boolean) => run(async () => {
+    await api(`/tagesberichte/${t.id}/bauherr-freigabe`, { method: 'POST', body: { freigabe, abschnitte: [...ab] } });
+    onClose();
+  }, freigabe ? 'Für den Bauherrn freigegeben' : 'Freigabe zurückgenommen');
+  return (
+    <Sheet title="Für den Bauherrn freigeben" primary="Freigeben" primaryDisabled={ab.size === 0} onCancel={onClose} onPrimary={() => void send(true)}>
+      <div className="group-title">Diese Abschnitte sieht der Bauherr</div>
+      <div className="group">
+        {TB_ABSCHNITTE.map((a) => (
+          <label key={a} className="row"><span className="k">{TB_ABSCHNITT_LABELS[a]}</span>
+            <input type="checkbox" className="switch" checked={ab.has(a)} onChange={(e) => { const n = new Set(ab); if (e.target.checked) n.add(a); else n.delete(a); setAb(n); }} /></label>
+        ))}
+      </div>
+      {t.bauherr_freigabe && !t.bauherr_signed_at && <button className="btn plain destructive" style={{ marginTop: 12 }} onClick={() => void send(false)}>Freigabe zurücknehmen</button>}
+      <div className="footnote">Der Bauherr sieht den Bericht im Portal nur mit den gewählten Abschnitten und kann ihn gegenzeichnen.</div>
     </Sheet>
   );
 }

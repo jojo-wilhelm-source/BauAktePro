@@ -16,3 +16,13 @@ describe('Tagesbericht', () => {
     expect(t.personal).toEqual([]);
   });
 });
+
+import { kalenderwoche } from './bautagebuch';
+describe('Kalenderwoche', () => {
+  it('ISO-KW wie im deutschen Kalender, auch am Jahreswechsel', () => {
+    expect(kalenderwoche('2026-11-12')).toEqual({ jahr: 2026, kw: 46 });
+    expect(kalenderwoche('2027-01-01')).toEqual({ jahr: 2026, kw: 53 });
+    expect(kalenderwoche('2024-12-30')).toEqual({ jahr: 2025, kw: 1 });
+    expect(kalenderwoche('2026-01-05')).toEqual({ jahr: 2026, kw: 2 });
+  });
+});

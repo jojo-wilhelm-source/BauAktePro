@@ -33,3 +33,22 @@ export type TagesberichtInput = z.infer<typeof TagesberichtInput>;
 
 export const WOCHENTAGE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'] as const;
 export const wochentag = (isoDate: string) => WOCHENTAGE[new Date(`${isoDate}T12:00:00Z`).getUTCDay()]!;
+
+/** ISO calendar week (KW) and its year for a date "YYYY-MM-DD" (Monday-based, as in Germany). */
+export function kalenderwoche(isoDate: string): { jahr: number; kw: number } {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  const day = (d.getUTCDay() + 6) % 7; // Monday = 0
+  d.setUTCDate(d.getUTCDate() - day + 3); // Thursday of this week decides the year
+  const jahr = d.getUTCFullYear();
+  const firstThu = new Date(Date.UTC(jahr, 0, 4));
+  const kw = 1 + Math.round(((d.getTime() - firstThu.getTime()) / 86_400_000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
+  return { jahr, kw };
+}
+
+/** Sections of a Tagesbericht that can be released to the Bauherr. */
+export const TB_ABSCHNITTE = ['wetter', 'personal', 'geraete', 'leistungen', 'lieferungen', 'behinderungen', 'besonderheiten'] as const;
+export type TbAbschnitt = (typeof TB_ABSCHNITTE)[number];
+export const TB_ABSCHNITT_LABELS: Record<TbAbschnitt, string> = {
+  wetter: 'Wetter', personal: 'Personal', geraete: 'Geräte', leistungen: 'Ausgeführte Leistungen', lieferungen: 'Lieferungen',
+  behinderungen: 'Behinderungen', besonderheiten: 'Besonderheiten',
+};

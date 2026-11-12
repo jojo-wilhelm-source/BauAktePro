@@ -16,7 +16,7 @@ import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, pa
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser } from './admin-service';
 import { startPage } from './start-service';
-import { addFoto as addTbFoto, addNachtrag, berichtPdf, fotoFile as tbFotoFile, getBericht, listBerichte, saveBericht, signBericht, vorschlag } from './bautagebuch-service';
+import { addFoto as addTbFoto, bauherrFreigabe as tbBauherrFreigabe, bauherrZeichnen as tbBauherrZeichnen, removeVorlage as removeTbVorlage, saveVorlage as saveTbVorlage, addNachtrag, berichtPdf, fotoFile as tbFotoFile, getBericht, listBerichte, saveBericht, signBericht, vorschlag } from './bautagebuch-service';
 import { changeLink, linkInfo, listFreimeldungen, publicAnzeige, publicFoto, submitFreimeldung } from './freimeldung-service';
 import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, updateMember, zugaenge } from './anmeldung';
 import {
@@ -193,6 +193,10 @@ export function buildApp(sql: Sql) {
     reply.header('content-type', f.type);
     return reply.send(f.bytes);
   });
+  app.put('/tagesbericht-vorlagen', async (req) => asUser(sql, req.userId, (tx) => saveTbVorlage(tx, req.userId, req.body)));
+  app.delete<{ Params: { id: string } }>('/tagesbericht-vorlagen/:id', async (req) => asUser(sql, req.userId, (tx) => removeTbVorlage(tx, req.params.id)));
+  app.post<{ Params: { id: string } }>('/tagesberichte/:id/bauherr-freigabe', async (req) => asUser(sql, req.userId, (tx) => tbBauherrFreigabe(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.post<{ Params: { id: string } }>('/tagesberichte/:id/bauherr-gegenzeichnen', async (req) => asUser(sql, req.userId, (tx) => tbBauherrZeichnen(tx, req.userId, req.params.id, req.body, meta(req))));
   app.get<{ Params: { id: string } }>('/tagesberichte/:id/pdf', async (req, reply) => {
     const bytes = await asUser(sql, req.userId, (tx) => berichtPdf(tx, req.userId, req.params.id));
     reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="Bautagebuch.pdf"');

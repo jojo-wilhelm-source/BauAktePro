@@ -925,7 +925,8 @@ describe('Bautagebuch', () => {
     const id = randomUUID();
     expect((await call('uPolier', 'PUT', '/tagesberichte', draft(id))).status).toBe(200);
     for (const u of ['uElektro', 'uBauherr'] as const) {
-      expect((await call(u, 'GET', `/projects/${ID.project}/tagesberichte`)).status).toBe(403);
+      const l = await call(u, 'GET', `/projects/${ID.project}/tagesberichte`);
+      expect(u === 'uBauherr' ? l.body.length : l.status).toBe(u === 'uBauherr' ? 0 : 403); // Bauherr: only released ones
       expect((await call(u, 'GET', `/tagesberichte/${id}`)).status).toBe(404);
       expect((await call(u, 'PUT', '/tagesberichte', draft(randomUUID(), { datum: '2026-11-09' }))).status).toBe(403);
     }
@@ -1040,5 +1041,44 @@ describe('Besprechung: Fotos, Bauherr-Freigabe, Gegenzeichnung', () => {
     expect((await call('uBauherr', 'POST', `/besprechungen/${ID.bespr1}/gegenzeichnen`, { signature: sig })).status).toBe(200);
     expect((await call('uBauherr', 'POST', `/besprechungen/${ID.bespr1}/gegenzeichnen`, { signature: sig })).status).toBe(409);
     expect((await call('uBauleitung', 'POST', `/besprechungen/${ID.bespr1}/bauherr-freigabe`, { freigabe: false })).status).toBe(409);
+  });
+});
+
+describe('Bautagebuch: Vorlagen, Bauherr, Ablage', () => {
+  const sig = { w: 300, h: 100, strokes: [[[0.1, 0.5], [0.4, 0.2], [0.7, 0.8], [0.9, 0.4]]] };
+  const signed = async () => {
+    const id = randomUUID();
+    await call('uPolier', 'PUT', '/tagesberichte', { id, project_id: ID.project, datum: '2026-11-12', bereich: 'Haus A', wetter: { text: 'sonnig' },
+      personal: [{ firma: 'Eigene', anzahl: 4 }], geraete: [], leistungen: [{ text: 'Estrich' }], behinderungen: 'Fenster fehlen' });
+    await call('uPolier', 'POST', `/tagesberichte/${id}/unterschreiben`, { signature: sig, base_version: 1 });
+    return id;
+  };
+  it('Unterschrift legt PDF unter Dokumente › Bautagebuch › 2026 › KW 46 ab; Nachtrag erzeugt neue Version', async () => {
+    const id = await signed();
+    const docs = await adminSql`SELECT d.name, f.name AS kw, (SELECT count(*)::int FROM document_revision r WHERE r.document_id = d.id) AS n
+      FROM document d JOIN folder f ON f.id = d.folder_id WHERE d.project_id = ${ID.project} AND f.name LIKE 'KW%'`;
+    expect(docs).toEqual([{ name: '12.11.2026 Donnerstag', kw: 'KW 46', n: 1 }]);
+    await call('uPolier', 'POST', `/tagesberichte/${id}/nachtrag`, { text: 'Fenster kamen 15 Uhr' });
+    expect((await adminSql`SELECT count(*)::int AS n FROM document_revision r JOIN document d ON d.id = r.document_id WHERE d.name = '12.11.2026 Donnerstag'`)[0]!.n).toBe(2);
+  });
+  it('Bauherr sieht nur freigegebene Abschnitte und zeichnet gegen', async () => {
+    const id = await signed();
+    expect((await call('uBauherr', 'GET', `/tagesberichte/${id}`)).status).toBe(404);
+    expect((await call('uPolier', 'POST', `/tagesberichte/${id}/bauherr-freigabe`, { freigabe: true })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/tagesberichte/${id}/bauherr-freigabe`, { freigabe: true, abschnitte: ['wetter', 'leistungen'] })).status).toBe(200);
+    const bh = (await call('uBauherr', 'GET', `/tagesberichte/${id}`)).body;
+    expect(bh.wetter.text).toBe('sonnig');
+    expect(bh.personal).toEqual([]);
+    expect(bh.behinderungen).toBeNull();
+    expect((await call('uBauherr', 'GET', `/projects/${ID.project}/tagesberichte`)).body).toHaveLength(1);
+    expect((await call('uBauherr', 'POST', `/tagesberichte/${id}/bauherr-gegenzeichnen`, { signature: sig })).status).toBe(200);
+    expect((await call('uElektro', 'GET', `/tagesberichte/${id}`)).status).toBe(404);
+  });
+  it('Vorlagen: Polier legt Projekt-Vorlage an, Firmenvorlage nur Leitung; NU sieht keine', async () => {
+    const v = { id: randomUUID(), name: 'Standard Rohbau', project_id: ID.project, inhalt: { bereich: 'Haus A', geraete: [{ name: 'Kran', anzahl: 1 }] } };
+    expect((await call('uPolier', 'PUT', '/tagesbericht-vorlagen', v)).status).toBe(200);
+    expect((await call('uPolier', 'PUT', '/tagesbericht-vorlagen', { ...v, id: randomUUID(), project_id: null })).status).toBe(403);
+    expect((await call('uPolier', 'GET', `/projects/${ID.project}/tagesberichte/vorschlag?datum=2026-11-13`)).body.vorlagen).toHaveLength(1);
+    expect((await call('uElektro', 'PUT', '/tagesbericht-vorlagen', { ...v, id: randomUUID() })).status).toBe(403);
   });
 });

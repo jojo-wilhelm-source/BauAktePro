@@ -3,6 +3,7 @@
 # Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
 # Rev 2026-11-11b: Dokumente offline (folders, documents, released revisions only).
 # Rev 2026-11-12a: Bautagebuch (internal roles only, like RLS).
+# Rev 2026-11-12d: Bautagebuch templates.
 # Rev 2026-11-12c: photos on Besprechungspunkte.
 # Rev 2026-11-12b: areas switchable per member (m_* columns), Fahrtenbuch per person, NU contacts.
 config:
@@ -34,6 +35,8 @@ streams:
       - SELECT * FROM fahrzeug WHERE aktiv = true AND tenant_id IN (SELECT tenant_id FROM company WHERE kind = 'own' AND id IN (SELECT company_id FROM app_user WHERE id = auth.user_id() AND fahrtenbuch = true))
       # Contacts of the firms on site (callable from the app): own staff of the tenant (RLS: is_own_staff).
       - SELECT * FROM company_kontakt WHERE aktiv = true AND tenant_id IN (SELECT tenant_id FROM company WHERE kind = 'own' AND id IN (SELECT company_id FROM app_user WHERE id = auth.user_id()))
+      # Bautagebuch templates (company and project); RLS also limits project templates to internal members.
+      - SELECT * FROM tagesbericht_vorlage WHERE aktiv = true AND tenant_id IN (SELECT tenant_id FROM company WHERE kind = 'own' AND id IN (SELECT company_id FROM app_user WHERE id = auth.user_id()))
 
   # Internal side (Bauleitung, Polier): all Mängel, all plans, internal notes.
   intern:

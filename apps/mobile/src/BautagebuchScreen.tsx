@@ -4,7 +4,7 @@
  * the server applies each step only if the report is unchanged, otherwise it becomes a Hinweis (never overwritten).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { ActionSheetIOS, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { formatDate, isPlausibleSignature, wochentag, type Signature } from '@bap/domain';
@@ -35,6 +35,8 @@ export function BautagebuchScreen({ projectId, role, onClose }: { projectId: str
   const { data: lokal } = useQuery<Lokal>('SELECT * FROM tagesbericht_lokal WHERE project_id = ?', [projectId]);
   const { data: conflicts } = useQuery<{ entity_id: string }>('SELECT entity_id FROM sync_conflict');
   const [open, setOpen] = useState<string | null>(null);
+  const { data: vorlagen } = useQuery<{ id: string; name: string; inhalt: string }>(
+    'SELECT id, name, inhalt FROM tagesbericht_vorlage WHERE aktiv = 1 AND (project_id IS NULL OR project_id = ?) ORDER BY name', [projectId]);
 
   // Local work is dropped once the server state includes it (or the server refused it → Hinweis).
   useEffect(() => {
@@ -54,7 +56,16 @@ export function BautagebuchScreen({ projectId, role, onClose }: { projectId: str
     return [...m.values()].sort((a, b) => b.datum.localeCompare(a.datum));
   }, [synced, lokal]);
 
-  const neu = async () => {
+  /** "Heute": with templates on the device, ask which one (or none). */
+  const heute = () => {
+    const existing = days.find((x) => x.datum === today());
+    if (existing || vorlagen.length === 0) return void neu();
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: 'Tagesbericht anlegen', options: ['Wie gestern (ohne Vorlage)', ...vorlagen.map((v) => `Vorlage: ${v.name}`), 'Abbrechen'], cancelButtonIndex: vorlagen.length + 1 },
+      (i) => { if (i === 0) void neu(); else if (i <= vorlagen.length) void neu(j(vorlagen[i - 1]!.inhalt, {})); },
+    );
+  };
+  const neu = async (vorlage: Partial<Draft> = {}) => {
     const d = today();
     const existing = days.find((x) => x.datum === d);
     if (existing) return setOpen(existing.id);
@@ -64,6 +75,7 @@ export function BautagebuchScreen({ projectId, role, onClose }: { projectId: str
     const draft: Draft = {
       id, project_id: projectId, datum: d, bereich: last?.bereich ?? '', wetter: {}, personal: last ? j(last.personal, []) : [{ firma: 'Eigene Firma', anzahl: 0 }],
       geraete: last ? j(last.geraete, []) : [], leistungen: [{ text: '' }], lieferungen: '', behinderungen: '', besonderheiten: '',
+      ...vorlage,
     };
     await db.execute('INSERT INTO tagesbericht_lokal (id, project_id, datum, payload, status, expected_version, nachtraege, countersigned, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
       [id, projectId, d, JSON.stringify(draft), 'neu', 0, '[]', new Date().toISOString()]);
@@ -72,7 +84,7 @@ export function BautagebuchScreen({ projectId, role, onClose }: { projectId: str
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SheetBar title="Bautagebuch" left="Fertig" onLeft={onClose} right="Heute" onRight={() => void neu()} />
+      <SheetBar title="Bautagebuch" left="Fertig" onLeft={onClose} right="Heute" onRight={heute} />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>
         <Section title="Tagesberichte" footer="Funktioniert ohne Netz. Unterschriebene Berichte sind gesperrt, Ergänzungen nur als Nachtrag. Die Bauleitung zeichnet gegen.">
           {days.map((d) => (
