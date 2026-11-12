@@ -14,7 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
-import { angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
+import { copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser, ownCompany, ownLogo, updateOwnCompany } from './admin-service';
 import { startPage } from './start-service';
@@ -202,6 +202,13 @@ export function buildApp(sql: Sql) {
   app.put('/lv', async (req) => asUser(sql, req.userId, (tx) => saveLv(tx, req.userId, req.body, meta(req))));
   app.get<{ Params: { id: string } }>('/lv/:id', async (req) => asUser(sql, req.userId, (tx) => getLv(tx, req.userId, req.params.id)));
   app.post<{ Params: { id: string } }>('/lv/:id/anfragen', async (req) => asUser(sql, req.userId, (tx) => sendAnfragen(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/lv-ordner', async (req) => asUser(sql, req.userId, (tx) => listOrdner(tx, req.userId, req.params.projectId)));
+  app.put<{ Params: { projectId: string } }>('/projects/:projectId/lv-ordner', async (req) => asUser(sql, req.userId, (tx) => saveOrdner(tx, req.userId, req.params.projectId, req.body)));
+  app.delete<{ Params: { id: string } }>('/lv-ordner/:id', async (req) => asUser(sql, req.userId, (tx) => removeOrdner(tx, req.params.id)));
+  app.post<{ Params: { id: string } }>('/lv/:id/kopie', async (req) => asUser(sql, req.userId, (tx) => copyLv(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Querystring: { q?: string } }>('/stammleistungen', async (req) => asUser(sql, req.userId, (tx) => listStamm(tx, req.query.q)));
+  app.put('/stammleistungen', async (req) => asUser(sql, req.userId, (tx) => saveStamm(tx, req.userId, req.body)));
+  app.delete<{ Params: { id: string } }>('/stammleistungen/:id', async (req) => asUser(sql, req.userId, (tx) => removeStamm(tx, req.params.id)));
   app.get<{ Params: { id: string } }>('/lv/:id/preisspiegel', async (req) => asUser(sql, req.userId, (tx) => lvPreisspiegel(tx, req.userId, req.params.id)));
   app.post<{ Params: { id: string } }>('/lv/:id/vergeben', async (req) => asUser(sql, req.userId, (tx) => vergeben(tx, req.userId, req.params.id, req.body, meta(req))));
   app.get<{ Params: { id: string } }>('/angebote/:id/pdf', async (req, reply) => {

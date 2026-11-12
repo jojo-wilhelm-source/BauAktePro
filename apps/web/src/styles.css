@@ -397,3 +397,20 @@ select.status-select { border: 0; appearance: none; -webkit-appearance: none; pa
 .table tr.firm-head td { background: var(--fill); font-weight: 600; font-size: 13px; cursor: pointer; padding-top: 6px; padding-bottom: 6px; }
 .table tr.firm-head .arrow { display: inline-block; font-size: 10px; color: var(--label-2); transition: transform .15s; }
 .table tr.firm-head .arrow.open { transform: rotate(90deg); }
+
+/* LV: folder tree and outline */
+.lv-split { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; padding: 8px 32px 32px; align-items: start; }
+@media (max-width: 900px) { .lv-split { grid-template-columns: 1fr; } }
+.lv-tree { display: flex; flex-direction: column; gap: 2px; background: var(--bg-elevated); border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px; }
+.lv-tree .side-item.ordner { display: flex; align-items: center; gap: 8px; width: 100%; }
+.lv-tree-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.lv-toolbar { flex-wrap: wrap; }
+.lv-table tr.lv-titel td { background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 700; }
+.lv-table tr.lv-untertitel td, .table tr.lv-untertitel td { background: var(--fill); font-weight: 600; }
+.table tr.lv-titel td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.lv-table tr.lv-text td { font-style: italic; }
+.lv-input { border: 0; background: transparent; font: inherit; color: inherit; width: 100%; outline: none; padding: 2px 0; }
+.lv-input:focus { background: var(--fill); border-radius: 4px; }
+.lv-input.num-in { text-align: right; }
+.lv-lang { width: 100%; margin-top: 6px; border: 0.5px solid var(--separator); border-radius: 8px; padding: 8px; font: inherit; font-size: 13px; background: var(--bg-elevated); color: var(--label); }
+.lv-actions { white-space: nowrap; text-align: right; }

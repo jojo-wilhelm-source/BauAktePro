@@ -38,3 +38,10 @@ Anfrage und Angebotsvergleich (im Datenmodell schon vorbereiten).
 - **Angebot:** Einheitspreise online (Summe live) plus Nachlass und Bemerkung; im Notfall PDF mit Angebotssumme. Ein neues Angebot ersetzt das alte im Preisspiegel; alle Stände bleiben gespeichert. Der Ersteller des LV bekommt eine Mail.
 - **Preisspiegel:** Bieter nebeneinander (EP/GP), günstigster Preis je Position markiert, Summe, Nachlass, Rangfolge, fehlende Positionen. Bieter sehen nie fremde Preise.
 - **Vergabe:** durch die Bau-/Projektleitung (ANNAHME: Einkauf bereitet vor). Der Polier sieht keine Angebote (ANNAHME).
+
+## LV-Struktur, Ordner, Stammleistungen (entschieden 12.11.2026)
+- **Ordner** je Projekt frei benennbar und verschachtelbar (z. B. Rohbau › Estrich, Ausbau › Trockenbau); LVs lassen sich verschieben.
+- **Gliederung wie in AVA-Programmen:** Titel › Untertitel › Position, dazu Hinweistexte. Die OZ wird beim Speichern automatisch vergeben (01 · 01.01 · 01.01.0010, Schritt 10). Positionen mit Kurztext, Langtext, Menge, Einheit; Zeilen verschieben, einfügen, löschen.
+- **Stammleistungen:** firmenweite Bibliothek (Kategorie, Kurztext, Langtext, Einheit) für Einkauf und Leitung; im LV „Aus Stammleistungen …“ (Suche, Mehrfachauswahl), mit ★ eine Position übernehmen.
+- **Kopieren / als Vorlage:** LV als neuen Entwurf kopieren (gleiche Gliederung, ohne Preise).
+- **Preisspiegel und Bieterseite** gegliedert nach Titeln, mit Titelsummen je Bieter. GAEB-Import (X83) folgt.

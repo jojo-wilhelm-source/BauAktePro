@@ -17,7 +17,7 @@ const adminSql = connect(ADMIN_URL, 1);
 const app = buildApp(sql);
 const tokens: Record<string, string> = {};
 
-async function call(user: keyof typeof ID, method: 'GET' | 'POST' | 'PATCH' | 'PUT', url: string, body?: object) {
+async function call(user: keyof typeof ID, method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, body?: object) {
   const res = await app.inject({ method, url, payload: body, headers: { authorization: `Bearer ${tokens[user]}`, 'x-device-id': 'test' } });
   return { status: res.statusCode, body: res.json() as any };
 }
@@ -1225,5 +1225,31 @@ describe('Besprechung nach Konzept', () => {
     expect(sent.body.mails.some((m: any) => m.to.includes('pl@example.test'))).toBe(true);
     const el = (await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).body;
     expect(el.punkte.find((x: any) => x.id === id).mine).toBe(true);
+  });
+});
+
+describe('LV-Ordner, Gliederung, Stammleistungen', () => {
+  it('Ordner nur Einkauf/Leitung; LV mit Titel/Untertitel bekommt OZ automatisch; Kopie; Bibliothek', async () => {
+    const o = randomUUID();
+    expect((await call('uPolier', 'PUT', `/projects/${ID.project}/lv-ordner`, { id: o, name: 'Rohbau' })).status).toBe(403);
+    expect((await call('uBauleitung', 'PUT', `/projects/${ID.project}/lv-ordner`, { id: o, name: 'Rohbau' })).status).toBe(200);
+    const id = randomUUID();
+    const r = await call('uBauleitung', 'PUT', '/lv', { id, project_id: ID.project, titel: 'Estrich', ordner_id: o, auto_oz: true, positionen: [
+      { id: randomUUID(), art: 'titel', kurztext: 'Estricharbeiten' },
+      { id: randomUUID(), art: 'untertitel', kurztext: 'EG' },
+      { id: randomUUID(), art: 'position', kurztext: 'Zementestrich 50 mm', menge: 100, einheit: 'm2' },
+      { id: randomUUID(), art: 'text', kurztext: 'Hinweis: Estrich nach DIN 18560' },
+      { id: randomUUID(), art: 'position', kurztext: 'Randstreifen', menge: 30, einheit: 'm' },
+    ] });
+    expect(r.status).toBe(200);
+    expect(r.body.positionen.map((p: any) => p.oz)).toEqual(['01', '01.01', '01.01.0010', '', '01.01.0020']);
+    expect((await call('uBauleitung', 'GET', `/projects/${ID.project}/lv`)).body.find((l: any) => l.id === id).positionen).toBe(2);
+    expect((await call('uBauleitung', 'DELETE', `/lv-ordner/${o}`)).status).toBe(409); // not empty
+    const k = await call('uBauleitung', 'POST', `/lv/${id}/kopie`, { project_id: ID.project, ordner_id: o });
+    expect((await call('uBauleitung', 'GET', `/lv/${k.body.id}`)).body.positionen).toHaveLength(5);
+    expect((await call('uPolier', 'PUT', '/stammleistungen', { id: randomUUID(), kurztext: 'X', einheit: 'St' })).status).toBe(403);
+    expect((await call('uBauleitung', 'PUT', '/stammleistungen', { id: randomUUID(), kategorie: 'Estrich', kurztext: 'Zementestrich CT-C25-F4 50 mm', einheit: 'm2' })).status).toBe(200);
+    expect((await call('uBauleitung', 'GET', '/stammleistungen?q=zement')).body).toHaveLength(1);
+    expect((await call('uElektro', 'GET', '/stammleistungen')).status).toBe(403);
   });
 });

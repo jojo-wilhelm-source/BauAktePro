@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePositionen, preisspiegel } from './lv';
+import { ozNummerieren, parsePositionen, preisspiegel, titelSummen } from './lv';
 
 describe('Leistungsverzeichnis', () => {
   it('Positionen aus Excel einfügen (Tab oder Semikolon, deutsche Zahlen), Kopfzeile wird übersprungen', () => {
@@ -21,5 +21,19 @@ describe('Leistungsverzeichnis', () => {
     expect(s.summen.find((x) => x.angebot_id === 'B')!.summe_nach_nachlass).toBe(2340);
     expect(s.summen.find((x) => x.angebot_id === 'C')!.fehlende_positionen).toBe(1);
     expect(s.rang).toEqual(['C', 'B', 'D', 'A']);
+  });
+});
+
+describe('LV-Gliederung', () => {
+  it('OZ automatisch: Titel, Untertitel, Positionen in 10er-Schritten, Hinweistext ohne OZ', () => {
+    const oz = ozNummerieren([{ art: 'titel' }, { art: 'position' }, { art: 'untertitel' }, { art: 'position' }, { art: 'text' }, { art: 'position' }, { art: 'titel' }, { art: 'position' }] as const)
+      .map((z) => z.oz);
+    expect(oz).toEqual(['01', '01.0010', '01.01', '01.01.0010', '', '01.01.0020', '02', '02.0010']);
+  });
+  it('Titelsummen je Bieter', () => {
+    const z = [{ id: 't', art: 'titel' as const }, { id: 'u', art: 'untertitel' as const }, { id: 'a', art: 'position' as const }, { id: 'b', art: 'position' as const }];
+    const s = titelSummen(z, new Map([['a', [100, 90]], ['b', [50, null]]]), 2);
+    expect(s.get('t')).toEqual([150, 90]);
+    expect(s.get('u')).toEqual([150, 90]);
   });
 });

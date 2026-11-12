@@ -9,91 +9,173 @@ import { api, getToken, openPdf, type ProjectInfo } from './api';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 
-interface Pos { id: string; oz: string; kurztext: string; langtext?: string | null; menge: number; einheit: string }
-interface LvListItem { id: string; nummer: number; titel: string; angebotsfrist: string | null; status: 'entwurf' | 'angefragt' | 'vergeben'; gewerk: string | null; positionen: number; angefragt: number; angebote: number; vergeben_an_name: string | null; link?: string; abgegeben_at?: string | null }
-interface Lv { id: string; project_id: string; nummer: number; titel: string; beschreibung: string | null; angebotsfrist: string | null; gewerk_id: string | null; status: LvListItem['status']; vergeben_an: string | null; positionen: Pos[]; anfragen: { id: string; company_id: string; company: string; email: string | null; sent_at: string | null; abgegeben_at: string | null }[] }
+type Art = 'titel' | 'untertitel' | 'position' | 'text';
+interface Pos { id: string; art: Art; oz: string; kurztext: string; langtext?: string | null; menge: number; einheit: string | null }
+interface Ordner { id: string; parent_id: string | null; name: string; sort: number }
+interface LvListItem { id: string; nummer: number; titel: string; angebotsfrist: string | null; status: 'entwurf' | 'angefragt' | 'vergeben'; gewerk: string | null; ordner_id: string | null; positionen: number; angefragt: number; angebote: number; vergeben_an_name: string | null; link?: string; abgegeben_at?: string | null }
+interface Lv { id: string; project_id: string; nummer: number; titel: string; beschreibung: string | null; angebotsfrist: string | null; gewerk_id: string | null; ordner_id: string | null; status: LvListItem['status']; vergeben_an: string | null; positionen: Pos[]; anfragen: { id: string; company_id: string; company: string; email: string | null; sent_at: string | null; abgegeben_at: string | null }[] }
 interface Spiegel {
   lv: Lv;
   angebote: { id: string; company_id: string; company: string; nachlass: number; summe: number | null; bemerkung: string | null; has_pdf: boolean; abgegeben_von: string; abgegeben_at: string }[];
   preise: { id: string; preise: Record<string, number> }[];
-  spiegel: { zeilen: { position_id: string; gp: (number | null)[]; guenstigster: string[] }[]; summen: { angebot_id: string; summe: number; nachlass_prozent: number; summe_nach_nachlass: number; fehlende_positionen: number }[]; rang: string[]; guenstigstes: string | null };
+  spiegel: { zeilen: { position_id: string; gp: (number | null)[]; guenstigster: string[] }[]; summen: { angebot_id: string; summe: number; nachlass_prozent: number; summe_nach_nachlass: number; fehlende_positionen: number }[]; rang: string[]; guenstigstes: string | null; titelsummen: Record<string, number[]> };
 }
+interface Stamm { id: string; kategorie: string; kurztext: string; langtext: string | null; einheit: string }
 const STATUS: Record<LvListItem['status'], [string, string]> = { entwurf: ['Entwurf', 'c-orange'], angefragt: ['Angefragt', 'c-blue'], vergeben: ['Vergeben', 'c-green'] };
+const ART_LABEL: Record<Art, string> = { titel: 'Titel', untertitel: 'Untertitel', position: 'Position', text: 'Hinweistext' };
 const num = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 });
 
 export function AusschreibungPage({ info, run }: { info: ProjectInfo; run: Run }) {
   const [list, setList] = useState<LvListItem[]>([]);
+  const [ordner, setOrdner] = useState<Ordner[]>([]);
+  const [sel, setSel] = useState<string | null>(null); // null = alle
   const [open, setOpen] = useState<string | null>(null);
-  const load = useCallback(async () => setList(await api<LvListItem[]>(`/projects/${info.project.id}/lv`)), [info.project.id]);
-  useEffect(() => void load(), [load]);
+  const [bib, setBib] = useState(false);
   const nu = info.role === 'nu';
+  const load = useCallback(async () => {
+    setList(await api<LvListItem[]>(`/projects/${info.project.id}/lv`));
+    if (!nu) setOrdner(await api<Ordner[]>(`/projects/${info.project.id}/lv-ordner`));
+  }, [info.project.id, nu]);
+  useEffect(() => void load(), [load]);
+  const runAndLoad: Run = async (fn, ok) => { await run(fn, ok); await load(); };
   const neu = () => void run(async () => {
     const id = crypto.randomUUID();
-    await api('/lv', { method: 'PUT', body: { id, project_id: info.project.id, titel: 'Neues Leistungsverzeichnis', positionen: [] } });
+    await api('/lv', { method: 'PUT', body: { id, project_id: info.project.id, titel: 'Neues Leistungsverzeichnis', ordner_id: sel, positionen: [] } });
     await load();
     setOpen(id);
   }, 'Leistungsverzeichnis angelegt');
-
-  if (open) return <LvDetail id={open} info={info} run={run} onBack={() => { setOpen(null); void load(); }} />;
-  return (
+  const neuerOrdner = (parent: string | null) => {
+    const name = window.prompt(parent ? 'Name des Unterordners' : 'Name des Ordners (z. B. Rohbau, Ausbau, TGA)');
+    if (name?.trim()) void runAndLoad(() => api(`/projects/${info.project.id}/lv-ordner`, { method: 'PUT', body: { id: crypto.randomUUID(), name: name.trim(), parent_id: parent } }), 'Ordner angelegt');
+  };
+  // All LVs in the selected folder and its sub-folders.
+  const unter = (id: string): string[] => [id, ...ordner.filter((o) => o.parent_id === id).flatMap((o) => unter(o.id))];
+  const sichtbar = sel ? list.filter((l) => l.ordner_id && unter(sel).includes(l.ordner_id)) : list;
+  const Baum = ({ parent, tiefe }: { parent: string | null; tiefe: number }) => (
     <>
-      <PageHeader eyebrow={info.project.name} title={nu ? 'Anfragen' : 'Leistungsverzeichnisse & Angebote'}
-        action={!nu && <button className="btn filled" onClick={neu}><Icon name="plus" size={16} /> Leistungsverzeichnis</button>} />
-      <div className="list-pad" style={{ maxWidth: 1100 }}>
-        <div className="group">
-          {list.map((l) => (
-            nu ? (
+      {ordner.filter((o) => o.parent_id === parent).map((o) => (
+        <div key={o.id}>
+          <button className={`side-item ordner ${sel === o.id ? 'active' : ''}`} style={{ paddingLeft: 12 + tiefe * 16 }} onClick={() => setSel(o.id)}
+            onDoubleClick={() => { const n = window.prompt('Ordner umbenennen', o.name); if (n?.trim()) void runAndLoad(() => api(`/projects/${info.project.id}/lv-ordner`, { method: 'PUT', body: { ...o, name: n.trim() } }), 'Umbenannt'); }}>
+            <Icon name="ordner" size={16} /> {o.name}
+            <span className="count">{list.filter((l) => l.ordner_id && unter(o.id).includes(l.ordner_id)).length}</span>
+          </button>
+          <Baum parent={o.id} tiefe={tiefe + 1} />
+        </div>
+      ))}
+    </>
+  );
+
+  if (open) return <LvDetail id={open} info={info} run={run} ordner={ordner} onBack={() => { setOpen(null); void load(); }} onOpen={setOpen} />;
+  if (nu) {
+    return (
+      <>
+        <PageHeader eyebrow={info.project.name} title="Anfragen" />
+        <div className="list-pad" style={{ maxWidth: 1100 }}>
+          <div className="group">
+            {list.map((l) => (
               <div key={l.id} className="row">
                 <span className="k">{l.titel}<div className="sub">{l.angebotsfrist ? `Angebot bis ${formatDate(l.angebotsfrist)}` : 'ohne Frist'}{l.abgegeben_at ? ` · abgegeben ${formatDate(l.abgegeben_at)}` : ''}</div></span>
                 {l.status === 'angefragt' ? <a className="btn small filled" href={l.link} target="_blank" rel="noreferrer">{l.abgegeben_at ? 'Angebot ändern' : 'Angebot abgeben'}</a> : <span className={`pill ${STATUS[l.status][1]}`}>{STATUS[l.status][0]}</span>}
               </div>
-            ) : (
+            ))}
+            {list.length === 0 && <div className="empty">Keine Anfragen</div>}
+          </div>
+          <div className="footnote">Preise anderer Bieter sind nie sichtbar.</div>
+        </div>
+      </>
+    );
+  }
+  const selOrdner = ordner.find((o) => o.id === sel);
+  return (
+    <>
+      <PageHeader eyebrow={info.project.name} title="Leistungsverzeichnisse & Angebote"
+        action={<div className="meta-row">
+          <button className="btn" onClick={() => setBib(true)}>Stammleistungen</button>
+          <button className="btn filled" onClick={neu}><Icon name="plus" size={16} /> Leistungsverzeichnis{selOrdner ? ` in „${selOrdner.name}“` : ''}</button>
+        </div>} />
+      <div className="lv-split">
+        <aside className="lv-tree">
+          <button className={`side-item ordner ${sel === null ? 'active' : ''}`} onClick={() => setSel(null)}><Icon name="ordner" size={16} /> Alle LVs <span className="count">{list.length}</span></button>
+          <Baum parent={null} tiefe={0} />
+          <div className="lv-tree-actions">
+            <button className="btn small plain" onClick={() => neuerOrdner(null)}>+ Ordner</button>
+            {selOrdner && <button className="btn small plain" onClick={() => neuerOrdner(selOrdner.id)}>+ Unterordner</button>}
+            {selOrdner && <button className="btn small plain destructive" onClick={() => void runAndLoad(async () => { await api(`/lv-ordner/${selOrdner.id}`, { method: 'DELETE' }); setSel(null); }, 'Ordner gelöscht')}>Löschen</button>}
+          </div>
+          <div className="footnote">Doppelklick benennt einen Ordner um. Ordner frei wählbar, z. B. Rohbau › Estrich.</div>
+        </aside>
+        <div>
+          <div className="group">
+            {sichtbar.map((l) => (
               <button key={l.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => setOpen(l.id)}>
                 <span className="k">LV {l.nummer} · {l.titel}
-                  <div className="sub">{l.gewerk ?? 'ohne Gewerk'} · {l.positionen} Positionen · {l.angefragt} angefragt · {l.angebote} Angebote{l.angebotsfrist ? ` · Frist ${formatDate(l.angebotsfrist)}` : ''}{l.vergeben_an_name ? ` · vergeben an ${l.vergeben_an_name}` : ''}</div>
+                  <div className="sub">{ordner.find((o) => o.id === l.ordner_id)?.name ?? 'ohne Ordner'} · {l.gewerk ?? 'ohne Gewerk'} · {l.positionen} Positionen · {l.angefragt} angefragt · {l.angebote} Angebote{l.angebotsfrist ? ` · Frist ${formatDate(l.angebotsfrist)}` : ''}{l.vergeben_an_name ? ` · vergeben an ${l.vergeben_an_name}` : ''}</div>
                 </span>
                 <span className={`pill ${STATUS[l.status][1]}`}>{STATUS[l.status][0]}</span>
               </button>
-            )
-          ))}
-          {list.length === 0 && <div className="empty">{nu ? 'Keine Anfragen' : 'Noch kein Leistungsverzeichnis'}</div>}
+            ))}
+            {sichtbar.length === 0 && <div className="empty">Noch kein Leistungsverzeichnis{selOrdner ? ' in diesem Ordner' : ''}</div>}
+          </div>
+          <div className="footnote">Bieter antworten über einen Link (ohne Konto) oder im Portal – mit Einheitspreisen oder als PDF. Vergeben darf die Bau- oder Projektleitung.</div>
         </div>
-        <div className="footnote">{nu ? 'Preise anderer Bieter sind nie sichtbar.' : 'Bieter antworten über einen Link (ohne Konto) oder im Portal – mit Einheitspreisen oder als PDF. Vergeben darf die Bau- oder Projektleitung.'}</div>
       </div>
+      {bib && <StammSheet onClose={() => setBib(false)} run={run} />}
     </>
   );
 }
 
-function LvDetail({ id, info, run, onBack }: { id: string; info: ProjectInfo; run: Run; onBack: () => void }) {
+function LvDetail({ id, info, run, ordner, onBack, onOpen }: { id: string; info: ProjectInfo; run: Run; ordner: Ordner[]; onBack: () => void; onOpen: (id: string) => void }) {
   const [lv, setLv] = useState<Lv | null>(null);
+  const [rows, setRows] = useState<Pos[]>([]);
+  const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<'lv' | 'spiegel'>('lv');
   const [paste, setPaste] = useState(false);
+  const [bib, setBib] = useState(false);
   const [anfragen, setAnfragen] = useState(false);
   const [sp, setSp] = useState<Spiegel | null>(null);
+  const [lang, setLang] = useState<string | null>(null);
   const load = useCallback(async () => {
     const l = await api<Lv>(`/lv/${id}`);
     setLv(l);
+    setRows(l.positionen);
+    setDirty(false);
     if (l.status !== 'entwurf') setSp(await api<Spiegel>(`/lv/${id}/preisspiegel`));
   }, [id]);
   useEffect(() => void load(), [load]);
   if (!lv) return <p className="loading">Wird geladen …</p>;
   const draft = lv.status === 'entwurf';
-  const save = (patch: Partial<Lv>, ok = 'Gespeichert') => run(async () => {
+  const head = (patch: Partial<Lv>, ok = 'Gespeichert') => run(async () => {
     const n = { ...lv, ...patch };
-    await api('/lv', { method: 'PUT', body: { id: n.id, project_id: n.project_id, titel: n.titel, beschreibung: n.beschreibung, gewerk_id: n.gewerk_id, angebotsfrist: n.angebotsfrist,
-      ...(draft ? { positionen: n.positionen.map((p) => ({ ...p, langtext: p.langtext ?? null })) } : {}) } });
+    await api('/lv', { method: 'PUT', body: { id: n.id, project_id: n.project_id, titel: n.titel, beschreibung: n.beschreibung, gewerk_id: n.gewerk_id, angebotsfrist: n.angebotsfrist, ordner_id: n.ordner_id } });
     await load();
   }, ok);
-  const summeMenge = lv.positionen.length;
+  const saveRows = () => run(async () => {
+    await api('/lv', { method: 'PUT', body: { id: lv.id, project_id: lv.project_id, titel: lv.titel, auto_oz: true,
+      positionen: rows.map((p) => ({ ...p, langtext: p.langtext || null, einheit: p.art === 'position' ? p.einheit : null })) } });
+    await load();
+  }, 'LV gespeichert, OZ neu nummeriert');
+  const edit = (rs: Pos[]) => { setRows(rs); setDirty(true); };
+  const add = (art: Art, after?: number) => {
+    const z: Pos = { id: crypto.randomUUID(), art, oz: '', kurztext: '', langtext: null, menge: art === 'position' ? 1 : 0, einheit: art === 'position' ? 'St' : null };
+    const i = after ?? rows.length - 1;
+    edit([...rows.slice(0, i + 1), z, ...rows.slice(i + 1)]);
+  };
+  const move = (i: number, d: -1 | 1) => { const j = i + d; if (j < 0 || j >= rows.length) return; const n = [...rows]; [n[i], n[j]] = [n[j]!, n[i]!]; edit(n); };
+  const set = (i: number, p: Partial<Pos>) => edit(rows.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  const anzahl = rows.filter((r) => r.art === 'position').length;
+  const valid = rows.every((r) => r.kurztext.trim() && (r.art !== 'position' || (r.einheit ?? '').trim()));
+  const kopie = () => void run(async () => { const r = await api<{ id: string }>(`/lv/${lv.id}/kopie`, { method: 'POST', body: { project_id: lv.project_id, ordner_id: lv.ordner_id } }); onOpen(r.id); }, 'Kopie angelegt (Entwurf)');
   return (
     <>
       <PageHeader eyebrow={`${info.project.name} · LV ${lv.nummer}`} title={lv.titel}
         action={<div className="meta-row">
           <button className="btn" onClick={onBack}>Alle LVs</button>
-          {lv.status !== 'vergeben' && <button className="btn filled" disabled={!summeMenge} onClick={() => setAnfragen(true)}>An Nachunternehmer anfragen …</button>}
+          <button className="btn" onClick={kopie}>Kopieren / als Vorlage</button>
+          {lv.status !== 'vergeben' && <button className="btn filled" disabled={!anzahl || dirty} onClick={() => setAnfragen(true)}>An Nachunternehmer anfragen …</button>}
         </div>}>
         <div className="segmented">
-          <button className={tab === 'lv' ? 'on' : ''} onClick={() => setTab('lv')}>Positionen</button>
+          <button className={tab === 'lv' ? 'on' : ''} onClick={() => setTab('lv')}>Gliederung ({anzahl} Positionen)</button>
           <button className={tab === 'spiegel' ? 'on' : ''} disabled={draft} onClick={() => setTab('spiegel')}>Preisspiegel{sp ? ` (${sp.angebote.length})` : ''}</button>
         </div>
         <span className={`pill ${STATUS[lv.status][1]}`}>{STATUS[lv.status][0]}</span>
@@ -102,27 +184,56 @@ function LvDetail({ id, info, run, onBack }: { id: string; info: ProjectInfo; ru
         {tab === 'lv' ? (
           <>
             <div className="group">
-              <div className="row"><span className="k">Titel</span><input defaultValue={lv.titel} onBlur={(e) => e.target.value.trim() !== lv.titel && void save({ titel: e.target.value.trim() })} /></div>
-              <div className="row"><span className="k">Gewerk</span><select value={lv.gewerk_id ?? ''} onChange={(e) => void save({ gewerk_id: e.target.value || null })}><option value="">–</option>{info.gewerke.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
-              <div className="row"><span className="k">Angebotsfrist</span><input type="date" value={lv.angebotsfrist ?? ''} onChange={(e) => void save({ angebotsfrist: e.target.value || null })} /></div>
+              <div className="row"><span className="k">Bezeichnung</span><input defaultValue={lv.titel} onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== lv.titel && void head({ titel: e.target.value.trim() })} /></div>
+              <div className="row"><span className="k">Ordner</span><select value={lv.ordner_id ?? ''} onChange={(e) => void head({ ordner_id: e.target.value || null }, 'Verschoben')}><option value="">ohne Ordner</option>{ordner.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
+              <div className="row"><span className="k">Gewerk</span><select value={lv.gewerk_id ?? ''} onChange={(e) => void head({ gewerk_id: e.target.value || null })}><option value="">–</option>{info.gewerke.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+              <div className="row"><span className="k">Angebotsfrist</span><input type="date" value={lv.angebotsfrist ?? ''} onChange={(e) => void head({ angebotsfrist: e.target.value || null })} /></div>
             </div>
+            {draft && (
+              <div className="meta-row lv-toolbar">
+                <button className="btn small" onClick={() => add('titel')}>+ Titel</button>
+                <button className="btn small" onClick={() => add('untertitel')}>+ Untertitel</button>
+                <button className="btn small" onClick={() => add('position')}>+ Position</button>
+                <button className="btn small" onClick={() => add('text')}>+ Hinweistext</button>
+                <button className="btn small" onClick={() => setBib(true)}>Aus Stammleistungen …</button>
+                <button className="btn small" onClick={() => setPaste(true)}>Aus Excel einfügen …</button>
+                <span className="spacer" />
+                {dirty && <button className="btn small plain" onClick={() => void load()}>Verwerfen</button>}
+                <button className="btn small filled" disabled={!dirty || !valid} onClick={() => void saveRows()}>Speichern</button>
+              </div>
+            )}
             <div className="card">
-              <table className="table">
-                <thead><tr><th style={{ width: 110 }}>OZ</th><th>Kurztext</th><th className="money" style={{ width: 120 }}>Menge</th><th style={{ width: 80 }}>Einheit</th>{draft && <th style={{ width: 40 }} />}</tr></thead>
+              <table className="table lv-table">
+                <thead><tr><th style={{ width: 110 }}>OZ</th><th>Kurztext</th><th className="money" style={{ width: 110 }}>Menge</th><th style={{ width: 80 }}>Einheit</th>{draft && <th style={{ width: 150 }} />}</tr></thead>
                 <tbody>
-                  {lv.positionen.map((p, i) => (
-                    <tr key={p.id} style={{ cursor: 'default' }}>
-                      <td className="num">{p.oz}</td><td>{p.kurztext}{p.langtext && <div className="sub">{p.langtext}</div>}</td>
-                      <td className="money">{num(p.menge)}</td><td>{p.einheit}</td>
-                      {draft && <td><button className="btn small plain destructive" aria-label="Entfernen" onClick={() => void save({ positionen: lv.positionen.filter((_, j) => j !== i) }, 'Position entfernt')}>✕</button></td>}
-                    </tr>
+                  {rows.map((p, i) => (
+                      <tr key={p.id} className={`lv-${p.art}`} style={{ cursor: 'default' }}>
+                        <td className="num">{dirty ? <span className="sub">{ART_LABEL[p.art]}</span> : p.oz}</td>
+                        <td style={{ paddingLeft: p.art === 'position' || p.art === 'text' ? 28 : p.art === 'untertitel' ? 16 : 8 }}>
+                          {draft ? <input className="lv-input" placeholder={ART_LABEL[p.art]} value={p.kurztext} onChange={(e) => set(i, { kurztext: e.target.value })} /> : <span>{p.kurztext}</span>}
+                          {p.art === 'position' && (draft
+                            ? <button className="btn small plain" onClick={() => setLang(lang === p.id ? null : p.id)}>{p.langtext ? 'Langtext ✓' : 'Langtext'}</button>
+                            : p.langtext && <div className="sub">{p.langtext}</div>)}
+                          {lang === p.id && draft && <textarea className="lv-lang" rows={4} placeholder="Langtext der Position" value={p.langtext ?? ''} onChange={(e) => set(i, { langtext: e.target.value })} />}
+                        </td>
+                        <td className="money">{p.art === 'position' ? (draft ? <input className="lv-input num-in" inputMode="decimal" value={String(p.menge).replace('.', ',')} onChange={(e) => set(i, { menge: Number(e.target.value.replace(/\./g, '').replace(',', '.')) || 0 })} /> : num(p.menge)) : ''}</td>
+                        <td>{p.art === 'position' ? (draft ? <input className="lv-input" value={p.einheit ?? ''} onChange={(e) => set(i, { einheit: e.target.value })} /> : p.einheit) : ''}</td>
+                        {draft && (
+                          <td className="lv-actions">
+                            <button className="btn small plain" title="nach oben" onClick={() => move(i, -1)}>↑</button>
+                            <button className="btn small plain" title="nach unten" onClick={() => move(i, 1)}>↓</button>
+                            <button className="btn small plain" title="Position darunter" onClick={() => add('position', i)}>+</button>
+                            {p.art === 'position' && <button className="btn small plain" title="In Stammleistungen übernehmen" onClick={() => void run(() => api('/stammleistungen', { method: 'PUT', body: { id: crypto.randomUUID(), kategorie: info.gewerke.find((g) => g.id === lv.gewerk_id)?.name ?? 'Allgemein', kurztext: p.kurztext, langtext: p.langtext ?? null, einheit: p.einheit } }), 'In Stammleistungen übernommen')}>★</button>}
+                            <button className="btn small plain destructive" aria-label="Entfernen" onClick={() => edit(rows.filter((_, j) => j !== i))}>✕</button>
+                          </td>
+                        )}
+                      </tr>
                   ))}
                 </tbody>
               </table>
-              {lv.positionen.length === 0 && <div className="empty">Noch keine Positionen – „Positionen einfügen“ übernimmt sie direkt aus Excel.</div>}
-              {draft && <div className="add-row" onClick={() => setPaste(true)}>+ Positionen einfügen (aus Excel: OZ, Kurztext, Menge, Einheit)</div>}
+              {rows.length === 0 && <div className="empty">Noch leer – mit „+ Titel“ und „+ Position“ beginnen, aus den Stammleistungen wählen oder aus Excel einfügen.</div>}
             </div>
-            {!draft && <div className="footnote">Nach dem Versand sind die Positionen gesperrt – alle Bieter rechnen dasselbe LV.</div>}
+            <div className="footnote">{draft ? 'OZ werden beim Speichern automatisch vergeben (Titel 01, Untertitel 01.01, Position 01.01.0010). ★ übernimmt eine Position in die Stammleistungen der Firma.' : 'Nach dem Versand ist das LV gesperrt – alle Bieter rechnen dasselbe LV. Für Änderungen: „Kopieren / als Vorlage“.'}</div>
             {lv.anfragen.length > 0 && (
               <div>
                 <div className="group-title">Angefragt</div>
@@ -137,9 +248,59 @@ function LvDetail({ id, info, run, onBack }: { id: string; info: ProjectInfo; ru
           </>
         ) : sp && <PreisspiegelView sp={sp} info={info} run={async (fn, ok) => { await run(fn, ok); await load(); }} />}
       </div>
-      {paste && <PasteSheet onClose={() => setPaste(false)} onOk={(neu) => { setPaste(false); void save({ positionen: [...lv.positionen, ...neu] }, `${neu.length} Positionen übernommen`); }} />}
+      {paste && <PasteSheet onClose={() => setPaste(false)} onOk={(neu) => { setPaste(false); edit([...rows, ...neu]); }} />}
+      {bib && <StammSheet pick onClose={() => setBib(false)} run={run}
+        onPick={(sel) => { setBib(false); edit([...rows, ...sel.map((x) => ({ id: crypto.randomUUID(), art: 'position' as const, oz: '', kurztext: x.kurztext, langtext: x.langtext, menge: 1, einheit: x.einheit }))]); }} />}
       {anfragen && <AnfrageSheet lv={lv} info={info} onClose={() => setAnfragen(false)} run={async (fn, ok) => { await run(fn, ok); await load(); }} />}
     </>
+  );
+}
+
+/** Company library of standard items: search, pick several for an LV, maintain. */
+function StammSheet({ onClose, run, pick, onPick }: { onClose: () => void; run: Run; pick?: boolean; onPick?: (s: Stamm[]) => void }) {
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<Stamm[]>([]);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [neu, setNeu] = useState({ kategorie: '', kurztext: '', einheit: '' });
+  const load = useCallback(async () => setRows(await api<Stamm[]>(`/stammleistungen${q ? `?q=${encodeURIComponent(q)}` : ''}`)), [q]);
+  useEffect(() => { const t = setTimeout(() => void load(), 250); return () => clearTimeout(t); }, [load]);
+  const kats = [...new Set(rows.map((r) => r.kategorie))];
+  return (
+    <Sheet title="Stammleistungen" primary={pick ? `${chosen.size} einfügen` : 'Fertig'} primaryDisabled={pick && !chosen.size} wide onCancel={onClose}
+      onPrimary={() => (pick ? onPick?.(rows.filter((r) => chosen.has(r.id))) : onClose())}>
+      <label className="search" style={{ marginBottom: 10 }}><Icon name="suche" size={16} /><input autoFocus placeholder="Suchen (Text oder Kategorie)" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+      {kats.map((k) => (
+        <div key={k}>
+          <div className="group-title">{k}</div>
+          <div className="group">
+            {rows.filter((r) => r.kategorie === k).map((r) => (
+              <label key={r.id} className="row" style={{ cursor: pick ? 'pointer' : 'default' }}>
+                <span className="k">{r.kurztext}{r.langtext && <div className="sub">{r.langtext.slice(0, 140)}{r.langtext.length > 140 ? '…' : ''}</div>}</span>
+                <span className="actions">
+                  <span className="v">{r.einheit}</span>
+                  {pick ? <input type="checkbox" className="switch" checked={chosen.has(r.id)} onChange={(e) => { const n = new Set(chosen); if (e.target.checked) n.add(r.id); else n.delete(r.id); setChosen(n); }} />
+                    : <button className="btn small plain destructive" onClick={() => void run(async () => { await api(`/stammleistungen/${r.id}`, { method: 'DELETE' }); await load(); }, 'Entfernt')}>✕</button>}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+      {rows.length === 0 && <div className="empty">Keine Stammleistungen{q ? ' zu dieser Suche' : ' – unten anlegen oder im LV mit ★ übernehmen'}.</div>}
+      <div className="group-title" style={{ marginTop: 14 }}>Neue Stammleistung</div>
+      <div className="group">
+        <div className="row teil-row">
+          <input placeholder="Kategorie, z. B. Estrich" value={neu.kategorie} onChange={(e) => setNeu({ ...neu, kategorie: e.target.value })} />
+          <input className="tb-left" placeholder="Kurztext" value={neu.kurztext} onChange={(e) => setNeu({ ...neu, kurztext: e.target.value })} />
+          <input placeholder="Einheit" style={{ width: 70 }} value={neu.einheit} onChange={(e) => setNeu({ ...neu, einheit: e.target.value })} />
+          <button className="btn small" disabled={!neu.kurztext.trim() || !neu.einheit.trim()} onClick={() => void run(async () => {
+            await api('/stammleistungen', { method: 'PUT', body: { id: crypto.randomUUID(), kategorie: neu.kategorie.trim() || 'Allgemein', kurztext: neu.kurztext.trim(), einheit: neu.einheit.trim() } });
+            setNeu({ ...neu, kurztext: '', einheit: '' });
+            await load();
+          }, 'Stammleistung angelegt')}>Anlegen</button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
 
@@ -147,6 +308,7 @@ function PreisspiegelView({ sp, info, run }: { sp: Spiegel; info: ProjectInfo; r
   const { lv, angebote, preise, spiegel } = sp;
   const order = spiegel.rang.map((id) => angebote.findIndex((a) => a.id === id));
   const ep = (aIdx: number, pid: string) => preise[aIdx]?.preise[pid];
+  const zeile = new Map(spiegel.zeilen.map((z) => [z.position_id, z]));
   if (!angebote.length) return <div className="card pad empty">Noch keine Angebote eingegangen.</div>;
   return (
     <>
@@ -158,16 +320,26 @@ function PreisspiegelView({ sp, info, run }: { sp: Spiegel; info: ProjectInfo; r
             <tr><th /><th /><th />{order.map((i) => [<th key={`e${i}`} className="money sub">EP</th>, <th key={`g${i}`} className="money sub">GP</th>])}</tr>
           </thead>
           <tbody>
-            {lv.positionen.map((p, pi) => {
-              const z = spiegel.zeilen[pi]!;
+            {lv.positionen.map((p) => {
+              if (p.art === 'titel' || p.art === 'untertitel') {
+                const ts = spiegel.titelsummen[p.id] ?? [];
+                return (
+                  <tr key={p.id} className={`lv-${p.art}`} style={{ cursor: 'default' }}>
+                    <td className="num">{p.oz}</td><td colSpan={2}><strong>{p.kurztext}</strong></td>
+                    {order.map((i) => <td key={i} colSpan={2} className="money"><strong>{formatEuro(ts[i] ?? 0)}</strong></td>)}
+                  </tr>
+                );
+              }
+              if (p.art === 'text') return <tr key={p.id} className="lv-text"><td /><td colSpan={2 + order.length * 2} className="sub">{p.kurztext}</td></tr>;
+              const z = zeile.get(p.id);
               return (
                 <tr key={p.id} style={{ cursor: 'default' }}>
                   <td className="num">{p.oz}</td><td>{p.kurztext}</td><td className="money">{num(p.menge)} {p.einheit}</td>
                   {order.map((i) => {
-                    const best = z.guenstigster.includes(angebote[i]!.id);
+                    const best = z?.guenstigster.includes(angebote[i]!.id);
                     const e = ep(i, p.id);
                     return [<td key={`e${i}`} className="money sub">{e != null ? formatEuro(e) : '–'}</td>,
-                      <td key={`g${i}`} className={`money ${best ? 'best' : ''}`}>{z.gp[i] != null ? formatEuro(z.gp[i]!) : '–'}</td>];
+                      <td key={`g${i}`} className={`money ${best ? 'best' : ''}`}>{z?.gp[i] != null ? formatEuro(z.gp[i]!) : '–'}</td>];
                   })}
                 </tr>
               );
@@ -197,7 +369,7 @@ function PreisspiegelView({ sp, info, run }: { sp: Spiegel; info: ProjectInfo; r
           </tfoot>
         </table>
       </div>
-      <div className="footnote">★ = günstigstes Angebot nach Nachlass. Grün = günstigster Preis je Position. Bemerkungen der Bieter: {angebote.filter((a) => a.bemerkung).map((a) => `${a.company}: „${a.bemerkung}“`).join(' · ') || 'keine'}.</div>
+      <div className="footnote">★ = günstigstes Angebot nach Nachlass. Grün = günstigster Preis je Position. Titelzeilen zeigen die Summe je Bieter. Bemerkungen der Bieter: {angebote.filter((a) => a.bemerkung).map((a) => `${a.company}: „${a.bemerkung}“`).join(' · ') || 'keine'}.</div>
     </>
   );
 }
@@ -207,7 +379,7 @@ function PasteSheet({ onClose, onOk }: { onClose: () => void; onOk: (p: Pos[]) =
   const r = useMemo(() => parsePositionen(text), [text]);
   return (
     <Sheet title="Positionen einfügen" primary={`${r.positionen.length} übernehmen`} primaryDisabled={!r.positionen.length} wide onCancel={onClose}
-      onPrimary={() => onOk(r.positionen.map((p) => ({ ...p, id: crypto.randomUUID() })))}>
+      onPrimary={() => onOk(r.positionen.map((p) => ({ ...p, id: crypto.randomUUID(), einheit: p.einheit ?? null })))}>
       <div className="group"><div className="row stack"><textarea autoFocus rows={10} placeholder={'In Excel die Spalten OZ, Kurztext, Menge, Einheit markieren, kopieren und hier einfügen.\n01.0010\tZementestrich 50 mm\t1.250\tm2'} value={text} onChange={(e) => setText(e.target.value)} /></div></div>
       {r.fehler.length > 0 && <div className="warn-box">{r.fehler.slice(0, 5).join(' · ')}</div>}
       <div className="footnote">GAEB-Dateien (X83) kommen später dazu.</div>
@@ -261,8 +433,9 @@ export function AngebotPage({ token }: { token: string }) {
   useEffect(() => void load(), [load]);
   const p = (s: string) => Number(s.replace(/\./g, '').replace(',', '.'));
   const gp = (pos: Pos) => (ep[pos.id] && Number.isFinite(p(ep[pos.id]!)) ? p(ep[pos.id]!) * pos.menge : null);
-  const summeNetto = d ? d.positionen.reduce((s, x) => s + (gp(x) ?? 0), 0) : 0;
-  const filled = d ? d.positionen.filter((x) => gp(x) != null).length : 0;
+  const nurPos = d ? d.positionen.filter((x) => x.art === 'position') : [];
+  const summeNetto = nurPos.reduce((s, x) => s + (gp(x) ?? 0), 0);
+  const filled = nurPos.filter((x) => gp(x) != null).length;
   const submit = async () => {
     setBusy(true);
     setError(null);
@@ -296,7 +469,11 @@ export function AngebotPage({ token }: { token: string }) {
         <table className="table">
           <thead><tr><th className="oz">OZ</th><th>Leistung</th><th className="money">Menge</th><th className="money">EP netto €</th><th className="money gp">GP</th></tr></thead>
           <tbody>
-            {d.positionen.map((x) => (
+            {d.positionen.map((x) => x.art === 'titel' || x.art === 'untertitel' ? (
+              <tr key={x.id} className={`lv-${x.art}`}><td className="num oz">{x.oz}</td><td colSpan={4}><strong>{x.kurztext}</strong><div className="sub oz-m">{x.oz}</div></td></tr>
+            ) : x.art === 'text' ? (
+              <tr key={x.id} className="lv-text"><td className="oz" /><td colSpan={4} className="sub">{x.kurztext}</td></tr>
+            ) : (
               <tr key={x.id} style={{ cursor: 'default' }}>
                 <td className="num oz">{x.oz}</td><td>{x.kurztext}{x.langtext && <div className="sub">{x.langtext}</div>}<div className="sub oz-m">{x.oz}</div></td><td className="money">{num(x.menge)} {x.einheit}</td>
                 <td className="money"><input className="ep" inputMode="decimal" disabled={!d.offen} value={ep[x.id] ?? ''} onChange={(e) => setEp({ ...ep, [x.id]: e.target.value })} placeholder="0,00" /></td>
@@ -304,7 +481,7 @@ export function AngebotPage({ token }: { token: string }) {
               </tr>
             ))}
           </tbody>
-          <tfoot><tr><td className="oz" /><td colSpan={2}><strong>Summe netto</strong> <span className="sub">({filled} von {d.positionen.length} Positionen)</span></td><td colSpan={2} className="money"><strong>{formatEuro(summeNetto)}</strong></td></tr></tfoot>
+          <tfoot><tr><td className="oz" /><td colSpan={2}><strong>Summe netto</strong> <span className="sub">({filled} von {nurPos.length} Positionen)</span></td><td colSpan={2} className="money"><strong>{formatEuro(summeNetto)}</strong></td></tr></tfoot>
         </table>
       </div>
       {d.offen && (
