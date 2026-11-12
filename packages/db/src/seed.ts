@@ -73,11 +73,15 @@ await sql.begin(async (tx) => {
     { id: ID.uFliesen, tenant_id: ID.tenant, company_id: ID.coFliesen, email: 'fliesen@example.test', name: 'Fiona Fliesen' },
     { id: ID.uBauherr, tenant_id: ID.tenant, company_id: ID.coBauherr, email: 'bauherr@example.test', name: 'Hanna Bauherr' },
     { id: ID.uProjektleitung, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'projektleitung@example.test', name: 'Petra Projektleitung' },
+    { id: ID.uAdmin, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'admin@example.test', name: 'Anna Admin' },
   ])}`;
+  // Administrator of the whole app (all projects, all users) and the two NU owners as firm admins.
+  await tx`UPDATE app_user SET is_admin = true WHERE id = ${ID.uAdmin}`;
+  await tx`UPDATE app_user SET company_admin = true WHERE id IN (${ID.uElektro}, ${ID.uFliesen})`;
   // Real sign-in for local testing: every test user has the same development password (never used in production).
   const pw = await hashPassword(TEST_PASSWORD);
   await tx`INSERT INTO auth_account ${tx(
-    [ID.uBauleitung, ID.uPolier, ID.uElektro, ID.uFliesen, ID.uBauherr, ID.uProjektleitung].map((u) => ({
+    [ID.uBauleitung, ID.uPolier, ID.uElektro, ID.uFliesen, ID.uBauherr, ID.uProjektleitung, ID.uAdmin].map((u) => ({
       id: u, user_id: u, account_id: u, provider_id: 'credential', password: pw,
     })),
   )}`;

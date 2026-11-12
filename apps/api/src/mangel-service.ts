@@ -36,7 +36,13 @@ export interface WriteMeta {
 type Row = Record<string, unknown> & { id: string; project_id: string; version: number; status: MangelStatus };
 
 export async function actorFor(tx: TxSql, userId: string, projectId: string): Promise<Actor> {
-  const [m] = await tx`SELECT role, company_id FROM project_member WHERE project_id = ${projectId} AND user_id = ${userId}`;
+  let [m] = await tx`SELECT role, company_id FROM project_member WHERE project_id = ${projectId} AND user_id = ${userId}`;
+  if (!m) {
+    // Administrator: Bauleitung rights in every project of the own company (app.project_role does the same in RLS).
+    [m] = await tx`
+      SELECT 'admin' AS role, u.company_id FROM app_user u JOIN project p ON p.id = ${projectId} AND p.tenant_id = u.tenant_id
+      WHERE u.id = ${userId} AND u.is_admin AND u.active`;
+  }
   if (!m) throw new HttpError(403, 'Kein Zugriff auf dieses Projekt');
   // Projektleitung = same rights as Bauleitung: all checks use the effective role (docs/fachkonzept/01).
   return { userId, companyId: m.company_id as string, role: effectiveRole(m.role as string), roleLabel: roleLabel(m.role as string), deviceId: null };

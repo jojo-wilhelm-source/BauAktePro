@@ -12,6 +12,8 @@ interface Data {
   mitglieder: { id: string; role: ProjectRole; user_id: string; name: string; email: string; company: string; company_kind: string; ich: boolean }[];
   einladungen: { id: string; email: string; name: string | null; role: ProjectRole; created_at: string; expires_at: string; company: string; invited_by: string }[];
   firmen: { id: string; name: string; kind: 'nu' | 'bauherr' }[];
+  /** NU firm admin: only own firm, invites always as Nachunternehmer. */
+  firmAdmin?: boolean;
 }
 
 const ROLES: [ProjectRole, string][] = [
@@ -39,7 +41,7 @@ export function ZugaengePage({ info, run }: { info: ProjectInfo; run: Run }) {
 
   return (
     <>
-      <PageHeader eyebrow={info.project.name} title="Zugänge" action={<button className="btn filled" onClick={() => setInviting(true)}><Icon name="plus" size={16} /> Person einladen</button>} />
+      <PageHeader eyebrow={info.project.name} title={d.firmAdmin ? 'Mitarbeiter meiner Firma' : 'Zugänge'} action={<button className="btn filled" onClick={() => setInviting(true)}><Icon name="plus" size={16} /> Person einladen</button>} />
       <div className="list-pad" style={{ maxWidth: 900, display: 'flex', flexDirection: 'column', gap: 24 }}>
         {d.einladungen.length > 0 && (
           <div>
@@ -78,7 +80,7 @@ export function ZugaengePage({ info, run }: { info: ProjectInfo; run: Run }) {
         ))}
         <div className="footnote">Eingeladene bekommen eine E-Mail mit einem Link (14 Tage gültig) und wählen ihr Passwort selbst. Wer schon einen Zugang hat, wird direkt hinzugefügt. Jede Änderung steht im Protokoll.</div>
       </div>
-      {inviting && <InviteSheet info={info} firmen={d.firmen} run={runAndLoad} onClose={() => setInviting(false)} />}
+      {inviting && <InviteSheet info={info} firmen={d.firmen} firmAdmin={!!d.firmAdmin} run={runAndLoad} onClose={() => setInviting(false)} />}
       {remove && (
         <Sheet title="Zugang entziehen" primary="Entziehen" destructive onCancel={() => setRemove(null)}
           onPrimary={() => runAndLoad(async () => { await api(`/mitglieder/${remove.id}`, { method: 'DELETE' }); setRemove(null); }, `Zugang von ${remove.name} entzogen`)}>
@@ -89,8 +91,8 @@ export function ZugaengePage({ info, run }: { info: ProjectInfo; run: Run }) {
   );
 }
 
-function InviteSheet({ info, firmen, run, onClose }: { info: ProjectInfo; firmen: Data['firmen']; run: Run; onClose: () => void }) {
-  const [f, setF] = useState({ email: '', name: '', role: 'polier' as ProjectRole, company_id: '' });
+function InviteSheet({ info, firmen, firmAdmin, run, onClose }: { info: ProjectInfo; firmen: Data['firmen']; firmAdmin: boolean; run: Run; onClose: () => void }) {
+  const [f, setF] = useState({ email: '', name: '', role: (firmAdmin ? 'nu' : 'polier') as ProjectRole, company_id: firmAdmin ? (firmen[0]?.id ?? '') : '' });
   const [link, setLink] = useState<string | null>(null);
   const needsCompany = f.role === 'nu' || f.role === 'bauherr';
   const options = firmen.filter((c) => (f.role === 'nu' ? c.kind === 'nu' : c.kind === 'bauherr'));
@@ -113,13 +115,17 @@ function InviteSheet({ info, firmen, run, onClose }: { info: ProjectInfo; firmen
           <div className="group">
             <div className="row"><span className="k">E-Mail</span><input type="email" autoFocus placeholder="name@firma.de" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
             <div className="row"><span className="k">Name</span><input placeholder="optional" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+            {firmAdmin ? (
+              <div className="row"><span className="k">Für</span><span className="v">{firmen[0]?.name} (Nachunternehmer)</span></div>
+            ) : (
             <div className="row">
               <span className="k">Rolle</span>
               <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as ProjectRole, company_id: '' })}>
                 {ROLES.map(([r, l]) => <option key={r} value={r}>{l}</option>)}
               </select>
             </div>
-            {needsCompany && (
+            )}
+            {needsCompany && !firmAdmin && (
               <div className="row">
                 <span className="k">{f.role === 'nu' ? 'Nachunternehmer' : 'Bauherr (Firma)'}</span>
                 <select value={f.company_id} onChange={(e) => setF({ ...f, company_id: e.target.value })}>

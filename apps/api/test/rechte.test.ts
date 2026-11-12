@@ -40,7 +40,7 @@ const numbers = async (user: keyof typeof ID) => (await maengel(user)).map((m) =
 
 beforeAll(async () => {
   await initKeys();
-  for (const u of ['uBauleitung', 'uPolier', 'uElektro', 'uFliesen', 'uBauherr', 'uProjektleitung'] as const) tokens[u] = await issueToken(ID[u]);
+  for (const u of ['uBauleitung', 'uPolier', 'uElektro', 'uFliesen', 'uBauherr', 'uProjektleitung', 'uAdmin'] as const) tokens[u] = await issueToken(ID[u]);
 });
 beforeEach(() => {
   execSync('pnpm --silent db:seed', { cwd: root, stdio: 'ignore' });
@@ -754,7 +754,7 @@ describe('Einladungen und Zugänge', () => {
   const tokenOf = (link: string) => link.split('/einladung/')[1]!;
   it('nur die Leitung lädt ein; NU nur für Firmen des Projekts', async () => {
     expect((await einladen('uPolier', { email: 'neu@example.test', role: 'polier' })).status).toBe(403);
-    expect((await einladen('uElektro', { email: 'neu@example.test', role: 'nu', company_id: ID.coElektro })).status).toBe(403);
+    expect((await einladen('uBauherr', { email: 'neu@example.test', role: 'nu', company_id: ID.coElektro })).status).toBe(403);
     expect((await call('uBauleitung', 'POST', '/einladungen', { project_id: ID.otherProject, email: 'x@example.test', role: 'nu', company_id: ID.coElektro })).status).toBe(422);
     expect((await einladen('uBauleitung', { email: 'x@example.test', role: 'nu' })).status).toBe(422);
   });
@@ -866,5 +866,46 @@ describe('QR-Freimeldung je Mangelanzeige', () => {
     const neu = (await call('uBauleitung', 'POST', `/mangelanzeigen/${id}/link`, { action: 'neu' })).body;
     expect((await pub(`/public/freimeldung/${token}`)).statusCode).toBe(404);
     expect((await pub(`/public/freimeldung/${(neu.url as string).split('/freimeldung/')[1]}`)).statusCode).toBe(200);
+  });
+});
+
+describe('Administrator', () => {
+  it('sieht alle Projekte mit Bauleitungsrechten, ohne Mitglied zu sein', async () => {
+    const me = (await call('uAdmin', 'GET', '/me')).body;
+    expect(me.isAdmin).toBe(true);
+    expect(me.projects.map((p: any) => p.role)).toEqual(['admin', 'admin']);
+    expect((await maengel('uAdmin')).length).toBe(3);
+    expect((await call('uAdmin', 'GET', `/projects/${ID.project}/kosten`)).status).toBe(200);
+  });
+  it('verwaltet Benutzer: sperren beendet Sitzungen; eigener Zugang bleibt; andere dürfen nicht', async () => {
+    expect((await call('uBauleitung', 'GET', '/admin')).status).toBe(403);
+    const o = (await call('uAdmin', 'GET', '/admin')).body;
+    expect(o.users.length).toBe(7);
+    const login = (await app.inject({ method: 'POST', url: '/auth/login', payload: { email: 'polier@example.test', password: TEST_PASSWORD } })).json();
+    expect((await call('uAdmin', 'PATCH', `/admin/users/${ID.uPolier}`, { active: false })).status).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refresh: login.refresh } })).statusCode).toBe(401);
+    expect((await call('uAdmin', 'PATCH', `/admin/users/${ID.uAdmin}`, { is_admin: false })).status).toBe(422);
+    expect((await call('uAdmin', 'PATCH', `/admin/users/${ID.uElektro}`, { is_admin: true })).status).toBe(422);
+    expect((await call('uBauleitung', 'PATCH', `/admin/users/${ID.uPolier}`, { active: true })).status).toBe(403);
+  });
+});
+
+describe('Firmen-Admin eines Nachunternehmers', () => {
+  it('lädt nur für die eigene Firma ein (immer als NU), sieht nur eigene Leute', async () => {
+    const r = await call('uFliesen', 'POST', '/einladungen', { project_id: ID.project, email: 'geselle@fliesen-fuchs.example.test', role: 'polier' });
+    expect(r.status).toBe(403);
+    const ok = await call('uFliesen', 'POST', '/einladungen', { project_id: ID.project, email: 'geselle@fliesen-fuchs.example.test', role: 'nu', company_id: ID.coElektro });
+    expect(ok.body.status).toBe('eingeladen');
+    const accepted = await app.inject({ method: 'POST', url: `/auth/einladung/${ok.body.devLink.split('/einladung/')[1]}`, payload: { name: 'Gerd Geselle', password: 'Geselle-Passwort-1' } });
+    const me = await app.inject({ method: 'GET', url: '/me', headers: { authorization: `Bearer ${accepted.json().token}` } });
+    expect(me.json().user.company).toBe('Fliesen Fuchs GmbH'); // own firm, not Elektro
+    const z = (await call('uFliesen', 'GET', `/projects/${ID.project}/zugaenge`)).body;
+    expect(z.firmAdmin).toBe(true);
+    expect(z.mitglieder.every((m: any) => m.company === 'Fliesen Fuchs GmbH')).toBe(true);
+  });
+  it('ein NU ohne Firmen-Admin-Recht lädt nicht ein', async () => {
+    await adminSql`UPDATE app_user SET company_admin = false WHERE id = ${ID.uElektro}`;
+    expect((await call('uElektro', 'POST', '/einladungen', { project_id: ID.project, email: 'x@elektro-blitz.example.test', role: 'nu' })).status).toBe(403);
+    expect((await call('uElektro', 'GET', `/projects/${ID.project}/zugaenge`)).status).toBe(403);
   });
 });

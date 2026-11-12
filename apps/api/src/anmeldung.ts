@@ -198,7 +198,13 @@ const InviteInput = z.object({
 export async function invite(tx: TxSql, userId: string, input: unknown, meta: WriteMeta) {
   const d = InviteInput.parse(input);
   const a = await actorFor(tx, userId, d.project_id);
-  if (a.role !== 'bauleitung') throw new HttpError(403, 'Einladen dürfen Bau- und Projektleitung');
+  // Firm admin of a NU: invites people of (or working for) his own firm, always as Nachunternehmer of his firm.
+  const firmAdmin = a.role === 'nu' && (await tx`SELECT app.is_company_admin() AS ok`)[0]?.ok === true;
+  if (a.role !== 'bauleitung' && !firmAdmin) throw new HttpError(403, 'Einladen dürfen Bau- und Projektleitung sowie der Firmen-Admin eines Nachunternehmers');
+  if (firmAdmin) {
+    if (d.role !== 'nu') throw new HttpError(403, 'Als Firmen-Admin laden Sie Personen nur für Ihre eigene Firma ein');
+    d.company_id = a.companyId;
+  }
   const [p] = await tx`SELECT p.name, p.tenant_id, (SELECT c.id FROM company c WHERE c.tenant_id = p.tenant_id AND c.kind = 'own' LIMIT 1) AS own FROM project p WHERE p.id = ${d.project_id}`;
   let companyId: string;
   if (OWN_ROLES.includes(d.role)) companyId = p!.own as string;
@@ -292,7 +298,21 @@ export async function acceptInvitation(admin: Sql, token: string, input: unknown
 /** Invitations and members of a project, for the "Zugänge" page (Leitung). */
 export async function zugaenge(tx: TxSql, userId: string, projectId: string) {
   const a = await actorFor(tx, userId, projectId);
-  if (a.role !== 'bauleitung') throw new HttpError(403, 'Zugänge verwalten Bau- und Projektleitung');
+  const firmAdmin = a.role === 'nu' && (await tx`SELECT app.is_company_admin() AS ok`)[0]?.ok === true;
+  if (a.role !== 'bauleitung' && !firmAdmin) throw new HttpError(403, 'Zugänge verwalten Bau- und Projektleitung');
+  if (firmAdmin) {
+    // The firm admin sees and manages only the people of his own firm.
+    const mitglieder = await tx`
+      SELECT pm.id, pm.role, u.id AS user_id, u.name, u.email, c.name AS company, c.kind AS company_kind, pm.user_id = ${userId} AS ich
+      FROM project_member pm JOIN app_user u ON u.id = pm.user_id JOIN company c ON c.id = pm.company_id
+      WHERE pm.project_id = ${projectId} AND pm.company_id = ${a.companyId} ORDER BY u.name`;
+    const einladungen = await tx`
+      SELECT e.id, e.email, e.name, e.role, e.created_at, e.expires_at, c.name AS company, u.name AS invited_by
+      FROM einladung e JOIN company c ON c.id = e.company_id JOIN app_user u ON u.id = e.invited_by
+      WHERE e.project_id = ${projectId} AND e.company_id = ${a.companyId} AND e.accepted_at IS NULL AND e.revoked_at IS NULL ORDER BY e.created_at DESC`;
+    const firmen = await tx`SELECT id, name, kind FROM company WHERE id = ${a.companyId}`;
+    return { mitglieder, einladungen, firmen, firmAdmin: true };
+  }
   const mitglieder = await tx`
     SELECT pm.id, pm.role, u.id AS user_id, u.name, u.email, c.name AS company, c.kind AS company_kind, pm.user_id = ${userId} AS ich
     FROM project_member pm JOIN app_user u ON u.id = pm.user_id JOIN company c ON c.id = pm.company_id
@@ -305,14 +325,15 @@ export async function zugaenge(tx: TxSql, userId: string, projectId: string) {
     SELECT c.id, c.name, c.kind FROM company c
     WHERE c.kind IN ('nu', 'bauherr') AND EXISTS (SELECT 1 FROM project_company pc WHERE pc.company_id = c.id AND pc.project_id = ${projectId})
     ORDER BY c.kind, c.name`;
-  return { mitglieder, einladungen, firmen };
+  return { mitglieder, einladungen, firmen, firmAdmin: false };
 }
 
 export async function revokeInvitation(tx: TxSql, userId: string, id: string, meta: WriteMeta) {
-  const [e] = await tx`SELECT project_id, email FROM einladung WHERE id = ${id}`;
+  const [e] = await tx`SELECT project_id, email, company_id FROM einladung WHERE id = ${id}`;
   if (!e) throw new HttpError(404, 'Einladung nicht gefunden');
   const a = await actorFor(tx, userId, e.project_id as string);
-  if (a.role !== 'bauleitung') throw new HttpError(403, 'Nur Bau- und Projektleitung');
+  const firmAdmin = a.role === 'nu' && e.company_id === a.companyId && (await tx`SELECT app.is_company_admin() AS ok`)[0]?.ok === true;
+  if (a.role !== 'bauleitung' && !firmAdmin) throw new HttpError(403, 'Nur Bau- und Projektleitung oder der Firmen-Admin');
   await tx`UPDATE einladung SET revoked_at = now() WHERE id = ${id} AND accepted_at IS NULL`;
   await audit(tx, userId, e.project_id as string, 'einladung', id, 'zurueckgezogen', meta, { email: e.email });
   return { ok: true };
@@ -320,10 +341,11 @@ export async function revokeInvitation(tx: TxSql, userId: string, id: string, me
 
 /** Remove a person from the project (rights change, audited). Their device drops the project on the next sync. */
 export async function removeMember(tx: TxSql, userId: string, memberId: string, meta: WriteMeta) {
-  const [m] = await tx`SELECT pm.project_id, pm.user_id, pm.role, u.email FROM project_member pm JOIN app_user u ON u.id = pm.user_id WHERE pm.id = ${memberId}`;
+  const [m] = await tx`SELECT pm.project_id, pm.user_id, pm.role, pm.company_id, u.email FROM project_member pm JOIN app_user u ON u.id = pm.user_id WHERE pm.id = ${memberId}`;
   if (!m) throw new HttpError(404, 'Mitglied nicht gefunden');
   const a = await actorFor(tx, userId, m.project_id as string);
-  if (a.role !== 'bauleitung') throw new HttpError(403, 'Zugänge entziehen Bau- und Projektleitung');
+  const firmAdmin = a.role === 'nu' && m.company_id === a.companyId && m.role === 'nu' && (await tx`SELECT app.is_company_admin() AS ok`)[0]?.ok === true;
+  if (a.role !== 'bauleitung' && !firmAdmin) throw new HttpError(403, 'Zugänge entziehen Bau- und Projektleitung oder der Firmen-Admin');
   if (m.user_id === userId) throw new HttpError(422, 'Den eigenen Zugang kann man nicht entziehen');
   if (m.role === 'bauleitung' || m.role === 'projektleitung') {
     const [{ n }] = (await tx`SELECT count(*)::int AS n FROM project_member WHERE project_id = ${m.project_id} AND role IN ('bauleitung', 'projektleitung')`) as unknown as [{ n: number }];

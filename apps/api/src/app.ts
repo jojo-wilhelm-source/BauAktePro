@@ -13,6 +13,8 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import { adminOverview, adminUpdateUser } from './admin-service';
+import { startPage } from './start-service';
 import { changeLink, linkInfo, listFreimeldungen, publicAnzeige, publicFoto, submitFreimeldung } from './freimeldung-service';
 import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, zugaenge } from './anmeldung';
 import {
@@ -136,13 +138,23 @@ export function buildApp(sql: Sql) {
 
   app.get('/me', async (req) =>
     asUser(sql, req.userId, async (tx) => {
-      const [user] = await tx`SELECT u.id, u.name, u.email, c.name AS company FROM app_user u JOIN company c ON c.id = u.company_id WHERE u.id = ${req.userId}`;
+      const [user] = await tx`
+        SELECT u.id, u.name, u.email, u.is_admin, u.company_admin, c.name AS company, c.kind AS company_kind
+        FROM app_user u JOIN company c ON c.id = u.company_id WHERE u.id = ${req.userId}`;
+      // RLS: members see their projects; the administrator sees all projects of the company.
       const projects = await tx`
-        SELECT p.id, p.name, pm.role FROM project p JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${req.userId}
+        SELECT p.id, p.name, coalesce(pm.role, 'admin') AS role FROM project p
+        LEFT JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${req.userId}
         ORDER BY p.name`;
-      return { user, projects, canCreateProject: await canCreateProject(tx) };
+      return { user, projects, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
     }),
   );
+
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/start', async (req) => asUser(sql, req.userId, (tx) => startPage(tx, req.userId, req.params.projectId)));
+
+  // --- Administration -------------------------------------------------------------
+  app.get('/admin', async (req) => asUser(sql, req.userId, (tx) => adminOverview(tx)));
+  app.patch<{ Params: { id: string } }>('/admin/users/:id', async (req) => asUser(sql, req.userId, (tx) => adminUpdateUser(tx, req.userId, req.params.id, req.body, meta(req))));
 
   // --- Freimelde-Link je Mangelanzeige (Leitung) -------------------------------------
   app.get<{ Params: { id: string } }>('/mangelanzeigen/:id/link', async (req) => asUser(sql, req.userId, (tx) => linkInfo(tx, req.userId, req.params.id)));

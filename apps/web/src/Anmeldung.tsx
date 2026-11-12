@@ -13,6 +13,7 @@ const TEST_USERS = [
   ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs'],
   ['bauherr@example.test', 'Hanna Bauherr', 'Bauherr'],
   ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
+  ['admin@example.test', 'Anna Admin', 'Administratorin'],
 ] as const;
 
 const msg = (e: unknown) => (e instanceof ApiError ? e.message : String(e));

@@ -70,6 +70,8 @@ export interface Me {
   user: { id: string; name: string; email: string; company: string };
   projects: { id: string; name: string; role: ProjectRole }[];
   canCreateProject: boolean;
+  isAdmin: boolean;
+  companyAdmin: boolean;
 }
 export interface ProjectInfo {
   project: { id: string; name: string };

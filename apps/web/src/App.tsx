@@ -12,6 +12,8 @@ import { KostenPage } from './Kosten';
 import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
 import { FreimeldungPage } from './Freimeldung';
 import { ZugaengePage } from './Zugaenge';
+import { AdminPage } from './Admin';
+import { StartPage } from './Start';
 import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
@@ -24,7 +26,7 @@ import { PageHeader, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -92,7 +94,8 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
   const [info, setInfo] = useState<ProjectInfo | null>(null);
   const [maengel, setMaengel] = useState<Mangel[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  const [module, setModule] = useState<Module>('maengel');
+  // NU-Portal starts with "Was ist zu tun?"; internal roles with the Mängel list.
+  const [module, setModule] = useState<Module>(me.projects.find((p) => p.id === projectId)?.role === 'nu' ? 'start' : 'maengel');
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number } | null>(null);
   const [toast, setToast] = useState<Toast>(null);
@@ -164,6 +167,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
           </select>
         </div>
         <div className="side-section">Baustelle</div>
+        {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
         {nav('besprechungen', 'besprechung', 'Besprechungen')}
@@ -184,6 +188,18 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {nav('zugaenge', 'zugang', 'Zugänge')}
           </>
         )}
+        {info && info.role === 'nu' && me.companyAdmin && (
+          <>
+            <div className="side-section">Meine Firma</div>
+            {nav('zugaenge', 'zugang', 'Mitarbeiter einladen')}
+          </>
+        )}
+        {me.isAdmin && (
+          <>
+            <div className="side-section">Administration</div>
+            {nav('admin', 'zugang', 'Benutzer & Projekte')}
+          </>
+        )}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
           <div className="who">
@@ -201,6 +217,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
           <p className="loading">Projekt wird geladen …</p>
         ) : (
           <>
+            {module === 'start' && <StartPage info={info} onOpen={setModule} onMangel={(id) => { setSelected(id); setModule('maengel'); }} />}
             {module === 'maengel' && <MaengelPage info={info} maengel={maengel} selected={selected} onSelect={setSelected} run={run} onAnzeige={startAnzeige} />}
             {module === 'anzeigen' && (
               <AnzeigenPage
@@ -276,6 +293,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'fahrtenbuch' && <FahrtenbuchPage info={info} run={run} />}
             {module === 'kosten' && <KostenPage info={info} run={run} />}
             {module === 'zugaenge' && <ZugaengePage info={info} run={run} />}
+            {module === 'admin' && <AdminPage meId={me.user.id} run={run} onOpenProject={(id) => onProject(id)} />}
             {module === 'struktur' && <StrukturPage info={info} me={me} run={run} onReload={() => void reload()} onMeReload={onMeReload} />}
             {module === 'hinweise' && <HinweisePage info={info} conflicts={conflicts} run={run} />}
           </>

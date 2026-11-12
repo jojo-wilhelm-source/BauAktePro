@@ -42,3 +42,8 @@ Rollen gelten **pro Projekt**. Zusätzlich gibt es **Firmenrollen** für die pro
 - **Zugang entziehen** (Rechteänderung, im Audit Log): Danach kein Zugriff mehr, das Projekt verschwindet beim nächsten Abgleich vom Gerät. Den eigenen Zugang und die letzte Leitung eines Projekts kann man nicht entziehen. Offene Einladungen lassen sich zurückziehen.
 - **Gesperrte Konten** (z. B. Mitarbeiter ausgeschieden) können sich weder anmelden noch die Sitzung verlängern. ANNAHME: Sperren eines ganzen Kontos (über alle Projekte) macht vorerst der Administrator in der Datenbank; eine Oberfläche dafür kommt mit der Benutzerverwaltung der Firma (offene-punkte D9).
 
+## Umsetzungsstand (12.11.2026): Administrator, Firmen-Admin, NU-Portal
+- **Administrator** (eigene Firma): sieht alle Projekte mit den Rechten der Bauleitung, auch ohne eingetragen zu sein; Bereich „Administration“: alle Personen mit Projekten und Rollen, **sperren/entsperren** (meldet auf allen Geräten ab), **Admin** und **Firmen-Admin** vergeben/entziehen. Den eigenen Admin-Zugang kann man nicht entziehen. Alles im Audit Log.
+- **Firmen-Admin eines Nachunternehmers**: lädt weitere Personen seiner Firma (oder für seine Firma tätige Handwerker) in die Projekte seiner Firma ein – immer als Nachunternehmer seiner Firma; sieht und verwaltet nur die eigenen Leute („Mitarbeiter einladen“).
+- **NU-Portal**: Startseite „Was ist zu tun?“ mit Kennzahlen, offenen Mängeln (überfällige zuerst, mit nächstem Schritt), erhaltenen Mangelanzeigen, Besprechungspunkten und eigenen Einreichungen/Stundenzetteln.
+

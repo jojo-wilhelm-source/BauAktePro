@@ -17,6 +17,7 @@ const TEST_USERS = [
   ['bauleitung@example.test', 'Bea Bauleitung', 'Bauleitung'],
   ['elektro@example.test', 'Erik Elektro', 'NU Elektro Blitz'],
   ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
+  ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs (Firmen-Admin)'],
 ] as const;
 const DEV_PASSWORD = 'Baustelle-Test-2026';
 

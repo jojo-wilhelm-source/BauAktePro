@@ -307,3 +307,16 @@ button.link { border: 0; background: none; color: var(--accent); padding: 0; fon
 .qr-row img.qr-off { opacity: 0.25; }
 .qr-row .k { flex: 1; min-width: 0; }
 .fm-row { gap: 8px; align-items: flex-start; }
+.admin { max-width: 1000px; display: flex; flex-direction: column; gap: 24px; }
+.row.inactive .k { opacity: 0.55; }
+/* Start page / dashboards */
+.start { max-width: 1000px; display: flex; flex-direction: column; gap: 22px; }
+.start .group-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px 8px; }
+.start .group-head h3 { margin: 0; font-size: 17px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi { background: var(--bg-elevated); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.kpi strong { font-size: 28px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.kpi span { color: var(--label-2); font-size: 13px; }
+.kpi.red strong { color: var(--red); }
+.kpi.orange strong { color: var(--orange); }
+.kpi.green strong { color: var(--green); }
