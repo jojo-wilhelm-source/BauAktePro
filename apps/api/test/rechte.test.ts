@@ -324,13 +324,14 @@ describe('NU-Besprechung', () => {
     expect((await call('uBauherr', 'GET', `/besprechungen/${ID.bespr1}`)).status).toBe(404); // not a participant
   });
 
-  it('Folgesitzung: Offen und In Arbeit wandern mit, Erledigt und Info nicht; Teilnehmer übernommen', async () => {
+  it('Folgesitzung: alle aktiven Punkte wandern mit, nur Erledigt nicht; Teilnehmer und allgemeine Infos übernommen', async () => {
     expect((await nextMeeting('uElektro')).status).toBe(403);
     const r = await nextMeeting('uPolier');
     expect(r.status).toBe(200);
     expect(r.body.number).toBe(2);
     const d = (await call('uPolier', 'GET', `/besprechungen/${r.body.id}`)).body;
-    expect(nums(d)).toEqual([1, 2, 5]);
+    expect(nums(d)).toEqual([1, 2, 4, 5]);
+    expect(d.allgemein).toHaveLength(2);
     expect(d.punkte.every((p: any) => p.carried)).toBe(true);
     expect(d.teilnehmer).toHaveLength(3);
   });
@@ -344,9 +345,9 @@ describe('NU-Besprechung', () => {
     const sent = await call('uBauleitung', 'POST', `/besprechungen/${r.body.id}/send`, { base_version: 1 });
     expect(sent.status).toBe(200);
     expect(sent.body.mails.map((m: any) => m.company).sort()).toEqual(['Elektro Blitz GmbH', 'Fliesen Fuchs GmbH']);
-    expect(nums((await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).body)).toEqual([1, 2, 6]);
+    expect(nums((await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).body)).toEqual([1, 2, 4, 6]);
     const fl = (await call('uFliesen', 'GET', `/besprechungen/${r.body.id}`)).body;
-    expect(nums(fl)).toEqual([1, 2, 6]);
+    expect(nums(fl)).toEqual([1, 2, 4, 6]);
     expect(fl.punkte.filter((p: any) => p.mine).map((p: any) => p.number)).toEqual([1]);
   });
 
@@ -1196,5 +1197,33 @@ describe('Bautagebuch im Firmenformat', () => {
     expect(bh.einsatz).toEqual({});
     expect(bh.besuche).toBe('BG Bau');
     expect(bh.anordnungen).toBeNull();
+  });
+});
+
+describe('Besprechung nach Konzept', () => {
+  it('Teilaufgaben je Firma: NU der Teilaufgabe sieht den Punkt; Mail-Vorschau mit Vorlage; Verteiler nur Leitung', async () => {
+    const r = await call('uPolier', 'POST', '/besprechungen', { id: randomUUID(), project_id: ID.project, held_at: '2026-11-17T09:00:00+01:00', previous_id: ID.bespr1 });
+    const id = randomUUID();
+    const add = await call('uPolier', 'POST', '/punkte', { id, besprechung_id: r.body.id, text: 'Doppelboden 4. OG vorbereiten', responsible_company_id: ID.coOwn, status: 'wichtig',
+      notiz: 'Abhängig von Estrich', eigen_anteil: 'Schotts herstellen', kontrolle: 'BL am 20.11.',
+      teilaufgaben: [{ company_id: ID.coElektro, text: 'Bodentanks setzen', status: 'in_arbeit', due_date: '2026-11-19' }] });
+    expect(add.status).toBe(200);
+    expect(add.body.support_company_ids).toEqual([ID.coElektro]);
+    const det = (await call('uPolier', 'GET', `/besprechungen/${r.body.id}`)).body;
+    const p = det.punkte.find((x: any) => x.id === id);
+    expect(p.teilaufgaben[0].company).toBe('Elektro Blitz GmbH');
+    const mail = (await call('uBauleitung', 'GET', `/besprechungen/${r.body.id}/mail`)).body;
+    expect(mail.text).toMatch(/ALLGEMEINE INFORMATIONEN/);
+    expect(mail.text).toMatch(/Anteil Elektro Blitz GmbH: Bodentanks setzen/);
+    expect(mail.text).not.toMatch(/Container und Lagerfläche/); // erledigt → not in the mail
+    expect((await call('uPolier', 'PUT', `/projects/${ID.project}/verteiler`, { id: randomUUID(), name: 'X', email: 'x@example.test' })).status).toBe(403);
+    expect((await call('uBauleitung', 'PUT', `/projects/${ID.project}/verteiler`, { id: randomUUID(), name: 'Petra PL', email: 'pl@example.test', kategorie: 'projektleiter' })).status).toBe(200);
+    expect((await call('uBauleitung', 'PUT', `/projects/${ID.project}/mail-vorlage`, { preset: 'kurz', intro: 'Hallo zusammen,', outro: 'Danke.', signatur: 'Viele Grüße' })).status).toBe(200);
+    expect((await call('uBauleitung', 'GET', `/besprechungen/${r.body.id}/mail`)).body.text).toMatch(/^Hallo zusammen,/);
+    const sent = await call('uBauleitung', 'POST', `/besprechungen/${r.body.id}/send`, { base_version: (await call('uBauleitung', 'GET', `/besprechungen/${r.body.id}`)).body.version });
+    expect(sent.status).toBe(200);
+    expect(sent.body.mails.some((m: any) => m.to.includes('pl@example.test'))).toBe(true);
+    const el = (await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).body;
+    expect(el.punkte.find((x: any) => x.id === id).mine).toBe(true);
   });
 });

@@ -24,6 +24,7 @@ export const C = {
 export const TINT = {
   red: '#FF3B30',
   orange: '#FF9500',
+  yellow: '#D9A400',
   green: '#34C759',
   gray: '#8E8E93',
   blue: '#007AFF',

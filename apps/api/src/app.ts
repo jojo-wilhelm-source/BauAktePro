@@ -25,7 +25,7 @@ import {
   addGewerk, addLocation, canCreateProject, createProject, deleteGewerk, deleteLocation, nuKandidaten, nuUebernehmen, renameGewerk,
   renameLocation, renameProject, structure, takeOverStructure,
 } from './projekt-service';
-import { addPunkt, addPunktFoto, bauherrFreigabe, bauherrGegenzeichnen, besprechungDetails, punktFotoFile, createBesprechung, listBesprechungen, nextTerminIcs, patchBesprechung, patchPunkt, protokollPdf, sendBesprechung, setAnwesenheit, setTeilnehmer } from './besprechung-service';
+import { getMailVorlage, listVerteiler, mailVorschau, removeVerteiler, saveMailVorlage, saveVerteiler, addPunkt, addPunktFoto, bauherrFreigabe, bauherrGegenzeichnen, besprechungDetails, punktFotoFile, createBesprechung, listBesprechungen, nextTerminIcs, patchBesprechung, patchPunkt, protokollPdf, sendBesprechung, setAnwesenheit, setTeilnehmer } from './besprechung-service';
 import { checkRevision, decideRevision, listPlans, stampedRevisionPdf, uploadRevision } from './plan-service';
 import { actorFor, createMangel, HttpError, patchMangel, setNachfrist, transitionMangel, type WriteMeta } from './mangel-service';
 
@@ -165,6 +165,14 @@ export function buildApp(sql: Sql) {
       return { user, projects: list, fahrtenbuch: !!user?.fahrtenbuch || !!user?.is_admin, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
     }),
   );
+
+  // --- Besprechung: mail template, distribution list, mail preview (concept points 7/8) ----
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/mail-vorlage', async (req) => asUser(sql, req.userId, (tx) => getMailVorlage(tx, req.userId, req.params.projectId)));
+  app.put<{ Params: { projectId: string } }>('/projects/:projectId/mail-vorlage', async (req) => asUser(sql, req.userId, (tx) => saveMailVorlage(tx, req.userId, req.params.projectId, req.body)));
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/verteiler', async (req) => asUser(sql, req.userId, (tx) => listVerteiler(tx, req.userId, req.params.projectId)));
+  app.put<{ Params: { projectId: string } }>('/projects/:projectId/verteiler', async (req) => asUser(sql, req.userId, (tx) => saveVerteiler(tx, req.userId, req.params.projectId, req.body)));
+  app.delete<{ Params: { id: string } }>('/verteiler/:id', async (req) => asUser(sql, req.userId, (tx) => removeVerteiler(tx, req.userId, req.params.id)));
+  app.get<{ Params: { id: string } }>('/besprechungen/:id/mail', async (req) => asUser(sql, req.userId, (tx) => mailVorschau(tx, req.userId, req.params.id)));
 
   // --- Besprechungen: photos on Punkte, release to the Bauherr, countersignature ---------
   app.post<{ Params: { id: string } }>('/besprechung-punkte/:id/fotos', async (req) => {

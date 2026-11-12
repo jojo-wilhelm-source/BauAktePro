@@ -70,3 +70,11 @@ Reihenfolge der Blöcke, Überschriften, Zusatzfelder je Punkt, Kopfzeile/Logo; 
 - **Nachunternehmer:** sehen alle nicht internen Punkte der versendeten Besprechungen, an denen sie teilnehmen; ihre eigenen Punkte sind gelb hervorgehoben (Portal und PDF). Beim Versand bekommt die Firmen-E-Mail die Nachricht „neues Protokoll online“ mit dem markierten Protokoll und der Aufgabenliste.
 - **Bauherr:** sieht ein Protokoll erst nach manueller Freigabe durch Bau-/Projektleitung (Mail an den Bauherrn) und kann es gegenzeichnen (Unterschrift, dokumentarisch; offene-punkte C1). Nach der Gegenzeichnung lässt sich die Freigabe nicht mehr zurücknehmen.
 - ANNAHME: „Hinweise“ und Bemusterungsunterlagen bekommen dieselbe Freigabe, sobald diese Module gebaut sind.
+
+## Umsetzung des Nutzer-Konzepts „NU-Besprechung_Konzept_5“ (12.11.2026, docs/vorlagen)
+- **Status:** 🟥 Blockiert · 🟧 Wichtig · 🟨 In Arbeit · 🟩 Erledigt / freigemeldet · ⬜ Nicht fällig; „⚠ überfällig“ bei abgelaufener Frist. Alle nicht erledigten Punkte wandern in die Folgesitzung; Erledigte stehen in der Historie, nicht im Protokoll und nicht in der Mail.
+- **Punkt:** Ort (Bereich › Bauteil › Geschoss), Punktart Allgemein oder Firma/Gewerk, Firma + Ansprechpartner (aus den Kontakten), Status, Fällig am, Aufgabe/verbindliches Ergebnis, Notiz/Abhängigkeit, Eigenanteil (Kurzname der eigenen Firma, z. B. „WHB-Anteil“), Kontrolle/Freigabe, Teilaufgaben weiterer Firmen mit eigenem Status und Fälligkeit.
+- **Protokollkopf:** Nr., Datum, KW, Ort/Format (Baustelle, Baucontainer, MS Teams, Telefonisch), Protokollführung, Dokumentenstand, nächster Termin, Teilnehmer (Firmen + manuelle), CC. **Allgemeine Informationen** ohne Status; werden mit Protokollführung und Empfängern in die Folgesitzung übernommen.
+- **Gliederung** (Web, PDF, Mail): Bereich › Bauteil › Geschoss, darin zuerst „Allgemeine Punkte“, dann je Firma.
+- **Versand:** Mail-Text aus Projektvorlage (Standard, Kurzform, Förmlich, Eigene: Einleitung, Schluss, Signatur) mit Vorschau und „Kopieren“. Empfänger: teilnehmende Firmen (markiertes Protokoll + Aufgabenliste), fester Verteiler (Projektleiter, Bauleiter, Poliere, Sonstige), manuelle Teilnehmer, CC – doppelte Adressen entfallen.
+- Am iPad: Status per Auswahlmenü, offline; Notiz, Anteil, Kontrolle und Teilaufgaben werden angezeigt (bearbeiten im Web).

@@ -36,7 +36,7 @@ export async function listNu(tx: TxSql, userId: string, projectId: string) {
       (SELECT count(*)::int FROM mangel m WHERE m.assigned_company_id = c.id AND m.project_id = ${projectId} AND m.status <> 'abgenommen' AND m.deleted_at IS NULL
          AND coalesce(m.nachfrist_date, m.due_date) < current_date) AS maengel_ueberfaellig,
       (SELECT coalesce(sum(hours_approved), 0)::float FROM stundenzettel z WHERE z.company_id = c.id AND z.project_id = ${projectId}) AS stunden_anerkannt,
-      (SELECT count(*)::int FROM besprechung_punkt p WHERE p.project_id = ${projectId} AND p.responsible_company_id = c.id AND p.status IN ('offen', 'in_arbeit')) AS punkte_offen
+      (SELECT count(*)::int FROM besprechung_punkt p WHERE p.project_id = ${projectId} AND p.responsible_company_id = c.id AND p.status <> 'erledigt') AS punkte_offen
     FROM company c
     WHERE c.kind = 'nu' AND (EXISTS (SELECT 1 FROM project_company pc WHERE pc.company_id = c.id AND pc.project_id = ${projectId})
                              OR EXISTS (SELECT 1 FROM project_member pm WHERE pm.company_id = c.id AND pm.project_id = ${projectId}))

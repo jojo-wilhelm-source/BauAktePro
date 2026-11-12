@@ -253,6 +253,13 @@ export interface Punkt {
   /** NU: own Punkt (highlighted). */
   mine?: boolean;
   fotos?: { id: string; caption: string | null }[];
+  /** Concept fields (NU-Besprechung_Konzept_5). */
+  location_path?: string | null;
+  kontakt?: string | null;
+  notiz?: string | null;
+  eigen_anteil?: string | null;
+  kontrolle?: string | null;
+  teilaufgaben?: { id: string; company_id: string | null; company: string; text: string; status: PunktStatus; due_date: string | null }[];
 }
 export interface BesprechungDetail extends Omit<BesprechungListItem, 'punkte' | 'offen' | 'has_next'> {
   teilnehmer: { id: string; name: string; kind: string; email: string | null; anwesend: boolean | null }[];
@@ -262,6 +269,11 @@ export interface BesprechungDetail extends Omit<BesprechungListItem, 'punkte' | 
   can_edit: boolean;
   can_send: boolean;
   can_release?: boolean;
+  protokollfuehrung?: string | null;
+  dokumentenstand?: string | null;
+  allgemein?: string[];
+  extra_teilnehmer?: { name: string; email?: string | null }[];
+  cc?: string | null;
   can_countersign?: boolean;
   bauherr_freigabe?: boolean;
   bauherr_freigabe_at?: string | null;

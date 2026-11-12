@@ -6,7 +6,7 @@ import { MANGEL_TONE, type MangelStatus } from '@bap/domain';
 import { C, TINT } from './theme';
 
 // Pin colours by status (docs/fachkonzept/03): red open, orange in progress, green done.
-const TONE_HEX = { red: TINT.red, orange: TINT.orange, green: TINT.green, blue: TINT.blue, gray: TINT.gray } as const;
+const TONE_HEX = { red: TINT.red, orange: TINT.orange, yellow: TINT.yellow, green: TINT.green, blue: TINT.blue, gray: TINT.gray } as const;
 
 interface Props {
   planId: string;

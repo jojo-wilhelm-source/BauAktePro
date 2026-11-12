@@ -39,7 +39,7 @@ export async function startPage(tx: TxSql, userId: string, projectId: string) {
   const punkte = await tx`
     SELECT p.id, p.number, p.text, p.status, p.due_date, l.name AS location_name
     FROM besprechung_punkt p LEFT JOIN location l ON l.id = p.location_id
-    WHERE p.project_id = ${projectId} AND p.status IN ('offen', 'in_arbeit')
+    WHERE p.project_id = ${projectId} AND p.status <> 'erledigt'
       ${company ? tx`AND (p.responsible_company_id = ${company} OR ${company} = ANY (p.support_company_ids))` : tx``}
     ORDER BY p.due_date NULLS LAST LIMIT 30`;
 

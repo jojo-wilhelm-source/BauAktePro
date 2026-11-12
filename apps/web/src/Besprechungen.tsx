@@ -1,6 +1,6 @@
 /** Bau- und NU-Besprechung (docs/fachkonzept/09): list, protocol view, attendance, remarks, next date, status chips, send, follow-up. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { besprechungNo, formatDate, nextPunktStatus, punktNo, PUNKT_STATUS, PUNKT_STATUS_LABELS, PUNKT_TONE, type PunktStatus } from '@bap/domain';
+import { besprechungNo, BESPRECHUNG_FORMATE, formatDate, kalenderwoche, MAIL_VORLAGEN, punktNo, punktUeberfaellig, PUNKT_STATUS, PUNKT_STATUS_ICON, PUNKT_STATUS_LABELS, PUNKT_TONE, VERTEILER_KATEGORIEN, type MailVorlage, type PunktStatus } from '@bap/domain';
 import { api, downloadFile, openPdf, type BesprechungDetail, type BesprechungListItem, type Mangel, type ProjectInfo, type Punkt } from './api';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
@@ -29,10 +29,19 @@ export function StatusChip({ status, onClick }: { status: PunktStatus; onClick?:
       </span>
     );
   return (
-    <button className={cls} onClick={onClick} title="Antippen: Offen → In Arbeit → Erledigt">
+    <button className={cls} onClick={onClick} title="Status ändern">
       <span className="dot" />
       {PUNKT_STATUS_LABELS[status]}
     </button>
+  );
+}
+
+/** Status as a menu with the five values of the concept (Blockiert, Wichtig, In Arbeit, Erledigt, Nicht fällig). */
+export function StatusSelect({ status, onChange }: { status: PunktStatus; onChange: (s: PunktStatus) => void }) {
+  return (
+    <select className={`chip status-select c-${PUNKT_TONE[status]}`} value={status} onChange={(e) => onChange(e.target.value as PunktStatus)} title="Status ändern">
+      {PUNKT_STATUS.map((s) => <option key={s} value={s}>{PUNKT_STATUS_ICON[s]} {PUNKT_STATUS_LABELS[s]}</option>)}
+    </select>
   );
 }
 
@@ -154,6 +163,9 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
   const [sign, setSign] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [listFor, setListFor] = useState('');
+  const [own, setOwn] = useState('Eigen');
+  const [verteiler, setVerteiler] = useState(false);
+  useEffect(() => void api<{ kurzname: string | null; name: string } | null>('/firma').then((f) => f && setOwn(f.kurzname ?? f.name)).catch(() => undefined), []);
   const load = useCallback(async () => setD(await api<BesprechungDetail>(`/besprechungen/${id}`)), [id]);
   useEffect(() => void load(), [load]);
   const runAndLoad: Run = async (fn, ok) => {
@@ -163,15 +175,20 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
 
   const groups = useMemo(() => {
     if (!d) return [];
+    const shown = (p: Punkt): PunktStatus => (d.status === 'versendet' ? (p.status_snapshot ?? p.status) : p.status);
     const key = (p: Punkt) =>
-      group === 'ort' ? (p.location_name ?? 'Allgemein') : group === 'firma' ? (p.responsible_name ?? 'Ohne Verantwortlichen') : PUNKT_STATUS_LABELS[shown(p)];
+      group === 'ort' ? (p.location_path || p.location_name || 'Allgemein') : group === 'firma' ? (p.responsible_name ?? 'Ohne Verantwortlichen') : PUNKT_STATUS_LABELS[shown(p)];
     const order = (k: string) =>
-      group === 'ort' ? (k === 'Allgemein' ? '0' : `1${info.locations.find((l) => l.name === k)?.id ?? k}`) : group === 'status' ? String(PUNKT_STATUS.map((s) => PUNKT_STATUS_LABELS[s]).indexOf(k)) : k;
+      group === 'ort' ? (k === 'Allgemein' ? '0' : `1${String(d.punkte.find((p) => (p.location_path || p.location_name) === k) ? d.punkte.findIndex((p) => (p.location_path || p.location_name) === k) : 999).padStart(4, '0')}${k}`) : group === 'status' ? String(PUNKT_STATUS.map((s) => PUNKT_STATUS_LABELS[s]).indexOf(k)) : k;
     const map = new Map<string, Punkt[]>();
-    for (const p of d.punkte) map.set(key(p), [...(map.get(key(p)) ?? []), p]);
+    // Concept: active Punkte by area, done ones go to the history at the end (not in the grouping).
+    const active = group === 'status' ? d.punkte : d.punkte.filter((p) => shown(p) !== 'erledigt');
+    // Within an area: Allgemeine Punkte first, then per firm.
+    const sorted = [...active].sort((a, b) => (a.responsible_name ? 1 : 0) - (b.responsible_name ? 1 : 0) || (a.responsible_name ?? '').localeCompare(b.responsible_name ?? '', 'de') || (a.number ?? 0) - (b.number ?? 0));
+    for (const p of sorted) map.set(key(p), [...(map.get(key(p)) ?? []), p]);
     if (group === 'ort' && d.can_edit) {
       // Empty Geschosse can be filled during the meeting.
-      for (const l of info.locations.filter((x) => x.kind === 'geschoss')) if (!map.has(l.name)) map.set(l.name, []);
+      for (const l of info.locations.filter((x) => x.kind === 'geschoss')) if (![...map.keys()].some((k) => k.endsWith(l.name))) map.set(l.name, []);
       if (!map.has('Allgemein')) map.set('Allgemein', []);
     }
     return [...map.entries()].sort(([a], [b]) => order(a).localeCompare(order(b), 'de'));
@@ -185,6 +202,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
     return sent ? (p.status_snapshot ?? p.status) : p.status;
   }
   const nus = d.teilnehmer.filter((t) => t.kind === 'nu');
+  const erledigt = d.punkte.filter((p) => shown(p) === 'erledigt');
 
   return (
     <>
@@ -293,7 +311,9 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
       </PageHeader>
 
       <div className="protocol">
+        <ProtokollKopf d={d} id={id} run={runAndLoad} />
         <KopfCard d={d} id={id} run={runAndLoad} />
+        <AllgemeinCard d={d} id={id} run={runAndLoad} />
         {groups.map(([name, punkte]) => (
           <div key={name}>
             <div className="group-head">
@@ -318,7 +338,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                 <tbody>
                   {punkte.map((p) => {
                     const st = shown(p);
-                    const overdue = p.due_date && st !== 'erledigt' && st !== 'info' && p.due_date.slice(0, 10) < new Date().toISOString().slice(0, 10);
+                    const overdue = punktUeberfaellig({ status: st, due_date: p.due_date });
                     return (
                       <tr key={p.id} className={p.mine ? 'mine' : ''} style={{ cursor: 'default' }}>
                         <td className="num">
@@ -330,6 +350,16 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                           {sent ? (p.text_snapshot ?? p.text) : p.text}
                           {p.internal && <span className="tag critical" style={{ marginLeft: 6 }}>nur intern</span>}
                           {p.mine && <span className="tag" style={{ marginLeft: 6 }}>Ihr Punkt</span>}
+                          {p.notiz && <div className="sub">Notiz: {p.notiz}</div>}
+                          {p.eigen_anteil && <div className="sub eigen">{own}-Anteil: {p.eigen_anteil}</div>}
+                          {p.kontrolle && <div className="sub eigen">{own}-Kontrolle / Freigabe: {p.kontrolle}</div>}
+                          {(p.teilaufgaben?.length ?? 0) > 0 && (
+                            <div className="teilaufgaben">
+                              {p.teilaufgaben!.map((t) => (
+                                <div key={t.id}><span className={`dot-s c-${PUNKT_TONE[t.status]}`} /> <strong>{t.company}</strong>: {t.text}{t.due_date ? <span className="sub"> · fällig {formatDate(t.due_date)}</span> : null}</div>
+                              ))}
+                            </div>
+                          )}
                           {(p.fotos?.length ?? 0) > 0 && (
                             <div className="punkt-fotos">{p.fotos!.map((f) => <Foto key={f.id} id={f.id} src={`/api/besprechung-fotos/${f.id}`} size={48} />)}</div>
                           )}
@@ -342,21 +372,17 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                           )}
                         </td>
                         <td>
-                          <div className="who">{p.responsible_name ?? '–'}</div>
-                          {p.support_names.length > 0 && <div className="sub">Zuarbeit: {p.support_names.join(', ')}</div>}
+                          <div className="who">{p.responsible_name ?? 'Allgemein'}</div>
+                          {p.kontakt && <div className="sub">{p.kontakt}</div>}
                         </td>
                         <td className="tabular" style={overdue ? { color: 'var(--red)', fontWeight: 600 } : undefined}>
-                          {formatDate(p.due_date)}
+                          {p.due_date ? formatDate(p.due_date) : <span className="sub">ohne Termin</span>}
+                          {overdue && <div className="sub" style={{ color: 'var(--red)', fontWeight: 600 }}>⚠ überfällig</div>}
                         </td>
                         <td>
-                          <StatusChip
-                            status={st}
-                            onClick={
-                              d.can_edit && st !== 'info'
-                                ? () => runAndLoad(() => api(`/punkte/${p.id}`, { method: 'PATCH', body: { base_version: p.version, status: nextPunktStatus(p.status) } }), `${punktNo(p.number)}: ${PUNKT_STATUS_LABELS[nextPunktStatus(p.status)]}`)
-                                : undefined
-                            }
-                          />
+                          {d.can_edit ? (
+                            <StatusSelect status={st} onChange={(to) => runAndLoad(() => api(`/punkte/${p.id}`, { method: 'PATCH', body: { base_version: p.version, status: to } }), `${punktNo(p.number)}: ${PUNKT_STATUS_LABELS[to]}`)} />
+                          ) : <StatusChip status={st} />}
                           {sent && p.status !== st && <div className="sub">jetzt: {PUNKT_STATUS_LABELS[p.status]}</div>}
                         </td>
                         <td>
@@ -378,7 +404,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                 </tbody>
               </table>
               {d.can_edit && group === 'ort' && (
-                <div className="add-row" onClick={() => setAdding({ location_id: info.locations.find((l) => l.name === name)?.id ?? null })}>
+                <div className="add-row" onClick={() => setAdding({ location_id: info.locations.find((l) => l.name === name.split(' / ').pop())?.id ?? null })}>
                   + Punkt in „{name}“
                 </div>
               )}
@@ -386,6 +412,21 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
             </div>
           </div>
         ))}
+
+        {group !== 'status' && erledigt.length > 0 && (
+          <details className="historie">
+            <summary>Erledigte Punkte / Historie ({erledigt.length})</summary>
+            <div className="card">
+              {erledigt.map((p) => (
+                <div key={p.id} className="row">
+                  <span className="k"><strong className="tabular">{punktNo(p.number)}</strong> {p.text}<div className="sub">{p.location_path || p.location_name || 'Allgemein'} · {p.responsible_name ?? 'Allgemein'}</div></span>
+                  {d.can_edit ? <StatusSelect status={p.status} onChange={(to) => runAndLoad(() => api(`/punkte/${p.id}`, { method: 'PATCH', body: { base_version: p.version, status: to } }), `${punktNo(p.number)} wieder aktiv`)} /> : <StatusChip status={shown(p)} />}
+                </div>
+              ))}
+            </div>
+            <div className="footnote">Erledigte Punkte stehen weder im Protokoll noch in der E-Mail und wandern nicht in die Folgesitzung.</div>
+          </details>
+        )}
 
         {d.maengel.length > 0 && (
           <div>
@@ -418,7 +459,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
             </div>
           </div>
         )}
-        <div className="footnote">{info.role === 'nu' ? 'Ihre Punkte sind gelb hervorgehoben. ' : ''}W = aus der vorigen Besprechung übernommen. Status antippen: Offen → In Arbeit → Erledigt. Erledigte Punkte werden in der Folgesitzung archiviert.</div>
+        <div className="footnote">{info.role === 'nu' ? 'Ihre Punkte sind gelb hervorgehoben. ' : ''}W = aus der vorigen Besprechung übernommen. Status: 🟥 Blockiert · 🟧 Wichtig · 🟨 In Arbeit · 🟩 Erledigt · ⬜ Nicht fällig. Erledigte Punkte wandern in die Historie.</div>
       </div>
 
       {editing && (
@@ -427,6 +468,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
           d={d}
           locationId={editing.location_id}
           initial={editing}
+          own={own}
           onCancel={() => setEditing(null)}
           onSave={(body) =>
             runAndLoad(async () => {
@@ -444,6 +486,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
           info={info}
           d={d}
           locationId={adding.location_id}
+          own={own}
           onCancel={() => setAdding(null)}
           onSave={(body) =>
             runAndLoad(async () => {
@@ -466,22 +509,15 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
             }, 'Protokoll und Aufgabenlisten versendet')
           }
         >
-          <div className="group">
-            {d.teilnehmer
-              .filter((t) => t.kind !== 'own')
-              .map((t) => (
-                <div key={t.id} className="row">
-                  <span className="k">{t.name}</span>
-                  <span className="v">{t.email ?? 'keine E-Mail hinterlegt'}</span>
-                </div>
-              ))}
-          </div>
+          <VersandVorschau d={d} id={id} info={info} />
           <div className="footnote">
-            Jede Firma bekommt das Protokoll und ihre persönliche Aufgabenliste als PDF. Punkte „nur intern“ werden nicht versendet. Danach ist das Protokoll gesperrt;
-            Änderungen gehen in die Folgesitzung.
+            Jede Firma bekommt das Protokoll (ihre Punkte gelb markiert) und ihre persönliche Aufgabenliste als PDF; der feste Verteiler, manuelle Teilnehmer und CC das Protokoll.
+            Doppelte Adressen werden entfernt. Erledigte und „nur intern“-Punkte werden nicht versendet. Danach ist das Protokoll gesperrt; Änderungen gehen in die Folgesitzung.
           </div>
+          {info.role === 'bauleitung' && <button className="btn plain" onClick={() => setVerteiler(true)}>Verteiler & Mail-Vorlage bearbeiten …</button>}
         </Sheet>
       )}
+      {verteiler && <VerteilerSheet info={info} onClose={() => setVerteiler(false)} run={run} />}
     </>
   );
 }
@@ -492,32 +528,44 @@ function NewPunktSheet(props: {
   locationId: string | null;
   /** Edit an existing Punkt (also one carried over from an earlier meeting). */
   initial?: Punkt;
+  own?: string;
   onCancel: () => void;
   onSave: (body: object) => void;
 }) {
   const init = props.initial;
   const { info, d } = props;
+  const own = props.own ?? 'Eigen';
   const orte = info.locations.filter((l) => l.kind !== 'raum');
   const [f, setF] = useState({
     text: init?.text ?? '',
     location_id: props.locationId ?? '',
     gewerk_id: init?.gewerk_id ?? '',
+    art: (init ? (init.responsible_company_id ? 'firma' : 'allgemein') : 'firma') as 'firma' | 'allgemein',
     responsible_company_id: init?.responsible_company_id ?? '',
-    support: (init?.support_company_ids ?? []) as string[],
+    kontakt: init?.kontakt ?? '',
     due_date: init?.due_date?.slice(0, 10) ?? '',
-    status: (init?.status ?? 'offen') as PunktStatus,
+    status: (init?.status ?? 'in_arbeit') as PunktStatus,
     internal: init?.internal ?? false,
+    notiz: init?.notiz ?? '',
+    eigen_anteil: init?.eigen_anteil ?? '',
+    kontrolle: init?.kontrolle ?? '',
   });
+  const [teile, setTeile] = useState<{ company_id: string; text: string; status: PunktStatus; due_date: string }[]>(
+    (init?.teilaufgaben ?? []).map((t) => ({ company_id: t.company_id ?? '', text: t.text, status: t.status, due_date: t.due_date ?? '' })));
+  const [kontakte, setKontakte] = useState<{ company_id: string; name: string; funktion: string | null }[]>([]);
+  useEffect(() => void api<typeof kontakte>(`/kontakte?project=${info.project.id}`).then(setKontakte).catch(() => undefined), [info.project.id]);
   // Suggest the responsible company from the Gewerk (same mapping as for Mängel).
   const setGewerk = (g: string) => {
     const nu = info.gewerkCompanies.find((gc) => gc.gewerk_id === g)?.company_id;
     setF({ ...f, gewerk_id: g, responsible_company_id: f.responsible_company_id || nu || '' });
   };
+  const teileOk = teile.every((t) => t.text.trim());
   return (
     <Sheet
-      title={init ? `${punktNo(init.number)} bearbeiten` : 'Neuer Punkt'}
+      title={init ? `${punktNo(init.number)} bearbeiten` : 'Neuen Punkt aufnehmen'}
       primary="Sichern"
-      primaryDisabled={!f.text.trim()}
+      primaryDisabled={!f.text.trim() || (f.art === 'firma' && !f.responsible_company_id) || !teileOk}
+      wide
       onCancel={props.onCancel}
       onPrimary={() =>
         props.onSave({
@@ -526,89 +574,82 @@ function NewPunktSheet(props: {
           text: f.text,
           location_id: f.location_id || null,
           gewerk_id: f.gewerk_id || null,
-          responsible_company_id: f.responsible_company_id || null,
-          support_company_ids: f.support,
+          responsible_company_id: f.art === 'firma' ? f.responsible_company_id || null : null,
+          kontakt: f.art === 'firma' ? f.kontakt.trim() || null : null,
           due_date: f.due_date || null,
           status: f.status,
           internal: f.internal,
+          notiz: f.notiz.trim() || null,
+          eigen_anteil: f.eigen_anteil.trim() || null,
+          kontrolle: f.kontrolle.trim() || null,
+          teilaufgaben: teile.map((t) => ({ company_id: t.company_id || null, text: t.text.trim(), status: t.status, due_date: t.due_date || null })),
         })
       }
     >
       <div className="group">
-        <div className="row stack">
-          <textarea autoFocus placeholder="Aufgabe, z. B. „Raum 04.035 fertigstellen“" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} />
-        </div>
-      </div>
-      <div className="group">
-        <div className="row">
-          <span className="k">Ort</span>
+        <div className="row"><span className="k">Ort (Bereich, Bauteil, Geschoss)</span>
           <select value={f.location_id} onChange={(e) => setF({ ...f, location_id: e.target.value })}>
             <option value="">Allgemein</option>
-            {orte.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
+            {orte.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
-        <div className="row">
-          <span className="k">Gewerk</span>
-          <select value={f.gewerk_id} onChange={(e) => setGewerk(e.target.value)}>
-            <option value="">–</option>
-            {info.gewerke.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="row">
-          <span className="k">Verantwortlich</span>
-          <select value={f.responsible_company_id} onChange={(e) => setF({ ...f, responsible_company_id: e.target.value })}>
-            <option value="">–</option>
-            {info.companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="row">
-          <span className="k">Frist</span>
-          <input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} />
-        </div>
-      </div>
-      <div>
-        <div className="group-title">Zuarbeit</div>
-        <div className="group">
-          <div className="row tokens">
-            {info.companies
-              .filter((c) => c.kind === 'nu' && c.id !== f.responsible_company_id)
-              .map((c) => (
-                <button
-                  key={c.id}
-                  className={`token ${f.support.includes(c.id) ? 'on' : ''}`}
-                  onClick={() => setF({ ...f, support: f.support.includes(c.id) ? f.support.filter((x) => x !== c.id) : [...f.support, c.id] })}
-                >
-                  {c.name}
-                </button>
-              ))}
+        <div className="row"><span className="k">Punktart</span>
+          <div className="segmented small">
+            <button className={f.art === 'allgemein' ? 'on' : ''} onClick={() => setF({ ...f, art: 'allgemein' })}>Allgemeiner Punkt</button>
+            <button className={f.art === 'firma' ? 'on' : ''} onClick={() => setF({ ...f, art: 'firma' })}>Firma / Gewerk</button>
           </div>
         </div>
+        <div className="row"><span className="k">Gewerk</span>
+          <select value={f.gewerk_id} onChange={(e) => setGewerk(e.target.value)}>
+            <option value="">–</option>
+            {info.gewerke.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </div>
+        {f.art === 'firma' && (
+          <>
+            <div className="row"><span className="k">Firma</span>
+              <select value={f.responsible_company_id} onChange={(e) => setF({ ...f, responsible_company_id: e.target.value, kontakt: '' })}>
+                <option value="">– auswählen –</option>
+                {info.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="row"><span className="k">Ansprechpartner</span>
+              <input list="punkt-kontakte" placeholder="optional" value={f.kontakt} onChange={(e) => setF({ ...f, kontakt: e.target.value })} />
+              <datalist id="punkt-kontakte">{kontakte.filter((k) => k.company_id === f.responsible_company_id).map((k) => <option key={k.name} value={k.name}>{k.funktion ?? ''}</option>)}</datalist>
+            </div>
+          </>
+        )}
+        <div className="row"><span className="k">Fällig am</span><input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} /></div>
+        <div className="row"><span className="k">Status</span><StatusSelect status={f.status} onChange={(st) => setF({ ...f, status: st })} /></div>
+      </div>
+      <div className="group">
+        <div className="row stack"><textarea autoFocus placeholder="Aufgabe / verbindliches Ergebnis" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} /></div>
+        <div className="row stack"><textarea rows={2} placeholder="Notiz / Abhängigkeit / Folgegewerk / Hindernis" value={f.notiz} onChange={(e) => setF({ ...f, notiz: e.target.value })} /></div>
+        <div className="row stack"><textarea rows={2} placeholder={`${own}-Anteil (optional): welchen übergeordneten Beitrag leistet ${own}?`} value={f.eigen_anteil} onChange={(e) => setF({ ...f, eigen_anteil: e.target.value })} /></div>
+        <div className="row"><span className="k">{own}-Kontrolle / Freigabe</span><input placeholder="z. B. BL am 20.11." value={f.kontrolle} onChange={(e) => setF({ ...f, kontrolle: e.target.value })} /></div>
       </div>
       <div>
-        <div className="group-title">Status</div>
-        <div className="segmented" style={{ width: '100%' }}>
-          {PUNKT_STATUS.map((s) => (
-            <button key={s} style={{ flex: 1 }} className={f.status === s ? 'on' : ''} onClick={() => setF({ ...f, status: s })}>
-              {PUNKT_STATUS_LABELS[s]}
-            </button>
+        <div className="group-title">Beteiligte / unterstützende Firmen und Teilaufgaben</div>
+        <div className="group">
+          {teile.map((t, i) => (
+            <div key={i} className="row teil-row">
+              <select value={t.company_id} onChange={(e) => setTeile(teile.map((x, j) => (j === i ? { ...x, company_id: e.target.value } : x)))}>
+                <option value="">{own}</option>
+                {info.companies.filter((c) => c.kind !== 'own').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input className="tb-left" placeholder="Aufgabe dieser Firma" value={t.text} onChange={(e) => setTeile(teile.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+              <StatusSelect status={t.status} onChange={(st) => setTeile(teile.map((x, j) => (j === i ? { ...x, status: st } : x)))} />
+              <input type="date" value={t.due_date} onChange={(e) => setTeile(teile.map((x, j) => (j === i ? { ...x, due_date: e.target.value } : x)))} />
+              <button className="btn small plain destructive" aria-label="Entfernen" onClick={() => setTeile(teile.filter((_, j) => j !== i))}>✕</button>
+            </div>
           ))}
+          <button className="row action" onClick={() => setTeile([...teile, { company_id: info.companies.find((c) => c.kind === 'nu' && c.id !== f.responsible_company_id)?.id ?? '', text: '', status: 'in_arbeit', due_date: '' }])}>+ Weitere Firma / {own} hinzufügen</button>
         </div>
+        <div className="footnote">Für jede Firma erscheint eine eigene Teilaufgabe direkt unter dem Hauptpunkt; die Firma sieht den Punkt im Portal.</div>
       </div>
       <label className="group row" style={{ cursor: 'pointer' }}>
         <span className="k">Nur intern (nicht versenden, für NU unsichtbar)</span>
-        <input type="checkbox" checked={f.internal} onChange={(e) => setF({ ...f, internal: e.target.checked })} style={{ maxWidth: 'none' }} />
+        <input type="checkbox" className="switch" checked={f.internal} onChange={(e) => setF({ ...f, internal: e.target.checked })} />
       </label>
     </Sheet>
   );
@@ -766,5 +807,154 @@ function KopfCard({ d, id, run }: { d: BesprechungDetail; id: string; run: Run }
         </div>
       </div>
     </div>
+  );
+}
+
+/** Protokollkopf of the concept: Ort/Format, Protokollführung, Dokumentenstand, KW, manual participants, CC. */
+function ProtokollKopf({ d, id, run }: { d: BesprechungDetail; id: string; run: Run }) {
+  const patch = (body: Record<string, unknown>, ok: string) => run(() => api(`/besprechungen/${id}`, { method: 'PATCH', body: { base_version: d.version, ...body } }), ok);
+  const kw = kalenderwoche(new Date(d.held_at).toISOString().slice(0, 10));
+  const ro = !d.can_edit;
+  const [neu, setNeu] = useState({ name: '', email: '' });
+  const extra = d.extra_teilnehmer ?? [];
+  return (
+    <div>
+      <div className="group-head"><h3>Protokollkopf</h3><span className="sub">KW {String(kw.kw).padStart(2, '0')}/{kw.jahr}</span></div>
+      <div className="card kopf-grid">
+        <div className="row"><span className="k">Ort / Format</span>
+          <select disabled={ro} value={BESPRECHUNG_FORMATE.includes(d.place as never) ? d.place ?? '' : d.place ? '__frei' : ''}
+            onChange={(e) => e.target.value !== '__frei' && void patch({ place: e.target.value || null }, 'Ort gespeichert')}>
+            <option value="">–</option>
+            {BESPRECHUNG_FORMATE.map((f) => <option key={f}>{f}</option>)}
+            {d.place && !BESPRECHUNG_FORMATE.includes(d.place as never) && <option value="__frei">{d.place}</option>}
+          </select>
+        </div>
+        <div className="row"><span className="k">Protokollführung</span>
+          <input disabled={ro} defaultValue={d.protokollfuehrung ?? ''} placeholder="Name" onBlur={(e) => e.target.value !== (d.protokollfuehrung ?? '') && void patch({ protokollfuehrung: e.target.value || null }, 'Gespeichert')} /></div>
+        <div className="row"><span className="k">Dokumentenstand</span>
+          <input disabled={ro} defaultValue={d.dokumentenstand ?? ''} placeholder="z. B. Planstand 14.11." onBlur={(e) => e.target.value !== (d.dokumentenstand ?? '') && void patch({ dokumentenstand: e.target.value || null }, 'Gespeichert')} /></div>
+        <div className="row"><span className="k">CC (kommagetrennt)</span>
+          <input disabled={ro} defaultValue={d.cc ?? ''} placeholder="z. B. Planer, Bauherrenvertreter" onBlur={(e) => e.target.value !== (d.cc ?? '') && void patch({ cc: e.target.value || null }, 'CC gespeichert')} /></div>
+        {extra.map((x, i) => (
+          <div key={i} className="row"><span className="k">{x.name}<div className="sub">{x.email || 'ohne E-Mail'} · manueller Teilnehmer</div></span>
+            {!ro && <button className="btn small plain destructive" onClick={() => void patch({ extra_teilnehmer: extra.filter((_, j) => j !== i) }, 'Entfernt')}>✕</button>}</div>
+        ))}
+        {!ro && (
+          <div className="row">
+            <input className="tb-left" placeholder="Manueller Teilnehmer – Name (z. B. externer Gast)" value={neu.name} onChange={(e) => setNeu({ ...neu, name: e.target.value })} />
+            <input placeholder="E-Mail (optional)" value={neu.email} onChange={(e) => setNeu({ ...neu, email: e.target.value })} />
+            <button className="btn small" disabled={!neu.name.trim()} onClick={() => { void patch({ extra_teilnehmer: [...extra, { name: neu.name.trim(), email: neu.email.trim() || null }] }, 'Teilnehmer hinzugefügt'); setNeu({ name: '', email: '' }); }}>Hinzufügen</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "Allgemeine Informationen": short binding notes without status (concept point 3). */
+function AllgemeinCard({ d, id, run }: { d: BesprechungDetail; id: string; run: Run }) {
+  const list = d.allgemein ?? [];
+  const [neu, setNeu] = useState('');
+  const save = (next: string[], ok: string) => run(() => api(`/besprechungen/${id}`, { method: 'PATCH', body: { base_version: d.version, allgemein: next } }), ok);
+  if (!d.can_edit && !list.length) return null;
+  return (
+    <div>
+      <div className="group-head"><h3>Allgemeine Informationen</h3><span className="sub">ohne Status, z. B. Arbeitsschutz, Ordnung, Zutrittszeiten</span></div>
+      <div className="card">
+        {list.map((a, i) => (
+          <div key={i} className="row">
+            {d.can_edit ? <input className="tb-left" defaultValue={a} onBlur={(e) => e.target.value !== a && void save(list.map((x, j) => (j === i ? e.target.value : x)), 'Gespeichert')} /> : <span className="k">• {a}</span>}
+            {d.can_edit && <button className="btn small plain destructive" onClick={() => void save(list.filter((_, j) => j !== i), 'Entfernt')}>✕</button>}
+          </div>
+        ))}
+        {d.can_edit && (
+          <div className="row">
+            <input className="tb-left" placeholder="+ Allgemeinen Hinweis hinzufügen" value={neu} onChange={(e) => setNeu(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && neu.trim()) { void save([...list, neu.trim()], 'Hinweis hinzugefügt'); setNeu(''); } }} />
+            <button className="btn small" disabled={!neu.trim()} onClick={() => { void save([...list, neu.trim()], 'Hinweis hinzugefügt'); setNeu(''); }}>Hinzufügen</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Recipients and the mail text exactly as it will be sent. */
+function VersandVorschau({ d, id, info }: { d: BesprechungDetail; id: string; info: ProjectInfo }) {
+  const [mail, setMail] = useState<{ betreff: string; text: string } | null>(null);
+  const [vt, setVt] = useState<{ name: string; email: string; aktiv: boolean }[]>([]);
+  useEffect(() => {
+    void api<{ betreff: string; text: string }>(`/besprechungen/${id}/mail`).then(setMail);
+    void api<typeof vt>(`/projects/${info.project.id}/verteiler`).then(setVt);
+  }, [id, info.project.id]);
+  const extra = (d.extra_teilnehmer ?? []).filter((x) => x.email);
+  const cc = (d.cc ?? '').split(/[,;\s]+/).filter((x) => x.includes('@'));
+  return (
+    <>
+      <div className="group-title">Empfänger</div>
+      <div className="group">
+        {d.teilnehmer.filter((t) => t.kind !== 'own').map((t) => <div key={t.id} className="row"><span className="k">{t.name}</span><span className="v">{t.email ?? 'keine E-Mail hinterlegt'}</span></div>)}
+        {vt.filter((v) => v.aktiv).map((v) => <div key={v.email} className="row"><span className="k">{v.name}<div className="sub">fester Verteiler</div></span><span className="v">{v.email}</span></div>)}
+        {extra.map((x) => <div key={x.email!} className="row"><span className="k">{x.name}<div className="sub">manueller Teilnehmer</div></span><span className="v">{x.email}</span></div>)}
+        {cc.map((x) => <div key={x} className="row"><span className="k">CC</span><span className="v">{x}</span></div>)}
+      </div>
+      {mail && (
+        <>
+          <div className="group-title" style={{ marginTop: 12 }}>E-Mail-Vorschau · {mail.betreff}</div>
+          <div className="group"><pre className="mail-preview">{mail.text}</pre></div>
+          <button className="btn plain" onClick={() => void navigator.clipboard.writeText(`Betreff: ${mail.betreff}\n\n${mail.text}`)}>E-Mail-Vorschau kopieren</button>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Fixed distribution list and mail template of the project (concept point 7). */
+function VerteilerSheet({ info, onClose, run }: { info: ProjectInfo; onClose: () => void; run: Run }) {
+  const [list, setList] = useState<{ id: string; name: string; email: string; kategorie: keyof typeof VERTEILER_KATEGORIEN; aktiv: boolean }[]>([]);
+  const [v, setV] = useState<MailVorlage | null>(null);
+  const [neu, setNeu] = useState({ name: '', email: '', kategorie: 'bauleiter' as keyof typeof VERTEILER_KATEGORIEN });
+  const load = useCallback(async () => {
+    setList(await api(`/projects/${info.project.id}/verteiler`));
+    setV(await api(`/projects/${info.project.id}/mail-vorlage`));
+  }, [info.project.id]);
+  useEffect(() => void load(), [load]);
+  if (!v) return null;
+  const preset = (k: 'standard' | 'kurz' | 'foermlich' | 'eigen') => setV(k === 'eigen' ? { ...v, preset: 'eigen' } : { ...v, preset: k, intro: MAIL_VORLAGEN[k].intro, outro: MAIL_VORLAGEN[k].outro });
+  return (
+    <Sheet title="Verteiler & Mail-Vorlage" primary="Vorlage sichern" wide onCancel={onClose}
+      onPrimary={() => run(async () => { await api(`/projects/${info.project.id}/mail-vorlage`, { method: 'PUT', body: v }); onClose(); }, 'Mail-Vorlage gespeichert')}>
+      <div className="group-title">E-Mail-Textvorlage</div>
+      <div className="segmented" style={{ marginBottom: 8 }}>
+        {(['standard', 'kurz', 'foermlich', 'eigen'] as const).map((k) => <button key={k} className={v.preset === k ? 'on' : ''} onClick={() => preset(k)}>{k === 'eigen' ? 'Eigene' : MAIL_VORLAGEN[k].name}</button>)}
+      </div>
+      <div className="group">
+        <div className="row stack"><span className="sub">Einleitung (nach der Anrede, vor den Terminangaben)</span><textarea rows={3} value={v.intro} onChange={(e) => setV({ ...v, preset: 'eigen', intro: e.target.value })} /></div>
+        <div className="row stack"><span className="sub">Schlusstext (nach den Punkten)</span><textarea rows={2} value={v.outro} onChange={(e) => setV({ ...v, preset: 'eigen', outro: e.target.value })} /></div>
+        <div className="row stack"><span className="sub">Signatur</span><textarea rows={3} value={v.signatur} onChange={(e) => setV({ ...v, preset: 'eigen', signatur: e.target.value })} /></div>
+      </div>
+      <div className="group-title" style={{ marginTop: 16 }}>Fester Verteiler</div>
+      <div className="group">
+        {list.map((r) => (
+          <div key={r.id} className="row"><span className="k">{r.name}<div className="sub">{VERTEILER_KATEGORIEN[r.kategorie]} · {r.email}</div></span>
+            <span className="actions">
+              <input type="checkbox" className="switch" checked={r.aktiv} onChange={(e) => void run(async () => { await api(`/projects/${info.project.id}/verteiler`, { method: 'PUT', body: { ...r, aktiv: e.target.checked } }); await load(); }, e.target.checked ? 'Aktiv' : 'Inaktiv')} />
+              <button className="btn small plain destructive" onClick={() => void run(async () => { await api(`/verteiler/${r.id}`, { method: 'DELETE' }); await load(); }, 'Entfernt')}>✕</button>
+            </span>
+          </div>
+        ))}
+        <div className="row">
+          <input className="tb-left" placeholder="Name / Funktion" value={neu.name} onChange={(e) => setNeu({ ...neu, name: e.target.value })} />
+          <input placeholder="E-Mail" value={neu.email} onChange={(e) => setNeu({ ...neu, email: e.target.value })} />
+          <select value={neu.kategorie} onChange={(e) => setNeu({ ...neu, kategorie: e.target.value as typeof neu.kategorie })}>{Object.entries(VERTEILER_KATEGORIEN).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+          <button className="btn small" disabled={!neu.name.trim() || !neu.email.includes('@')} onClick={() => void run(async () => {
+            await api(`/projects/${info.project.id}/verteiler`, { method: 'PUT', body: { id: crypto.randomUUID(), ...neu } });
+            setNeu({ name: '', email: '', kategorie: neu.kategorie });
+            await load();
+          }, 'Empfänger hinzugefügt')}>Hinzufügen</button>
+        </div>
+      </div>
+      <div className="footnote">Der feste Verteiler bekommt jedes versendete Protokoll dieses Projekts. Firmen mit Punkten und Teilnehmer werden automatisch ergänzt.</div>
+    </Sheet>
   );
 }

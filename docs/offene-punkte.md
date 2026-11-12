@@ -69,6 +69,6 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
 - [ ] **D9 – Benutzerverwaltung der Firma:** Wer sperrt ein ganzes Konto (z. B. Mitarbeiter ausgeschieden) – Geschäftsführung, Bauleitung? Zwei-Faktor-Anmeldung (z. B. Code per App) für Bau-/Projektleitung gewünscht? „Mit Microsoft anmelden“ nötig? → [01](fachkonzept/01-rollen-rechte.md)
 - [x] **D10 – Bautagebuch:** PDF-Format nach „Vorlage_Bautagesbericht" umgesetzt (12.11.2026, docs/vorlagen). Offen: Wetter automatisch (braucht Koordinaten und einen Wetterdienst; bis dahin Eingabe von Hand). → [07](fachkonzept/07-bautagebuch-bauzeitenplan.md)
 - [ ] **D11 – Nachträge über der Freigabegrenze:** Bisher „geht an die Geschäftsführung“. Die Geschäftsführung bekommt aber keinen Zugang (12.11.2026). Wer gibt Nachträge über 50.000 € frei – Projektleitung? → [11](fachkonzept/11-rechnungen-nachtraege-budget.md)
-- [ ] **D12 – NU-Besprechung-Konzept:** Die Datei NU-Besprechung_Konzept_5.html liegt in OneDrive; macOS gibt sie für Claude nicht frei. Bitte in den Projektordner kopieren, dann wird die Besprechung daran angeglichen. → [09](fachkonzept/09-besprechungen.md)
+- [x] **D12 – NU-Besprechung-Konzept:** umgesetzt (12.11.2026, Datei liegt in docs/vorlagen). Ursprünglich: Die Datei NU-Besprechung_Konzept_5.html liegt in OneDrive; macOS gibt sie für Claude nicht frei. Bitte in den Projektordner kopieren, dann wird die Besprechung daran angeglichen. → [09](fachkonzept/09-besprechungen.md)
   **Entscheidung:**
 

@@ -67,6 +67,10 @@ const besprechung_punkt = new Table(
     version: column.integer,
     created_by: column.text,
     created_at: column.text,
+    kontakt: column.text,
+    notiz: column.text,
+    eigen_anteil: column.text,
+    kontrolle: column.text,
   },
   { indexes: { project: ['project_id'] } },
 );
@@ -125,6 +129,8 @@ const tagesbericht = new Table(
 /** Photos on Besprechungspunkte (metadata; files via the API). */
 const besprechung_punkt_foto = new Table({ punkt_id: column.text, project_id: column.text, caption: column.text, created_at: column.text }, { indexes: { p: ['punkt_id'] } });
 /** Bautagebuch templates (company and project). */
+/** Sub-tasks of supporting firms under a Besprechungspunkt (read-only on the device). */
+const besprechung_teilaufgabe = new Table({ punkt_id: column.text, project_id: column.text, company_id: column.text, text: column.text, status: column.text, due_date: column.text, sort: column.integer }, { indexes: { p: ['punkt_id'] } });
 const tagesbericht_vorlage = new Table({ project_id: column.text, name: column.text, inhalt: column.text, aktiv: column.integer });
 const tagesbericht_nachtrag = new Table({ bericht_id: column.text, project_id: column.text, text: column.text, created_by: column.text, created_at: column.text }, { indexes: { b: ['bericht_id'] } });
 const tagesbericht_action = new Table({ bericht_id: column.text, action: column.text, payload: column.text, base_version: column.integer, occurred_at: column.text }, { insertOnly: true });
@@ -136,6 +142,7 @@ const tagesbericht_lokal = new Table(
 );
 
 export const AppSchema = new Schema({
+  besprechung_teilaufgabe,
   tagesbericht_vorlage,
   besprechung_punkt_foto,
   company_kontakt,

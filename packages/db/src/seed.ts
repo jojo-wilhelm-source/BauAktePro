@@ -50,7 +50,7 @@ await sql.begin(async (tx) => {
   await tx`UPDATE plan SET current_revision_id = NULL, folder_id = NULL`;
   await tx`UPDATE document SET current_revision_id = NULL`;
   for (const t of [
-    'auth_session', 'auth_account', 'auth_verification', 'einladung', 'freimeldung', 'anzeige_link', 'besprechung_punkt_foto', 'tagesbericht_vorlage', 'tagesbericht_action', 'tagesbericht_foto', 'tagesbericht_nachtrag', 'tagesbericht',
+    'auth_session', 'auth_account', 'auth_verification', 'einladung', 'freimeldung', 'anzeige_link', 'besprechung_teilaufgabe', 'besprechung_verteiler', 'besprechung_punkt_foto', 'tagesbericht_vorlage', 'tagesbericht_action', 'tagesbericht_foto', 'tagesbericht_nachtrag', 'tagesbericht',
     'angebot_preis', 'angebot', 'lv_anfrage', 'lv_position', 'lv', 'company_kontakt', 'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
     'einreichung', 'stundenzettel_zeile', 'stundenzettel', 'document_revision', 'document', 'folder',
     'besprechung_eintrag', 'besprechung_punkt', 'besprechung_teilnehmer', 'besprechung', 'plan_revision',
@@ -245,20 +245,26 @@ await sql.begin(async (tx) => {
   await tx`INSERT INTO besprechung_teilnehmer ${tx([ID.coElektro, ID.coFliesen, ID.coOwn].map((company_id) => ({ besprechung_id: ID.bespr1, project_id: ID.project, company_id })))}`;
   const pk = (id: string, number: number, extra: Record<string, unknown>) => ({
     id, project_id: ID.project, number, first_besprechung_id: ID.bespr1, location_id: ID.eg, gewerk_id: null, text: '',
-    responsible_company_id: null, support_company_ids: [], status: 'offen', due_date: null, internal: false, published: true,
-    plan_id: null, pin_page: null, pin_x: null, pin_y: null, created_by: ID.uBauleitung, created_at: '2026-11-03T09:10:00Z', ...extra,
+    responsible_company_id: null, support_company_ids: [], status: 'in_arbeit', due_date: null, internal: false, published: true,
+    kontakt: null, notiz: null, eigen_anteil: null, kontrolle: null, plan_id: null, pin_page: null, pin_x: null, pin_y: null, created_by: ID.uBauleitung, created_at: '2026-11-03T09:10:00Z', ...extra,
   });
   const punkte = [
     pk(ID.p1, 1, { text: 'Abdichtung Bad vor Fliesenarbeiten prüfen und freimelden', gewerk_id: ID.gwFliesen, responsible_company_id: ID.coFliesen,
-      support_company_ids: [ID.coElektro], status: 'in_arbeit', due_date: '2026-11-12', plan_id: ID.planEg, pin_page: 1, pin_x: 0.15, pin_y: 0.25 }),
+      support_company_ids: [ID.coElektro], status: 'in_arbeit', due_date: '2026-11-12', plan_id: ID.planEg, pin_page: 1, pin_x: 0.15, pin_y: 0.25,
+      kontakt: 'Lena Fuge', notiz: 'Folgegewerk Fliesen erst nach Freigabe der Abdichtung.', eigen_anteil: 'Abdichtung abnehmen und Protokoll erstellen.', kontrolle: 'BL bis 12.11.' }),
     pk(ID.p2, 2, { text: 'Leerrohre Küche setzen (Herdanschluss, Arbeitsplatte)', gewerk_id: ID.gwElektro, responsible_company_id: ID.coElektro,
-      status: 'offen', due_date: '2026-11-07', plan_id: ID.planEg, pin_page: 1, pin_x: 0.25, pin_y: 0.75 }),
+      status: 'wichtig', due_date: '2026-11-07', plan_id: ID.planEg, pin_page: 1, pin_x: 0.25, pin_y: 0.75 }),
     pk(ID.p3, 3, { text: 'Container und Lagerfläche vor Haus A räumen', location_id: null, responsible_company_id: ID.coOwn, status: 'erledigt' }),
-    pk(ID.p4, 4, { text: 'Estrich OG 1 ab 17.11. begehbar', location_id: ID.og1, status: 'info' }),
+    pk(ID.p4, 4, { text: 'Estrich OG 1 ab 17.11. begehbar', location_id: ID.og1, status: 'nicht_faellig' }),
     pk(ID.p5, 5, { text: 'Nachtrag Elektro (Mehrmengen Leerrohr) prüfen', location_id: null, gewerk_id: ID.gwElektro, responsible_company_id: ID.coOwn,
       internal: true, published: false }),
   ];
   await tx`INSERT INTO besprechung_punkt ${tx(punkte as never)}`;
+  // Sub-task of the supporting firm (concept: "Beteiligte / unterstützende Firmen und Teilaufgaben").
+  await tx`INSERT INTO besprechung_teilaufgabe ${tx([{ id: '00000000-0000-4000-8000-000000000f71', punkt_id: ID.p1, project_id: ID.project, company_id: ID.coElektro,
+    text: 'Leerrohre im Bad vor der Abdichtung setzen', status: 'erledigt', due_date: '2026-11-08', sort: 0 }] as never)}`;
+  await tx`UPDATE besprechung SET allgemein = ${tx.json(['Auf der Baustelle gilt Helmpflicht und PSA.', 'Zufahrt über Tor 2, Anlieferungen bitte vorher anmelden.'] as never)},
+             protokollfuehrung = 'Bea Bauleitung', dokumentenstand = 'Stand 03.11.2026' WHERE id = ${ID.bespr1}`;
   await tx`INSERT INTO besprechung_eintrag ${tx(punkte.map((p) => ({ besprechung_id: ID.bespr1, punkt_id: p.id, project_id: ID.project, carried: false,
     status_snapshot: p.status, text_snapshot: p.text })))}`;
   await tx`INSERT INTO mangel_note (id, mangel_id, project_id, text, created_by)

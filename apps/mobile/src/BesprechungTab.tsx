@@ -5,16 +5,16 @@
  * - New Punkte: created locally with a device id; the server assigns the number on upload.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActionSheetIOS, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { usePowerSync, useQuery } from '@powersync/react';
-import { besprechungNo, formatDate, nextPunktStatus, punktNo, PUNKT_STATUS, PUNKT_STATUS_LABELS, PUNKT_TONE, type ProjectRole, type PunktStatus } from '@bap/domain';
+import { besprechungNo, formatDate, punktNo, punktUeberfaellig, PUNKT_STATUS, PUNKT_STATUS_ICON, PUNKT_STATUS_LABELS, PUNKT_TONE, type ProjectRole, type PunktStatus } from '@bap/domain';
 import { SymbolView } from 'expo-symbols';
 import { pickFoto, queueBeleg } from './fotoStore';
 import { C, T, TINT, type Tint } from './theme';
 import { Pill, Row, Section, Segmented, SheetBar } from './ui';
 
-const TONE_TINT: Record<string, Tint> = { red: 'red', orange: 'orange', green: 'green', blue: 'blue', gray: 'gray' };
+const TONE_TINT: Record<string, Tint> = { red: 'red', orange: 'orange', yellow: 'yellow', green: 'green', blue: 'blue', gray: 'gray' };
 
 type PunktRow = {
   id: string;
@@ -31,6 +31,10 @@ type PunktRow = {
   internal: number;
   carried: number | null;
   version: number;
+  kontakt: string | null;
+  notiz: string | null;
+  eigen_anteil: string | null;
+  kontrolle: string | null;
 };
 
 export function BesprechungTab({ projectId, role, userId, header }: { projectId: string; role: ProjectRole; userId: string; header: (eyebrow: string) => ReactNode }) {
@@ -53,6 +57,8 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
     [mid, mid],
   );
   const { data: pending } = useQuery<{ punkt_id: string; status: PunktStatus; base_version: number }>('SELECT punkt_id, status, base_version FROM pending_punkt');
+  const { data: teilaufgaben } = useQuery<{ id: string; punkt_id: string; company: string | null; text: string; status: PunktStatus; due_date: string | null }>(
+    'SELECT t.id, t.punkt_id, c.name AS company, t.text, t.status, t.due_date FROM besprechung_teilaufgabe t LEFT JOIN company c ON c.id = t.company_id WHERE t.project_id = ? ORDER BY t.sort', [projectId]);
   const [adding, setAdding] = useState(false);
 
   // A pending chip is done once the server version moved past its base (applied) – or a conflict arrived (see Hinweise).
@@ -82,9 +88,13 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
     const picked = await pickFoto('camera');
     if (picked) await queueBeleg(db, 'punkt', punktId, picked);
   };
-  const tap = async (p: PunktRow) => {
-    const shown = pending.find((x) => x.punkt_id === p.id)?.status ?? p.status;
-    const to = nextPunktStatus(shown);
+  /** Status menu with the five values of the concept (offline: queued and checked against the current state). */
+  const tap = (p: PunktRow) => {
+    const options = PUNKT_STATUS.map((x) => `${PUNKT_STATUS_ICON[x]} ${PUNKT_STATUS_LABELS[x]}`);
+    ActionSheetIOS.showActionSheetWithOptions({ title: `${punktNo(p.number)} – Status`, options: [...options, 'Abbrechen'], cancelButtonIndex: options.length },
+      (i) => { if (i < options.length) void setStatus(p, PUNKT_STATUS[i]!); });
+  };
+  const setStatus = async (p: PunktRow, to: PunktStatus) => {
     const now = new Date().toISOString();
     await db.writeTransaction(async (tx) => {
       if (p.number == null) {
@@ -131,6 +141,8 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
                 const pend = pending.find((x) => x.punkt_id === p.id);
                 const st = m.status === 'versendet' ? (p.status_snapshot ?? p.status) : (pend?.status ?? p.status);
                 const tone = TONE_TINT[PUNKT_TONE[st]]!;
+                const teile = teilaufgaben.filter((t) => t.punkt_id === p.id);
+                const ueber = punktUeberfaellig({ status: st, due_date: p.due_date });
                 return (
                   <View key={p.id} style={s.row}>
                     <View style={{ flex: 1, gap: 3 }}>
@@ -142,9 +154,16 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
                       </View>
                       <Text style={T.callout}>{p.text}</Text>
                       <Text style={T.footnote}>
-                        {p.responsible_name ?? '–'}
-                        {p.due_date ? ` · Frist ${formatDate(p.due_date)}` : ''}
+                        {p.responsible_name ?? 'Allgemein'}{p.kontakt ? ` | ${p.kontakt}` : ''}
+                        {p.due_date ? ` · fällig ${formatDate(p.due_date)}` : ' · ohne Termin'}
                       </Text>
+                      {ueber && <Text style={[T.caption, { color: TINT.red, fontWeight: '600' }]}>⚠ überfällig</Text>}
+                      {!!p.notiz && <Text style={T.footnote}>Notiz: {p.notiz}</Text>}
+                      {!!p.eigen_anteil && <Text style={[T.footnote, { color: C.accent }]}>Eigenanteil: {p.eigen_anteil}</Text>}
+                      {!!p.kontrolle && <Text style={[T.footnote, { color: C.accent }]}>Kontrolle / Freigabe: {p.kontrolle}</Text>}
+                      {teile.map((t) => (
+                        <Text key={t.id} style={[T.footnote, { marginLeft: 10 }]}>{PUNKT_STATUS_ICON[t.status]} {t.company ?? 'Eigene Firma'}: {t.text}{t.due_date ? ` (fällig ${formatDate(t.due_date)})` : ''}</Text>
+                      ))}
                       {pend && <Text style={[T.caption, { color: TINT.orange }]}>vorgemerkt – wird beim Abgleich geprüft</Text>}
                       {(fotoCount.get(p.id) ?? 0) > 0 && <Text style={T.caption}>📷 {fotoCount.get(p.id)} Foto{fotoCount.get(p.id) === 1 ? '' : 's'}</Text>}
                     </View>
@@ -152,8 +171,8 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
                       <SymbolView name="camera" size={20} tintColor={C.accent} />
                     </Pressable>
                     <Pressable
-                      disabled={!editable || st === 'info'}
-                      onPress={() => void tap(p)}
+                      disabled={!editable}
+                      onPress={() => tap(p)}
                       style={({ pressed }) => [s.chip, { backgroundColor: `${TINT[tone]}24`, opacity: pressed ? 0.6 : 1 }]}
                       hitSlop={6}
                     >
@@ -165,7 +184,7 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
               })}
             </Section>
           ))}
-          {editable && <Text style={[T.footnote, { marginHorizontal: 16 }]}>Status antippen: Offen → In Arbeit → Erledigt. Funktioniert auch ohne Netz.</Text>}
+          {editable && <Text style={[T.footnote, { marginHorizontal: 16 }]}>Status antippen: 🟥 Blockiert · 🟧 Wichtig · 🟨 In Arbeit · 🟩 Erledigt · ⬜ Nicht fällig. Funktioniert auch ohne Netz.</Text>}
         </View>
       </ScrollView>
       <Modal visible={adding} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAdding(false)}>
@@ -185,7 +204,7 @@ function NewPunkt({ projectId, besprechungId, userId, onClose }: { projectId: st
   const [text, setText] = useState('');
   const [ort, setOrt] = useState<string | null>(null);
   const [firma, setFirma] = useState<string | null>(null);
-  const [status, setStatus] = useState<PunktStatus>('offen');
+  const [status, setStatus] = useState<PunktStatus>('in_arbeit');
   const save = async () => {
     if (!text.trim()) return;
     await db.execute(
@@ -212,7 +231,8 @@ function NewPunkt({ projectId, besprechungId, userId, onClose }: { projectId: st
         </Section>
         <Section title="Status">
           <View style={{ padding: 10 }}>
-            <Segmented values={PUNKT_STATUS.map((x) => PUNKT_STATUS_LABELS[x])} index={PUNKT_STATUS.indexOf(status)} onChange={(i) => setStatus(PUNKT_STATUS[i]!)} />
+            <Segmented values={PUNKT_STATUS.map((x) => PUNKT_STATUS_ICON[x])} index={PUNKT_STATUS.indexOf(status)} onChange={(i) => setStatus(PUNKT_STATUS[i]!)} />
+            <Text style={[T.footnote, { textAlign: 'center', marginTop: 6 }]}>{PUNKT_STATUS_LABELS[status]}</Text>
           </View>
         </Section>
         <Section title="Ort">
@@ -221,7 +241,7 @@ function NewPunkt({ projectId, besprechungId, userId, onClose }: { projectId: st
             <Row key={o.id} label={o.name} checked={ort === o.id} onPress={() => setOrt(o.id)} />
           ))}
         </Section>
-        <Section title="Verantwortlich" footer="Gewerk, Zuarbeit und Frist lassen sich in der Web-Ansicht ergänzen. Der Punkt wird auch ohne Netz gespeichert.">
+        <Section title="Verantwortlich" footer="Gewerk, Teilaufgaben, Notiz und Frist lassen sich in der Web-Ansicht ergänzen. Der Punkt wird auch ohne Netz gespeichert.">
           {firmen.map((f) => (
             <Row key={f.id} label={f.name} checked={firma === f.id} onPress={() => setFirma(firma === f.id ? null : f.id)} />
           ))}
