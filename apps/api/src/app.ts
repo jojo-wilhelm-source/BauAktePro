@@ -23,7 +23,7 @@ import {
   addGewerk, addLocation, canCreateProject, createProject, deleteGewerk, deleteLocation, nuKandidaten, nuUebernehmen, renameGewerk,
   renameLocation, renameProject, structure, takeOverStructure,
 } from './projekt-service';
-import { addPunkt, besprechungDetails, createBesprechung, listBesprechungen, nextTerminIcs, patchBesprechung, patchPunkt, protokollPdf, sendBesprechung, setAnwesenheit, setTeilnehmer } from './besprechung-service';
+import { addPunkt, addPunktFoto, bauherrFreigabe, bauherrGegenzeichnen, besprechungDetails, punktFotoFile, createBesprechung, listBesprechungen, nextTerminIcs, patchBesprechung, patchPunkt, protokollPdf, sendBesprechung, setAnwesenheit, setTeilnehmer } from './besprechung-service';
 import { checkRevision, decideRevision, listPlans, stampedRevisionPdf, uploadRevision } from './plan-service';
 import { actorFor, createMangel, HttpError, patchMangel, setNachfrist, transitionMangel, type WriteMeta } from './mangel-service';
 
@@ -153,6 +153,20 @@ export function buildApp(sql: Sql) {
       return { user, projects: list, fahrtenbuch: !!user?.fahrtenbuch || !!user?.is_admin, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
     }),
   );
+
+  // --- Besprechungen: photos on Punkte, release to the Bauherr, countersignature ---------
+  app.post<{ Params: { id: string } }>('/besprechung-punkte/:id/fotos', async (req) => {
+    const u = await readUpload(req);
+    return asUser(sql, req.userId, (tx) => addPunktFoto(tx, req.userId, req.params.id, u, u.fields.caption ?? null, u.fields.id));
+  });
+  app.get<{ Params: { id: string } }>('/besprechung-fotos/:id', async (req, reply) => {
+    const f = await asUser(sql, req.userId, (tx) => punktFotoFile(tx, req.params.id));
+    reply.header('content-type', f.type).header('cache-control', 'private, max-age=86400');
+    return reply.send(f.bytes);
+  });
+  app.post<{ Params: { id: string } }>('/besprechungen/:id/bauherr-freigabe', async (req) =>
+    asUser(sql, req.userId, (tx) => bauherrFreigabe(tx, req.userId, req.params.id, z.object({ freigabe: z.boolean() }).parse(req.body).freigabe, meta(req))));
+  app.post<{ Params: { id: string } }>('/besprechungen/:id/gegenzeichnen', async (req) => asUser(sql, req.userId, (tx) => bauherrGegenzeichnen(tx, req.userId, req.params.id, req.body, meta(req))));
 
   // --- Bautagebuch (docs/fachkonzept/07) ---------------------------------------------
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/tagesberichte', async (req) => asUser(sql, req.userId, (tx) => listBerichte(tx, req.userId, req.params.projectId)));

@@ -63,3 +63,10 @@ Reihenfolge der Blöcke, Überschriften, Zusatzfelder je Punkt, Kopfzeile/Logo; 
 - **Bemerkungen** (Allgemeines, z. B. Zufahrt, Baustellenordnung) und **nächster Termin**; beides erscheint im PDF. Der nächste Termin lässt sich als Kalenderdatei (`.ics`, iPhone/Outlook) laden und wird bei „Folgesitzung vorbereiten“ als Termin übernommen.
 - Alles nur im Entwurf änderbar (versionsgeprüft); nach dem Versand gesperrt.
 - ❓ OFFEN (D6): Soll der Bauherr in der Baubesprechung die (nicht internen) Punkte sehen? Bisher sieht er nur das versendete Protokoll-PDF, keine Punkte im Portal.
+
+## Erweiterungen (entschieden 12.11.2026)
+- **Fotos an Punkten:** im Web und am iPad/iPhone (Kamera, auch offline; Upload sobald Netz da ist). Im Protokoll-PDF als kleine Vorschau je Punkt.
+- **Alte Punkte bearbeiten:** In jeder Folgesitzung (Entwurf) lassen sich alle Punkte vollständig bearbeiten (Text, Ort, Gewerk, Verantwortlich, Zuarbeit, Frist, intern). Versendete Protokolle bleiben unverändert (Momentaufnahme).
+- **Nachunternehmer:** sehen alle nicht internen Punkte der versendeten Besprechungen, an denen sie teilnehmen; ihre eigenen Punkte sind gelb hervorgehoben (Portal und PDF). Beim Versand bekommt die Firmen-E-Mail die Nachricht „neues Protokoll online“ mit dem markierten Protokoll und der Aufgabenliste.
+- **Bauherr:** sieht ein Protokoll erst nach manueller Freigabe durch Bau-/Projektleitung (Mail an den Bauherrn) und kann es gegenzeichnen (Unterschrift, dokumentarisch; offene-punkte C1). Nach der Gegenzeichnung lässt sich die Freigabe nicht mehr zurücknehmen.
+- ANNAHME: „Hinweise“ und Bemusterungsunterlagen bekommen dieselbe Freigabe, sobald diese Module gebaut sind.

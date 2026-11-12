@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { getToken } from '../api';
 
 /** Photo from the API (auth header, so no token in the URL). Click opens it full size. */
-export function Foto({ id, size = 96 }: { id: string; size?: number }) {
+export function Foto({ id, size = 96, src }: { id: string; size?: number; src?: string }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let u: string | null = null;
-    void fetch(`/api/fotos/${id}/file`, { headers: { authorization: `Bearer ${getToken()}` } })
+    void fetch(src ?? `/api/fotos/${id}/file`, { headers: { authorization: `Bearer ${getToken()}` } })
       .then((r) => (r.ok ? r.blob() : null))
       .then((b) => {
         if (b) setUrl((u = URL.createObjectURL(b)));
@@ -14,10 +14,10 @@ export function Foto({ id, size = 96 }: { id: string; size?: number }) {
     return () => {
       if (u) URL.revokeObjectURL(u);
     };
-  }, [id]);
+  }, [id, src]);
   return (
     <a href={url ?? undefined} target="_blank" rel="noreferrer" className="foto" style={{ width: size * 1.33, height: size }}>
-      {url && <img src={url} alt="Foto zum Mangel" />}
+      {url && <img src={url} alt="Foto" />}
     </a>
   );
 }

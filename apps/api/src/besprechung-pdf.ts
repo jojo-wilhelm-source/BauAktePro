@@ -22,6 +22,10 @@ export interface ProtokollData {
     due: string | null;
     status: PunktStatus;
     carried: boolean;
+    /** Punkt of the recipient NU: highlighted in his copy of the protocol. */
+    mine?: boolean;
+    /** Photos (JPG/PNG bytes), drawn as small previews under the Punkt. */
+    fotos?: { bytes: Uint8Array; png: boolean }[];
   }[];
   maengel: { number: number; description: string; company: string; due: string | null; label: string }[];
   bemerkung?: string | null;
@@ -127,8 +131,10 @@ export async function renderProtokoll(d: ProtokollData): Promise<Uint8Array> {
         status: [PUNKT_STATUS_LABELS[p.status]],
       };
       const lines = Math.max(...Object.values(cells).map((c) => c.length));
-      const h = lines * 11 + 6;
+      const fotoH = p.fotos?.length ? 70 : 0;
+      const h = lines * 11 + 6 + fotoH;
       if (y - h < M + 24) newPage();
+      if (p.mine) page.drawRectangle({ x: M - 4, y: y - h + 8, width: A4L[0] - 2 * M + 8, height: h, color: rgb(1, 0.95, 0.75) });
       let x = M;
       for (const c of COLS) {
         cells[c.key].forEach((l, i) => {
@@ -139,6 +145,17 @@ export async function renderProtokoll(d: ProtokollData): Promise<Uint8Array> {
           } else text(l, x + 4, yy, c.key === 'text' ? 9 : 8.5, c.key === 'who' && i === 0 ? bold : font, c.key === 'nr' ? GREY : INK);
         });
         x += c.w;
+      }
+      if (p.fotos?.length) {
+        let fx = M + COLS[0].w + COLS[1].w + 4;
+        for (const f of p.fotos.slice(0, 4)) {
+          try {
+            const img = f.png ? await doc.embedPng(f.bytes) : await doc.embedJpg(f.bytes);
+            const sc = Math.min(90 / img.width, 62 / img.height);
+            page.drawImage(img, { x: fx, y: y - lines * 11 - 62, width: img.width * sc, height: img.height * sc });
+            fx += img.width * sc + 6;
+          } catch { /* unreadable image: skip */ }
+        }
       }
       y -= h;
       page.drawLine({ start: { x: M, y: y + 6 }, end: { x: A4L[0] - M, y: y + 6 }, thickness: 0.4, color: LINE });

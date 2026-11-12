@@ -314,9 +314,12 @@ describe('NU-Besprechung', () => {
     call(user, 'POST', '/besprechungen', { id: randomUUID(), project_id: ID.project, held_at: '2026-11-10T09:00:00+01:00', previous_id: ID.bespr1, ...extra });
   const nums = (d: any) => d.punkte.map((p: any) => p.number).sort((a: number, b: number) => a - b);
 
-  it('NU sieht nur eigene, nicht interne Punkte der versendeten Besprechung', async () => {
-    expect(nums((await call('uElektro', 'GET', `/besprechungen/${ID.bespr1}`)).body)).toEqual([1, 2]); // P-001 Zuarbeit, P-002 verantwortlich
-    expect(nums((await call('uFliesen', 'GET', `/besprechungen/${ID.bespr1}`)).body)).toEqual([1]);
+  it('NU sieht alle nicht internen Punkte der versendeten Besprechung, eigene markiert', async () => {
+    const el = (await call('uElektro', 'GET', `/besprechungen/${ID.bespr1}`)).body;
+    expect(nums(el)).toEqual([1, 2, 3, 4]); // P-005 is internal
+    expect(el.punkte.filter((p: any) => p.mine).map((p: any) => p.number).sort()).toEqual([1, 2]); // P-001 Zuarbeit, P-002 verantwortlich
+    const fl = (await call('uFliesen', 'GET', `/besprechungen/${ID.bespr1}`)).body;
+    expect(fl.punkte.filter((p: any) => p.mine).map((p: any) => p.number)).toEqual([1]);
     expect(nums((await call('uPolier', 'GET', `/besprechungen/${ID.bespr1}`)).body)).toEqual([1, 2, 3, 4, 5]);
     expect((await call('uBauherr', 'GET', `/besprechungen/${ID.bespr1}`)).status).toBe(404); // not a participant
   });
@@ -342,7 +345,9 @@ describe('NU-Besprechung', () => {
     expect(sent.status).toBe(200);
     expect(sent.body.mails.map((m: any) => m.company).sort()).toEqual(['Elektro Blitz GmbH', 'Fliesen Fuchs GmbH']);
     expect(nums((await call('uElektro', 'GET', `/besprechungen/${r.body.id}`)).body)).toEqual([1, 2, 6]);
-    expect(nums((await call('uFliesen', 'GET', `/besprechungen/${r.body.id}`)).body)).toEqual([1]);
+    const fl = (await call('uFliesen', 'GET', `/besprechungen/${r.body.id}`)).body;
+    expect(nums(fl)).toEqual([1, 2, 6]);
+    expect(fl.punkte.filter((p: any) => p.mine).map((p: any) => p.number)).toEqual([1]);
   });
 
   it('versendete Besprechung ist gesperrt (API und Datenbank)', async () => {
@@ -1005,5 +1010,35 @@ describe('Rechte pro Person', () => {
     expect((await call('uPolier', 'GET', `/kontakte?project=${ID.project}`)).body.length).toBe(3);
     expect((await call('uElektro', 'PUT', '/kontakte', { id: randomUUID(), company_id: ID.coFliesen, name: 'Fremd' })).status).toBe(403);
     expect((await call('uElektro', 'PUT', '/kontakte', { id: randomUUID(), company_id: ID.coElektro, name: 'Neuer Monteur', telefon: '0711 1234' })).status).toBe(200);
+  });
+});
+
+describe('Besprechung: Fotos, Bauherr-Freigabe, Gegenzeichnung', () => {
+  const sig = { w: 300, h: 100, strokes: [[[0.1, 0.5], [0.4, 0.2], [0.7, 0.8], [0.9, 0.4]]] };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  it('Foto am Punkt: intern hochladen, NU sieht es am sichtbaren Punkt; NU darf nicht hochladen', async () => {
+    const d = (await call('uPolier', 'GET', `/besprechungen/${ID.bespr1}`)).body;
+    const p2 = d.punkte.find((p: any) => p.number === 2);
+    expect((await upload('uPolier', `/besprechung-punkte/${p2.id}/fotos`, {}, 'foto.png', png)).status).toBe(200);
+    expect((await upload('uElektro', `/besprechung-punkte/${p2.id}/fotos`, {}, 'foto.png', png)).status).toBe(403);
+    const el = (await call('uElektro', 'GET', `/besprechungen/${ID.bespr1}`)).body;
+    const f = el.punkte.find((p: any) => p.number === 2).fotos[0];
+    const r = await app.inject({ method: 'GET', url: `/besprechung-fotos/${f.id}`, headers: { authorization: `Bearer ${tokens.uElektro}` } });
+    expect(r.statusCode).toBe(200);
+    const pdf = await app.inject({ method: 'GET', url: `/besprechungen/${ID.bespr1}/pdf`, headers: { authorization: `Bearer ${tokens.uElektro}` } });
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+  });
+  it('Bauherr sieht das Protokoll erst nach Freigabe (ohne interne Punkte) und zeichnet gegen', async () => {
+    expect((await call('uBauherr', 'GET', `/besprechungen/${ID.bespr1}`)).status).toBe(404);
+    expect((await call('uPolier', 'POST', `/besprechungen/${ID.bespr1}/bauherr-freigabe`, { freigabe: true })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/besprechungen/${ID.bespr1}/bauherr-freigabe`, { freigabe: true })).status).toBe(200);
+    const bh = await call('uBauherr', 'GET', `/besprechungen/${ID.bespr1}`);
+    expect(bh.status).toBe(200);
+    expect(bh.body.punkte.map((p: any) => p.number).sort()).toEqual([1, 2, 3, 4]);
+    expect(bh.body.can_countersign).toBe(true);
+    expect((await call('uElektro', 'POST', `/besprechungen/${ID.bespr1}/gegenzeichnen`, { signature: sig })).status).toBe(409);
+    expect((await call('uBauherr', 'POST', `/besprechungen/${ID.bespr1}/gegenzeichnen`, { signature: sig })).status).toBe(200);
+    expect((await call('uBauherr', 'POST', `/besprechungen/${ID.bespr1}/gegenzeichnen`, { signature: sig })).status).toBe(409);
+    expect((await call('uBauleitung', 'POST', `/besprechungen/${ID.bespr1}/bauherr-freigabe`, { freigabe: false })).status).toBe(409);
   });
 });

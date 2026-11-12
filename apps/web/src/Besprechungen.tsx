@@ -5,6 +5,17 @@ import { api, downloadFile, openPdf, type BesprechungDetail, type BesprechungLis
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 import { mNo } from './ui/status';
+import { Foto } from './ui/Foto';
+import { SignatureSheet } from './Bautagebuch';
+import { getToken, ApiError } from './api';
+
+async function uploadPunktFoto(punktId: string, file: File) {
+  const fd = new FormData();
+  fd.set('id', crypto.randomUUID());
+  fd.set('file', file);
+  const res = await fetch(`/api/besprechung-punkte/${punktId}/fotos`, { method: 'POST', body: fd, headers: { authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+}
 
 type Group = 'ort' | 'firma' | 'status';
 
@@ -139,6 +150,8 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
   const [d, setD] = useState<BesprechungDetail | null>(null);
   const [group, setGroup] = useState<Group>('ort');
   const [adding, setAdding] = useState<{ location_id: string | null } | null>(null);
+  const [editing, setEditing] = useState<Punkt | null>(null);
+  const [sign, setSign] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [listFor, setListFor] = useState('');
   const load = useCallback(async () => setD(await api<BesprechungDetail>(`/besprechungen/${id}`)), [id]);
@@ -186,6 +199,13 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
             <button className="btn" onClick={() => run(() => openPdf(`/besprechungen/${id}/pdf`), 'Protokoll geöffnet')}>
               {sent ? 'Protokoll (PDF)' : 'PDF-Vorschau'}
             </button>
+            {d.can_release && (
+              <button className={`btn ${d.bauherr_freigabe ? '' : 'filled'}`} disabled={!!d.bauherr_signed_at}
+                onClick={() => runAndLoad(() => api(`/besprechungen/${id}/bauherr-freigabe`, { method: 'POST', body: { freigabe: !d.bauherr_freigabe } }), d.bauherr_freigabe ? 'Freigabe zurückgenommen' : 'Für den Bauherrn freigegeben – er wurde benachrichtigt')}>
+                {d.bauherr_freigabe ? 'Bauherr-Freigabe zurücknehmen' : 'Für Bauherrn freigeben'}
+              </button>
+            )}
+            {d.can_countersign && <button className="btn filled" onClick={() => setSign(true)}>Gegenzeichnen</button>}
             {d.can_send && (
               <button className="btn filled" onClick={() => setConfirm(true)}>
                 Versenden …
@@ -224,6 +244,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
           ))}
         </div>
         <span className={`pill ${sent ? 'c-green' : 'c-orange'}`}>{sent ? `Versendet ${formatDate(d.sent_at)} · gesperrt` : 'Entwurf'}</span>
+        {d.bauherr_freigabe && <span className="pill c-blue">{d.bauherr_signed_at ? `Vom Bauherrn gegengezeichnet ${formatDate(d.bauherr_signed_at)}` : 'Für Bauherrn freigegeben'}</span>}
         <div className="tokens">
           {(d.can_edit ? info.companies : d.teilnehmer).map((c) => {
             const on = d.teilnehmer.some((t) => t.id === c.id);
@@ -299,7 +320,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                     const st = shown(p);
                     const overdue = p.due_date && st !== 'erledigt' && st !== 'info' && p.due_date.slice(0, 10) < new Date().toISOString().slice(0, 10);
                     return (
-                      <tr key={p.id} style={{ cursor: 'default' }}>
+                      <tr key={p.id} className={p.mine ? 'mine' : ''} style={{ cursor: 'default' }}>
                         <td className="num">
                           {punktNo(p.number)}
                           {p.carried && <span className="badge-w" title="Aus der vorigen Besprechung übernommen">W</span>}
@@ -308,6 +329,17 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                         <td>
                           {sent ? (p.text_snapshot ?? p.text) : p.text}
                           {p.internal && <span className="tag critical" style={{ marginLeft: 6 }}>nur intern</span>}
+                          {p.mine && <span className="tag" style={{ marginLeft: 6 }}>Ihr Punkt</span>}
+                          {(p.fotos?.length ?? 0) > 0 && (
+                            <div className="punkt-fotos">{p.fotos!.map((f) => <Foto key={f.id} id={f.id} src={`/api/besprechung-fotos/${f.id}`} size={48} />)}</div>
+                          )}
+                          {internal && (
+                            <div className="punkt-actions">
+                              {d.can_edit && <button className="btn small plain" onClick={() => setEditing(p)}>Bearbeiten</button>}
+                              <label className="btn small plain">Foto<input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) void runAndLoad(() => uploadPunktFoto(p.id, f), 'Foto hinzugefügt'); }} /></label>
+                            </div>
+                          )}
                         </td>
                         <td>
                           <div className="who">{p.responsible_name ?? '–'}</div>
@@ -386,9 +418,27 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
             </div>
           </div>
         )}
-        <div className="footnote">W = aus der vorigen Besprechung übernommen. Status antippen: Offen → In Arbeit → Erledigt. Erledigte Punkte werden in der Folgesitzung archiviert.</div>
+        <div className="footnote">{info.role === 'nu' ? 'Ihre Punkte sind gelb hervorgehoben. ' : ''}W = aus der vorigen Besprechung übernommen. Status antippen: Offen → In Arbeit → Erledigt. Erledigte Punkte werden in der Folgesitzung archiviert.</div>
       </div>
 
+      {editing && (
+        <NewPunktSheet
+          info={info}
+          d={d}
+          locationId={editing.location_id}
+          initial={editing}
+          onCancel={() => setEditing(null)}
+          onSave={(body) =>
+            runAndLoad(async () => {
+              const { id: _id, besprechung_id: _b, ...rest } = body as Record<string, unknown>;
+              await api(`/punkte/${editing.id}`, { method: 'PATCH', body: { ...rest, base_version: editing.version } });
+              setEditing(null);
+            }, 'Punkt geändert')
+          }
+        />
+      )}
+      {sign && <SignatureSheet title="Protokoll gegenzeichnen" onCancel={() => setSign(false)}
+        onDone={(s) => { setSign(false); void runAndLoad(() => api(`/besprechungen/${id}/gegenzeichnen`, { method: 'POST', body: { signature: s } }), 'Gegengezeichnet'); }} />}
       {adding && (
         <NewPunktSheet
           info={info}
@@ -440,20 +490,23 @@ function NewPunktSheet(props: {
   info: ProjectInfo;
   d: BesprechungDetail;
   locationId: string | null;
+  /** Edit an existing Punkt (also one carried over from an earlier meeting). */
+  initial?: Punkt;
   onCancel: () => void;
   onSave: (body: object) => void;
 }) {
+  const init = props.initial;
   const { info, d } = props;
   const orte = info.locations.filter((l) => l.kind !== 'raum');
   const [f, setF] = useState({
-    text: '',
+    text: init?.text ?? '',
     location_id: props.locationId ?? '',
-    gewerk_id: '',
-    responsible_company_id: '',
-    support: [] as string[],
-    due_date: '',
-    status: 'offen' as PunktStatus,
-    internal: false,
+    gewerk_id: init?.gewerk_id ?? '',
+    responsible_company_id: init?.responsible_company_id ?? '',
+    support: (init?.support_company_ids ?? []) as string[],
+    due_date: init?.due_date?.slice(0, 10) ?? '',
+    status: (init?.status ?? 'offen') as PunktStatus,
+    internal: init?.internal ?? false,
   });
   // Suggest the responsible company from the Gewerk (same mapping as for Mängel).
   const setGewerk = (g: string) => {
@@ -462,7 +515,7 @@ function NewPunktSheet(props: {
   };
   return (
     <Sheet
-      title="Neuer Punkt"
+      title={init ? `${punktNo(init.number)} bearbeiten` : 'Neuer Punkt'}
       primary="Sichern"
       primaryDisabled={!f.text.trim()}
       onCancel={props.onCancel}

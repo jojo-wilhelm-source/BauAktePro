@@ -103,7 +103,8 @@ export function clearFotos() {
 }
 
 /** Receipt photo (Einkauf / Tanken): copied into app storage, uploaded once the entry itself is on the server. */
-export async function queueBeleg(db: AbstractPowerSyncDatabase, kind: 'einkauf' | 'tankvorgang', entityId: string, picked: Picked) {
+/** Receipt photos (einkauf/tankvorgang) and photos on Besprechungspunkte ('punkt'): uploaded once the entry is on the server. */
+export async function queueBeleg(db: AbstractPowerSyncDatabase, kind: 'einkauf' | 'tankvorgang' | 'punkt', entityId: string, picked: Picked) {
   const id = Crypto.randomUUID();
   dir.create({ idempotent: true, intermediates: true });
   new File(picked.uri).copy(localFoto(id));
@@ -123,10 +124,10 @@ export async function uploadQueuedBelege(db: AbstractPowerSyncDatabase, session:
     const s = await freshSession(session);
     for (const q of queue) {
       try {
-        const path = q.kind === 'einkauf' ? 'einkaeufe' : 'tankvorgaenge';
-        const res = await uploadAsync(`${API_URL}/${path}/${q.entity_id}/beleg`, q.uri, {
+        const url = q.kind === 'punkt' ? `${API_URL}/besprechung-punkte/${q.entity_id}/fotos` : `${API_URL}/${q.kind === 'einkauf' ? 'einkaeufe' : 'tankvorgaenge'}/${q.entity_id}/beleg`;
+        const res = await uploadAsync(url, q.uri, {
           httpMethod: 'POST', uploadType: FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: 'image/jpeg',
-          headers: { authorization: `Bearer ${s.token}` },
+          headers: { authorization: `Bearer ${s.token}` }, parameters: { id: q.id },
         });
         if (res.status >= 200 && res.status < 300) await db.execute('DELETE FROM beleg_upload WHERE id = ?', [q.id]);
       } catch {

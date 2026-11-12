@@ -344,3 +344,8 @@ input.switch { appearance: none; -webkit-appearance: none; width: 51px; height: 
 input.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.2); transition: transform .2s; }
 input.switch:checked { background: var(--green); }
 input.switch:checked::after { transform: translateX(20px); }
+
+/* Besprechung: own Punkte of the NU, photos, actions */
+.table tr.mine td { background: color-mix(in srgb, var(--yellow, #ffcc00) 18%, transparent); }
+.punkt-fotos { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.punkt-actions { display: flex; gap: 4px; margin-top: 4px; opacity: .85; }

@@ -3,6 +3,7 @@
 # Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
 # Rev 2026-11-11b: Dokumente offline (folders, documents, released revisions only).
 # Rev 2026-11-12a: Bautagebuch (internal roles only, like RLS).
+# Rev 2026-11-12c: photos on Besprechungspunkte.
 # Rev 2026-11-12b: areas switchable per member (m_* columns), Fahrtenbuch per person, NU contacts.
 config:
   edition: 3
@@ -49,6 +50,7 @@ streams:
       - SELECT * FROM besprechung_teilnehmer WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_besprechungen = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM besprechung_punkt WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_besprechungen = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM besprechung_eintrag WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_besprechungen = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM besprechung_punkt_foto WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_besprechungen = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       # Mangelanzeigen incl. drafts (RLS: read for internal roles).
       - SELECT * FROM mangelanzeige WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM mangelanzeige_position WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))

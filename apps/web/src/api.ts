@@ -250,6 +250,9 @@ export interface Punkt {
   pin_x: number | null;
   pin_y: number | null;
   version: number;
+  /** NU: own Punkt (highlighted). */
+  mine?: boolean;
+  fotos?: { id: string; caption: string | null }[];
 }
 export interface BesprechungDetail extends Omit<BesprechungListItem, 'punkte' | 'offen' | 'has_next'> {
   teilnehmer: { id: string; name: string; kind: string; email: string | null; anwesend: boolean | null }[];
@@ -258,6 +261,11 @@ export interface BesprechungDetail extends Omit<BesprechungListItem, 'punkte' | 
   maengel: { id: string; number: number; description: string; company_name: string; escalation: { label: string } }[];
   can_edit: boolean;
   can_send: boolean;
+  can_release?: boolean;
+  can_countersign?: boolean;
+  bauherr_freigabe?: boolean;
+  bauherr_freigabe_at?: string | null;
+  bauherr_signed_at?: string | null;
 }
 
 // --- Dokumente --------------------------------------------------------------------

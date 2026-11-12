@@ -9,6 +9,8 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import * as Crypto from 'expo-crypto';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { besprechungNo, formatDate, nextPunktStatus, punktNo, PUNKT_STATUS, PUNKT_STATUS_LABELS, PUNKT_TONE, type ProjectRole, type PunktStatus } from '@bap/domain';
+import { SymbolView } from 'expo-symbols';
+import { pickFoto, queueBeleg } from './fotoStore';
 import { C, T, TINT, type Tint } from './theme';
 import { Pill, Row, Section, Segmented, SheetBar } from './ui';
 
@@ -72,6 +74,14 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
     return [...map.entries()].sort(([a], [b]) => (a === 'Allgemein' ? -1 : b === 'Allgemein' ? 1 : a.localeCompare(b, 'de')));
   }, [punkte]);
 
+  // Photos on Punkte: taken on the tablet, uploaded when online (also for Punkte created offline).
+  const { data: fotoRows } = useQuery<{ punkt_id: string; n: number }>(
+    `SELECT punkt_id, count(*) AS n FROM (SELECT punkt_id FROM besprechung_punkt_foto UNION ALL SELECT entity_id AS punkt_id FROM beleg_upload WHERE kind = 'punkt') GROUP BY punkt_id`);
+  const fotoCount = new Map(fotoRows.map((r) => [r.punkt_id, r.n]));
+  const addFoto = async (punktId: string) => {
+    const picked = await pickFoto('camera');
+    if (picked) await queueBeleg(db, 'punkt', punktId, picked);
+  };
   const tap = async (p: PunktRow) => {
     const shown = pending.find((x) => x.punkt_id === p.id)?.status ?? p.status;
     const to = nextPunktStatus(shown);
@@ -136,7 +146,11 @@ export function BesprechungTab({ projectId, role, userId, header }: { projectId:
                         {p.due_date ? ` · Frist ${formatDate(p.due_date)}` : ''}
                       </Text>
                       {pend && <Text style={[T.caption, { color: TINT.orange }]}>vorgemerkt – wird beim Abgleich geprüft</Text>}
+                      {(fotoCount.get(p.id) ?? 0) > 0 && <Text style={T.caption}>📷 {fotoCount.get(p.id)} Foto{fotoCount.get(p.id) === 1 ? '' : 's'}</Text>}
                     </View>
+                    <Pressable onPress={() => void addFoto(p.id)} hitSlop={8} style={{ paddingHorizontal: 8 }} accessibilityLabel="Foto zum Punkt">
+                      <SymbolView name="camera" size={20} tintColor={C.accent} />
+                    </Pressable>
                     <Pressable
                       disabled={!editable || st === 'info'}
                       onPress={() => void tap(p)}

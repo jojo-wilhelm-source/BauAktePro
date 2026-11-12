@@ -121,6 +121,8 @@ const tagesbericht = new Table(
   },
   { indexes: { p: ['project_id', 'datum'] } },
 );
+/** Photos on Besprechungspunkte (metadata; files via the API). */
+const besprechung_punkt_foto = new Table({ punkt_id: column.text, project_id: column.text, caption: column.text, created_at: column.text }, { indexes: { p: ['punkt_id'] } });
 const tagesbericht_nachtrag = new Table({ bericht_id: column.text, project_id: column.text, text: column.text, created_by: column.text, created_at: column.text }, { indexes: { b: ['bericht_id'] } });
 const tagesbericht_action = new Table({ bericht_id: column.text, action: column.text, payload: column.text, base_version: column.integer, occurred_at: column.text }, { insertOnly: true });
 const tagesbericht_lokal = new Table(
@@ -131,6 +133,7 @@ const tagesbericht_lokal = new Table(
 );
 
 export const AppSchema = new Schema({
+  besprechung_punkt_foto,
   company_kontakt,
   tagesbericht, tagesbericht_nachtrag, tagesbericht_action, tagesbericht_lokal,
   project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, fahrzeug, fahrt, tankvorgang, beleg_upload, folder, document, document_revision, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
