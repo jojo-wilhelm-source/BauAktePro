@@ -13,6 +13,7 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import { changeLink, linkInfo, listFreimeldungen, publicAnzeige, publicFoto, submitFreimeldung } from './freimeldung-service';
 import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, zugaenge } from './anmeldung';
 import {
   addGewerk, addLocation, canCreateProject, createProject, deleteGewerk, deleteLocation, nuKandidaten, nuUebernehmen, renameGewerk,
@@ -41,6 +42,15 @@ async function readUpload(req: FastifyRequest) {
   const bytes = await file.toBuffer();
   const fields = Object.fromEntries(Object.entries(file.fields).flatMap(([k, v]) => (v && 'value' in (v as object) ? [[k, (v as { value: string }).value]] : [])));
   return { bytes, name: file.filename, fields };
+}
+
+/** At most 30 reports per link and IP within 10 minutes (the link is public). */
+const publicHits = new Map<string, { n: number; until: number }>();
+function throttlePublic(key: string) {
+  const now = Date.now();
+  const h = publicHits.get(key);
+  if (!h || h.until < now) return void publicHits.set(key, { n: 1, until: now + 10 * 60 * 1000 });
+  if (++h.n > 30) throw new HttpError(429, 'Zu viele Meldungen in kurzer Zeit. Bitte später erneut versuchen.');
 }
 
 const contentDisposition = (name: string) => `inline; filename*=UTF-8''${encodeURIComponent(name)}`;
@@ -90,9 +100,30 @@ export function buildApp(sql: Sql) {
     return login(await authP, admin, { email: info[0]!.email, password: body.password }, ipOf(req), req.headers['user-agent']);
   });
 
+  // --- QR-Freimeldung (public, bound to the link token; docs/fachkonzept/04) ----------
+  app.get<{ Params: { token: string } }>('/public/freimeldung/:token', async (req) => publicAnzeige(admin, req.params.token));
+  app.get<{ Params: { token: string; fotoId: string } }>('/public/freimeldung/:token/foto/:fotoId', async (req, reply) => {
+    const f = await publicFoto(admin, req.params.token, z.string().uuid().parse(req.params.fotoId));
+    reply.header('content-type', f.type).header('cache-control', 'private, max-age=3600');
+    return reply.send(f.bytes);
+  });
+  app.post<{ Params: { token: string; posId: string } }>('/public/freimeldung/:token/positionen/:posId', async (req) => {
+    const posId = z.string().uuid().parse(req.params.posId);
+    let fields: Record<string, string> = {};
+    let file: { bytes: Buffer; name: string } | null = null;
+    if (req.isMultipart()) {
+      for await (const part of req.parts()) {
+        if (part.type === 'file') file = { bytes: await part.toBuffer(), name: part.filename };
+        else fields[part.fieldname] = String(part.value);
+      }
+    } else fields = (req.body ?? {}) as Record<string, string>;
+    throttlePublic(`${ipOf(req)}|${req.params.token}`);
+    return submitFreimeldung(admin, req.params.token, posId, fields, file, ipOf(req), null);
+  });
+
   // --- authenticated --------------------------------------------------------
   app.addHook('onRequest', async (req) => {
-    if (req.url === '/health' || req.url.startsWith('/auth/')) return;
+    if (req.url === '/health' || req.url.startsWith('/auth/') || req.url.startsWith('/public/')) return;
     const h = req.headers.authorization ?? '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : (req.query as Record<string, string>)?.token;
     if (!token) throw new HttpError(401, 'Nicht angemeldet');
@@ -112,6 +143,11 @@ export function buildApp(sql: Sql) {
       return { user, projects, canCreateProject: await canCreateProject(tx) };
     }),
   );
+
+  // --- Freimelde-Link je Mangelanzeige (Leitung) -------------------------------------
+  app.get<{ Params: { id: string } }>('/mangelanzeigen/:id/link', async (req) => asUser(sql, req.userId, (tx) => linkInfo(tx, req.userId, req.params.id)));
+  app.post<{ Params: { id: string } }>('/mangelanzeigen/:id/link', async (req) => asUser(sql, req.userId, (tx) => changeLink(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/mangelanzeigen/:id/freimeldungen', async (req) => asUser(sql, req.userId, (tx) => listFreimeldungen(tx, req.userId, req.params.id)));
 
   // --- Zugänge: Einladungen, Mitglieder ---------------------------------------------
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/zugaenge', async (req) => asUser(sql, req.userId, (tx) => zugaenge(tx, req.userId, req.params.projectId)));

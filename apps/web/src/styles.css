@@ -282,3 +282,28 @@ button.link { border: 0; background: none; color: var(--accent); padding: 0; fon
 .login-box form .btn.plain { align-self: center; }
 .login-box .notice, .login-box .hint { color: var(--label-2); font-size: 13px; text-align: center; margin: 0; }
 .login-box .row input { text-align: left; max-width: none; flex: 1; color: var(--label); }
+/* QR-Freimeldung (public, phone first) */
+.fm { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 14px; }
+.fm-head { display: flex; gap: 14px; align-items: center; }
+.fm-head .app-icon { width: 52px; height: 52px; border-radius: 12px; font-size: 19px; flex-shrink: 0; }
+.fm-head h1 { margin: 2px 0; font-size: 22px; letter-spacing: -0.02em; }
+.fm .sub { color: var(--label-2); font-size: 13px; }
+.fm-me .row input { text-align: left; max-width: none; flex: 1; color: var(--label); font-size: 16px; }
+.fm-pos { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.fm-pos-head { display: flex; justify-content: space-between; align-items: center; }
+.fm-pos-head .num { color: var(--label-2); font-variant-numeric: tabular-nums; font-size: 13px; }
+.fm-pos .desc { font-weight: 600; font-size: 16px; }
+.fm-fotos { display: flex; gap: 8px; overflow-x: auto; }
+.fm-fotos img, .fm-meldung img { height: 110px; border-radius: 10px; object-fit: cover; }
+.fm-meldung { background: var(--fill); border-radius: 10px; padding: 8px 10px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.fm-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.fm-actions .btn.large { flex: 1; min-height: 46px; }
+.fm-form { display: flex; flex-direction: column; gap: 10px; }
+.fm-form textarea { border: 0.5px solid var(--separator); border-radius: 10px; padding: 10px; font: inherit; font-size: 16px; background: var(--bg-elevated); color: var(--label); }
+.fm-preview { border: 0; padding: 0; background: none; }
+.fm-preview img { width: 100%; max-height: 260px; object-fit: cover; border-radius: 12px; }
+.fm-error { color: var(--red); font-size: 13px; margin: 0; }
+.qr-row img { width: 120px; height: 120px; image-rendering: pixelated; border-radius: 6px; flex-shrink: 0; }
+.qr-row img.qr-off { opacity: 0.25; }
+.qr-row .k { flex: 1; min-width: 0; }
+.fm-row { gap: 8px; align-items: flex-start; }

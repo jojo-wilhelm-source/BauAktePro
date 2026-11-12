@@ -77,3 +77,13 @@ Kritische Mängel haben **keine eigenen Eskalationszeiten**; sie unterscheiden s
 - **Ordner-Ansicht** (separate Ansicht neben der Liste): Ordner und Unterordner nach Firma, Geschoss, Raum, Gewerk, Monat, Tag oder Status (z. B. Firma › Monat), auf- und zuklappbar.
 - **Auswahl** per Häkchen (einzeln, ganzer Ordner, alle). Der **Mängelbericht** enthält nur die ausgewählten Mängel (ohne Auswahl: alle der Ansicht), in derselben Reihenfolge und mit denselben Ordnern als Überschriften, vorne eine Übersicht. Je Ordner gibt es einen eigenen „PDF“-Knopf.
 - Rechte: Der Bericht enthält nur, was die Person sehen darf (RLS); ein NU bekommt fremde Mängel auch über eine manipulierte Auswahl nicht.
+
+## Umsetzungsstand (12.11.2026): QR-Freimeldung je Mangelanzeige
+- Jede **versendete Mangelanzeige** bekommt einen Link, als **QR-Code auf dem PDF** (unter dem Anschreiben) und als Link in der E-Mail an den Nachunternehmer.
+- **Wer den Link hat** (z. B. der Monteur vor Ort, ohne Konto), sieht nur diese eine Anzeige: Positionen mit Beschreibung, Ort, Gewerk, Foto und Status, keine Preise oder anderen Mängel. Er trägt **Name und Firma** ein (bleibt auf seinem Gerät gespeichert) und meldet je Position:
+  - **Behoben** mit **Pflicht-Foto** und optionalem Kommentar → Mangel „Behoben gemeldet“, das Foto wird Nachweisfoto am Mangel.
+  - **Rückfrage** mit Pflicht-Kommentar → Mangel „Strittig“.
+- Die **Bauleitung bekommt eine E-Mail** und entscheidet in der Mangelanzeige (Bereich „Freimeldungen per QR-Link“) oder am Mangel: **Abnehmen** oder **Nicht behoben** (Frist läuft weiter). Eine Freimeldung allein schließt nichts ab.
+- **Link-Verwaltung** (nur Bau-/Projektleitung, in der Mangelanzeige): QR-Code anzeigen, Link kopieren, **sperren / wieder freigeben**, **neu erzeugen** (der alte Link, auch auf dem PDF, gilt dann nicht mehr). Der Link gilt **ohne Ablauf** (entschieden 12.11.2026).
+- Protokoll: Jede Freimeldung und jede Link-Änderung steht im Audit Log; Freimeldungen über den Link mit dem eingetippten Namen und der Firma („per QR-Link“).
+- Schutz: Langer Zufallsschlüssel je Anzeige; höchstens 30 Meldungen je Link und IP in 10 Minuten; Fotos höchstens 15 MB (JPG, PNG, HEIC).

@@ -5,6 +5,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { degrees, PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib';
+import QRCode from 'qrcode';
 import { anzeigeNo, formatDate } from '@bap/domain';
 
 export interface AnzeigePdfData {
@@ -17,6 +18,8 @@ export interface AnzeigePdfData {
   project: string;
   recipient: { name: string; email: string | null };
   signer: string;
+  /** QR-Freimeldung: link for the NU / fitter (only on the sent version). */
+  freimeldeUrl?: string | null;
   positions: {
     pos: number;
     number: number;
@@ -336,6 +339,28 @@ export async function renderAnzeigePdf(d: AnzeigePdfData, planDir: string): Prom
     para(d.note);
   }
   y -= 14;
+  // QR-Freimeldung: scan on site, report each position as fixed with a photo (no account needed).
+  if (d.freimeldeUrl) {
+    const qr = QRCode.create(d.freimeldeUrl, { errorCorrectionLevel: 'M' });
+    const size = 78;
+    const cell = size / qr.modules.size;
+    const boxH = size + 16;
+    page.drawRectangle({ x: M, y: y - boxH + 8, width, height: boxH, color: rgb(0.95, 0.97, 1), borderColor: rgb(0.8, 0.86, 0.95), borderWidth: 0.6 });
+    const x0 = M + 8;
+    const y0 = y - size;
+    for (let row = 0; row < qr.modules.size; row++) {
+      for (let col = 0; col < qr.modules.size; col++) {
+        if (qr.modules.get(row, col)) page.drawRectangle({ x: x0 + col * cell, y: y0 + size - (row + 1) * cell, width: cell, height: cell, color: rgb(0, 0, 0) });
+      }
+    }
+    const tx0 = x0 + size + 14;
+    text('Mängel digital freimelden', tx0, y - 14, 11.5, bold);
+    for (const [i, l] of wrap('QR-Code mit dem Handy scannen, je Position „behoben“ melden und ein Foto als Nachweis aufnehmen – ohne Anmeldung. Die Bauleitung prüft danach.', font, 9.5, width - size - 30).entries()) {
+      text(l, tx0, y - 30 - i * 12.5, 9.5);
+    }
+    text(d.freimeldeUrl, tx0, y0 + 4, 7.5, font, GREY);
+    y -= boxH + 12;
+  }
 
   // Positions: description, location, then photo and plan crop side by side.
   const ctx: BlockCtx = { doc, font, bold, planDir, planCache: new Map(), page, y };

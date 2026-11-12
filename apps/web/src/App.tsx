@@ -10,6 +10,7 @@ import { NachunternehmerPage } from './Nachunternehmer';
 import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
 import { KostenPage } from './Kosten';
 import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
+import { FreimeldungPage } from './Freimeldung';
 import { ZugaengePage } from './Zugaenge';
 import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
@@ -61,7 +62,9 @@ export function App() {
   }, []);
 
   if (!checked) return null;
-  // Public pages: invitation link and password reset (work without being signed in).
+  // Public pages: QR-Freimeldung, invitation link and password reset (work without being signed in).
+  const fm = window.location.pathname.match(/^\/freimeldung\/([A-Za-z0-9_-]{30,80})$/);
+  if (fm) return <FreimeldungPage token={fm[1]!} />;
   const invite = window.location.pathname.match(/^\/einladung\/([A-Za-z0-9_-]{20,})$/);
   if (invite) return <AcceptInvitationPage token={invite[1]!} onLogin={() => void loadMe()} />;
   if (window.location.pathname === '/passwort-neu') {

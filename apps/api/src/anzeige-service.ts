@@ -11,6 +11,7 @@ import {
 } from '@bap/domain';
 import { renderAnzeigePdf, renderMaengelbericht, type AnzeigePdfData } from './anzeige-pdf';
 import { firstPhotos } from './foto-service';
+import { createLink } from './freimeldung-service';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
@@ -164,7 +165,9 @@ export async function sendAnzeige(tx: TxSql, userId: string, id: string, baseVer
   await checkPositions(tx, a.project_id, a.company_id, details.positions.map((p) => p.mangel_id as string));
 
   const [{ n }] = (await tx`SELECT app.next_anzeige_number(${a.project_id}) AS n`) as unknown as [{ n: number }];
-  const data = await pdfData(tx, id, false, n, userId);
+  // QR-Freimeldung: link (no expiry, lockable) printed on the PDF and put into the e-mail.
+  const link = await createLink(tx, userId, id, a.project_id as string);
+  const data = { ...(await pdfData(tx, id, false, n, userId)), freimeldeUrl: link };
   const bytes = await renderAnzeigePdf(data, PLAN_DIR);
   const fileKey = `${id}.pdf`;
   await mkdir(ANZEIGE_DIR, { recursive: true });
@@ -198,6 +201,8 @@ export async function sendAnzeige(tx: TxSql, userId: string, id: string, baseVer
     text:
       `Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Mangelanzeige ${anzeigeNo(n)} zum Bauvorhaben ${data.project} ` +
       `mit ${details.positions.length} Position(en). Bitte beseitigen Sie die Mängel bis spätestens ${formatDate(deadline)}.\n\n` +
+      `Beseitigte Mängel können Sie direkt digital freimelden (je Position mit Foto, ohne Anmeldung):\n${link}\n` +
+      `Der Link und der QR-Code auf dem PDF gelten für diese Mangelanzeige und können an Ihre Mitarbeiter auf der Baustelle weitergegeben werden.\n\n` +
       `Mit freundlichen Grüßen\n${data.signer}\n${data.ownCompany}`,
     attachments: [{ filename: `Mangelanzeige-${anzeigeNo(n)}.pdf`, content: bytes }],
   });

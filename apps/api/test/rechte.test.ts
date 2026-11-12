@@ -791,3 +791,80 @@ describe('Einladungen und Zugänge', () => {
     expect((await call('uPolier', 'GET', `/projects/${ID.project}/zugaenge`)).status).toBe(403);
   });
 });
+
+describe('QR-Freimeldung je Mangelanzeige', () => {
+  const sendAnzeige = async () => {
+    const id = randomUUID();
+    await call('uBauleitung', 'POST', '/mangelanzeigen', { id, project_id: ID.project, company_id: ID.coFliesen, mangel_ids: [ID.mFliesen], deadline: '2026-11-24' });
+    await call('uBauleitung', 'POST', `/mangelanzeigen/${id}/send`, { base_version: 1 });
+    const link = (await call('uBauleitung', 'GET', `/mangelanzeigen/${id}/link`)).body;
+    return { id, link, token: (link.url as string).split('/freimeldung/')[1]! };
+  };
+  const pub = (url: string) => app.inject({ method: 'GET', url });
+  const melden = (token: string, posId: string, fields: Record<string, string>, foto?: Buffer) => {
+    const b = '----bap' + randomUUID();
+    const parts = Object.entries(fields).map(([k, v]) => `--${b}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`).join('');
+    const payload = Buffer.concat([
+      Buffer.from(parts),
+      ...(foto ? [Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="file"; filename="nachweis.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`), foto, Buffer.from('\r\n')] : []),
+      Buffer.from(`--${b}--\r\n`),
+    ]);
+    return app.inject({ method: 'POST', url: `/public/freimeldung/${token}/positionen/${posId}`, payload, headers: { 'content-type': `multipart/form-data; boundary=${b}` } });
+  };
+  const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+
+  it('Versand erzeugt Link + QR; nur die Leitung sieht und verwaltet ihn', async () => {
+    const { id, link } = await sendAnzeige();
+    expect(link.active).toBe(true);
+    expect(link.qr).toMatch(/^data:image\/png;base64,/);
+    expect((await call('uPolier', 'GET', `/mangelanzeigen/${id}/link`)).status).toBe(403);
+    expect((await call('uFliesen', 'GET', `/mangelanzeigen/${id}/link`)).status).toBe(403);
+    expect((await call('uFliesen', 'POST', `/mangelanzeigen/${id}/link`, { action: 'sperren' })).status).toBe(403);
+  });
+  it('der Link zeigt nur diese Anzeige, ohne Anmeldung; Fotos nur der eigenen Positionen', async () => {
+    const { token } = await sendAnzeige();
+    const r = await pub(`/public/freimeldung/${token}`);
+    expect(r.statusCode).toBe(200);
+    expect(r.json().positions.map((p: any) => p.number)).toEqual([1]);
+    expect(JSON.stringify(r.json())).not.toMatch(/amount|preis|vertrag/i);
+    expect((await pub(`/public/freimeldung/${token}/foto/${randomUUID()}`)).statusCode).toBe(404);
+    expect((await pub('/public/freimeldung/falscher-token-1234567890123456789012345')).statusCode).toBe(404);
+  });
+  it('„behoben“ braucht Name, Firma und Foto; setzt „Behoben gemeldet“; Bauleitung nimmt danach ab', async () => {
+    const { id, token } = await sendAnzeige();
+    const posId = (await pub(`/public/freimeldung/${token}`)).json().positions[0].id;
+    expect((await melden(token, posId, { art: 'behoben', name: 'Max Monteur', firma: 'Fliesen Fuchs' })).statusCode).toBe(422);
+    expect((await melden(token, posId, { art: 'behoben', name: 'M', firma: 'Fliesen Fuchs' }, jpg)).statusCode).toBe(422);
+    const ok = await melden(token, posId, { art: 'behoben', name: 'Max Monteur', firma: 'Fliesen Fuchs', kommentar: 'Fuge neu verfugt' }, jpg);
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().status).toBe('behoben_gemeldet');
+    const m = (await maengel('uBauleitung')).find((x) => x.id === ID.mFliesen);
+    expect(m.status).toBe('behoben_gemeldet');
+    expect(m.fotos.some((f: any) => f.kind === 'nachweis')).toBe(true);
+    const fm = (await call('uBauleitung', 'GET', `/mangelanzeigen/${id}/freimeldungen`)).body;
+    expect(fm[0]).toMatchObject({ kind: 'behoben', melder_name: 'Max Monteur', melder_firma: 'Fliesen Fuchs' });
+    expect((await call('uFliesen', 'GET', `/mangelanzeigen/${id}/freimeldungen`)).body.length).toBe(1);
+    expect((await call('uElektro', 'GET', `/mangelanzeigen/${id}/freimeldungen`)).status).toBe(404);
+    // Bauleitung accepts as usual.
+    const t = await call('uBauleitung', 'POST', `/maengel/${ID.mFliesen}/transition`, { to: 'abgenommen', base_version: m.version });
+    expect(t.body.ok ?? t.status === 200).toBeTruthy();
+    expect((await melden(token, posId, { art: 'behoben', name: 'Max Monteur', firma: 'Fliesen Fuchs' }, jpg)).statusCode).toBe(409);
+  });
+  it('Rückfrage braucht einen Kommentar und setzt „Strittig“', async () => {
+    const { token } = await sendAnzeige();
+    const posId = (await pub(`/public/freimeldung/${token}`)).json().positions[0].id;
+    expect((await melden(token, posId, { art: 'rueckfrage', name: 'Max Monteur', firma: 'Fliesen Fuchs' })).statusCode).toBe(422);
+    const r = await melden(token, posId, { art: 'rueckfrage', name: 'Max Monteur', firma: 'Fliesen Fuchs', kommentar: 'Fuge gehört zum Sanitär' });
+    expect(r.json().status).toBe('strittig');
+  });
+  it('gesperrter Link geht nicht; neu erzeugt: alter Link ungültig, neuer geht', async () => {
+    const { id, token } = await sendAnzeige();
+    await call('uBauleitung', 'POST', `/mangelanzeigen/${id}/link`, { action: 'sperren' });
+    expect((await pub(`/public/freimeldung/${token}`)).statusCode).toBe(423);
+    await call('uBauleitung', 'POST', `/mangelanzeigen/${id}/link`, { action: 'freigeben' });
+    expect((await pub(`/public/freimeldung/${token}`)).statusCode).toBe(200);
+    const neu = (await call('uBauleitung', 'POST', `/mangelanzeigen/${id}/link`, { action: 'neu' })).body;
+    expect((await pub(`/public/freimeldung/${token}`)).statusCode).toBe(404);
+    expect((await pub(`/public/freimeldung/${(neu.url as string).split('/freimeldung/')[1]}`)).statusCode).toBe(200);
+  });
+});
