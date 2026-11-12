@@ -25,7 +25,7 @@ import { PlanView } from './PlanView';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
-import { PageHeader, type Run } from './ui/layout';
+import { PageHeader, Sheet, type Run } from './ui/layout';
 
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
@@ -758,6 +758,7 @@ function Inspector({ m, info, run, onAnzeige }: { m: Mangel | null; info: Projec
     ? info.gewerkCompanies.filter((gc) => gc.gewerk_id === m.gewerk_id).map((gc) => info.companies.find((c) => c.id === gc.company_id)!).filter(Boolean)
     : [];
   const [assign, setAssign] = useState('');
+  const [edit, setEdit] = useState(false);
   useEffect(() => setAssign(m?.assigned_company_id ?? candidates[0]?.id ?? ''), [m?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!m)
@@ -784,8 +785,10 @@ function Inspector({ m, info, run, onAnzeige }: { m: Mangel | null; info: Projec
         <div className="head">
           <span className="num">{mNo(m.number)}</span>
           <StatusPill status={m.status} />
+          {internal && m.status !== 'abgenommen' && <button className="btn small plain" style={{ marginLeft: 'auto' }} onClick={() => setEdit(true)}><Icon name="stift" size={14} /> Bearbeiten</button>}
         </div>
         <h2>{m.description}</h2>
+        {edit && <EditMangelSheet m={m} info={info} onClose={() => setEdit(false)} run={run} />}
       </div>
 
       <div>
@@ -992,6 +995,40 @@ function HinweisePage({ info, conflicts, run }: { info: ProjectInfo; conflicts: 
         </div>
       </div>
     </>
+  );
+}
+
+/** Edit a Mangel afterwards (decided 12.11.2026): text, room, Gewerk, priority, deadline, Bauherr visibility. Audited; version-checked. */
+function EditMangelSheet({ m, info, onClose, run }: { m: Mangel; info: ProjectInfo; onClose: () => void; run: Run }) {
+  const leitung = info.role === 'bauleitung';
+  const [f, setF] = useState({ description: m.description, location_id: m.location_id, gewerk_id: m.gewerk_id, priority: m.priority, due_date: m.due_date?.slice(0, 10) ?? '', visible_to_bauherr: m.visible_to_bauherr });
+  const orte = info.locations;
+  return (
+    <Sheet title={`${mNo(m.number)} bearbeiten`} primary="Sichern" primaryDisabled={!f.description.trim()} onCancel={onClose}
+      onPrimary={() => run(async () => {
+        const body: Record<string, unknown> = { base_version: m.version };
+        if (f.description.trim() !== m.description) body.description = f.description.trim();
+        if (f.location_id !== m.location_id) body.location_id = f.location_id;
+        if (f.gewerk_id !== m.gewerk_id) body.gewerk_id = f.gewerk_id;
+        if (f.priority !== m.priority) body.priority = f.priority;
+        if (leitung && (f.due_date || null) !== (m.due_date?.slice(0, 10) ?? null)) body.due_date = f.due_date || null;
+        if (leitung && f.visible_to_bauherr !== m.visible_to_bauherr) body.visible_to_bauherr = f.visible_to_bauherr;
+        if (Object.keys(body).length > 1) {
+          const r = await api<{ ok?: false; reason?: string }>(`/maengel/${m.id}`, { method: 'PATCH', body });
+          if (r && r.ok === false) throw new Error(r.reason);
+        }
+        onClose();
+      }, 'Mangel geändert')}>
+      <div className="group"><div className="row stack"><textarea autoFocus value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></div></div>
+      <div className="group" style={{ marginTop: 12 }}>
+        <div className="row"><span className="k">Ort</span><select value={f.location_id} onChange={(e) => setF({ ...f, location_id: e.target.value })}>{orte.map((l) => <option key={l.id} value={l.id}>{l.name}{l.nummer ? ` (${l.nummer})` : ''}</option>)}</select></div>
+        <div className="row"><span className="k">Gewerk</span><select value={f.gewerk_id} onChange={(e) => setF({ ...f, gewerk_id: e.target.value })}>{info.gewerke.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+        <div className="row"><span className="k">Priorität</span><select value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value as Priority })}>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}</select></div>
+        {leitung && <div className="row"><span className="k">Frist</span><input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} /></div>}
+        {leitung && <label className="row"><span className="k">Für Bauherrn sichtbar</span><input type="checkbox" className="switch" checked={f.visible_to_bauherr} onChange={(e) => setF({ ...f, visible_to_bauherr: e.target.checked })} /></label>}
+      </div>
+      <div className="footnote">Jede Änderung steht im Protokoll. Abgenommene Mängel bleiben gesperrt; den Plan-PIN versetzen Sie im Plan.</div>
+    </Sheet>
   );
 }
 

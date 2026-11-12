@@ -10,7 +10,7 @@ import { issueToken, jwks, verifyToken } from './auth';
 import { addFoto, fotoFile } from './foto-service';
 import { createFolder, decideDocument, documentFile, dokumenteTree, smartUpload, uploadDocument } from './dokumente-service';
 import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zettelAttachment, zettelDetails } from './stunden-service';
-import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
+import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
@@ -531,6 +531,9 @@ export function buildApp(sql: Sql) {
   app.get('/fahrtenbuch', async (req) => asUser(sql, req.userId, (tx) => fahrtenbuch(tx, req.userId)));
   app.post('/fahrzeuge', async (req) => asUser(sql, req.userId, (tx) => addFahrzeug(tx, req.userId, req.body)));
   app.post('/fahrten', async (req) => asUser(sql, req.userId, (tx) => addFahrt(tx, req.userId, req.body)));
+  app.patch<{ Params: { id: string } }>('/einkaeufe/:id', async (req) => asUser(sql, req.userId, (tx) => editEinkauf(tx, req.userId, req.params.id, req.body)));
+  app.patch<{ Params: { id: string } }>('/fahrten/:id', async (req) => asUser(sql, req.userId, (tx) => editFahrt(tx, req.userId, req.params.id, req.body)));
+  app.patch<{ Params: { id: string } }>('/tankvorgaenge/:id', async (req) => asUser(sql, req.userId, (tx) => editTanken(tx, req.userId, req.params.id, req.body)));
   app.post('/tankvorgaenge', async (req) => asUser(sql, req.userId, (tx) => addTanken(tx, req.userId, req.body)));
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/kosten', async (req) => asUser(sql, req.userId, (tx) => kosten(tx, req.userId, req.params.projectId)));
   app.put<{ Params: { id: string } }>('/gewerke/:id/budget', async (req) => asUser(sql, req.userId, (tx) => setBudget(tx, req.userId, req.params.id, req.body, meta(req))));

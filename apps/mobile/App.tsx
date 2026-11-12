@@ -618,10 +618,16 @@ function Detail({ m, me, token, pendingFor, onClose }: { m: Mangel; me: Me; toke
     onClose();
   };
   const negative = (to: MangelStatus) => to === 'nicht_behoben' || to === 'strittig';
+  const [edit, setEdit] = useState(false);
+  const [edited, setEdited] = useState(false);
+  const canEdit = (me.role === 'bauleitung' || me.role === 'polier') && statusOf(m) !== 'abgenommen';
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SheetBar title={mNo(m)} right="Fertig" onRight={onClose} />
+      <SheetBar title={mNo(m)} left={canEdit ? 'Bearbeiten' : undefined} onLeft={() => setEdit(true)} right="Fertig" onRight={onClose} />
+      <Modal visible={edit} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEdit(false)}>
+        {edit && <EditMangel m={m} onClose={(saved) => { setEdit(false); if (saved) setEdited(true); }} />}
+      </Modal>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>
         <View style={{ gap: 8, marginBottom: 24, marginHorizontal: 4 }}>
           <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -629,6 +635,7 @@ function Detail({ m, me, token, pendingFor, onClose }: { m: Mangel; me: Me; toke
             {m.priority === 'kritisch' && <Pill tint="red">Kritisch</Pill>}
           </View>
           <Text style={T.title2}>{m.description}</Text>
+          {edited && <Text style={[T.footnote, { color: TINT.orange }]}>Änderung vorgemerkt – wird beim Abgleich geprüft und übernommen.</Text>}
         </View>
         <Section title="Fotos" footer={fotos.some((f) => f.queued) ? 'Noch nicht übertragene Fotos werden hochgeladen, sobald Netz da ist.' : undefined}>
           {fotos.length > 0 && (
@@ -715,6 +722,49 @@ function Detail({ m, me, token, pendingFor, onClose }: { m: Mangel; me: Me; toke
           </Section>
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+/** Edit a Mangel afterwards, also offline: queued as "patch" and applied only if the Mangel is unchanged on the server. */
+function EditMangel({ m, onClose }: { m: Mangel; onClose: (saved: boolean) => void }) {
+  const db = usePowerSync();
+  const { data: rooms } = useQuery<{ id: string; name: string }>("SELECT id, name FROM location WHERE project_id = ? AND kind = 'raum' ORDER BY sort", [m.project_id ?? '']);
+  const { data: gewerke } = useQuery<{ id: string; name: string }>('SELECT id, name FROM gewerk WHERE project_id = ? ORDER BY name', [m.project_id ?? '']);
+  const [f, setF] = useState({ description: m.description ?? '', location_id: m.location_id ?? '', gewerk_id: m.gewerk_id ?? '', priority: (m.priority ?? 'normal') as Priority });
+  const [scan, setScan] = useState(false);
+  const save = async () => {
+    const patch: Record<string, unknown> = {};
+    if (f.description.trim() !== m.description) patch.description = f.description.trim();
+    if (f.location_id !== m.location_id) patch.location_id = f.location_id;
+    if (f.gewerk_id !== m.gewerk_id) patch.gewerk_id = f.gewerk_id;
+    if (f.priority !== m.priority) patch.priority = f.priority;
+    if (!Object.keys(patch).length) return onClose(false);
+    await db.execute('INSERT INTO mangel_action (id, mangel_id, action, payload, base_version, occurred_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [Crypto.randomUUID(), m.id, 'patch', JSON.stringify(patch), m.number ? (m.version ?? 1) : 1, new Date().toISOString()]);
+    onClose(true);
+  };
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <SheetBar title={`${mNo(m)} bearbeiten`} left="Abbrechen" onLeft={() => onClose(false)} right="Sichern" rightDisabled={!f.description.trim()} onRight={() => void save()} />
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+        <Section>
+          <TextInput style={[T.body, { minHeight: 96, padding: 16, paddingTop: 14, textAlignVertical: 'top' }]} multiline value={f.description} onChangeText={(v) => setF({ ...f, description: v })} />
+        </Section>
+        <Section title="Priorität">
+          <View style={{ padding: 10 }}><Segmented values={PRIORITIES.map((p) => PRIORITY_LABELS[p])} index={PRIORITIES.indexOf(f.priority)} onChange={(i) => setF({ ...f, priority: PRIORITIES[i]! })} /></View>
+        </Section>
+        <Section title="Ort">
+          <Row icon="qrcode.viewfinder" iconBg="blue" label="Raum per QR-Code" tone="accent" onPress={() => setScan(true)} />
+          {rooms.map((r) => <Row key={r.id} label={r.name} checked={r.id === f.location_id} onPress={() => setF({ ...f, location_id: r.id })} />)}
+        </Section>
+        <Section title="Gewerk" footer="Die Änderung steht im Protokoll. Den PIN im Plan versetzen Sie in der Planansicht.">
+          {gewerke.map((g) => <Row key={g.id} label={g.name} checked={g.id === f.gewerk_id} onPress={() => setF({ ...f, gewerk_id: g.id })} />)}
+        </Section>
+      </ScrollView>
+      <Modal visible={scan} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setScan(false)}>
+        <RaumScanner known={(id) => rooms.find((r) => r.id === id)?.name ?? null} onRoom={(id) => { setF({ ...f, location_id: id }); setScan(false); }} onClose={() => setScan(false)} />
+      </Modal>
     </View>
   );
 }

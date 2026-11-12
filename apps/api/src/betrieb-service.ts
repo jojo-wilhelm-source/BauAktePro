@@ -305,3 +305,56 @@ export async function setBudget(tx: TxSql, userId: string, gewerkId: string, inp
   await audit(tx, userId, g.project_id as string, 'gewerk', gewerkId, 'budget', meta, { budget_net });
   return { ok: true };
 }
+
+const iso = (v: unknown) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+
+// --- Corrections afterwards (decided 12.11.2026) ---------------------------------------------------
+
+async function korrekturAudit(tx: TxSql, userId: string, projectId: string | null, entity: string, id: string, from: object, to: object) {
+  await tx`INSERT INTO audit_log (tenant_id, project_id, entity, entity_id, action, actor_id, occurred_at, data)
+           VALUES (app.user_tenant(), ${projectId}, ${entity}, ${id}, 'korrigiert', ${userId}, now(), ${tx.json({ from, to } as never)})`;
+}
+const pick = (row: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.map((k) => [k, row[k]]));
+
+/** Correct an own Einkauf while it is still "eingereicht" (RLS enforces author + status). */
+export async function editEinkauf(tx: TxSql, userId: string, id: string, input: unknown) {
+  const d = EinkaufInput.omit({ id: true, project_id: true }).partial().parse(input);
+  const [cur] = await tx`SELECT * FROM einkauf WHERE id = ${id}`;
+  if (!cur) throw new HttpError(404, 'Einkauf nicht gefunden');
+  if (cur.created_by !== userId || cur.status !== 'eingereicht') throw new HttpError(409, 'Nur eigene, noch nicht entschiedene Einkäufe lassen sich ändern');
+  const patch = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined));
+  if (!Object.keys(patch).length) return cur;
+  const [row] = await tx`UPDATE einkauf SET ${tx(patch as never)}, version = version + 1 WHERE id = ${id} RETURNING *`;
+  if (!row) throw new HttpError(409, 'Nicht mehr änderbar');
+  await korrekturAudit(tx, userId, cur.project_id as string, 'einkauf', id, pick(cur, Object.keys(patch)), patch);
+  return row;
+}
+
+/** Correct a trip (own, or Leitung). */
+export async function editFahrt(tx: TxSql, userId: string, id: string, input: unknown) {
+  const [cur] = await tx`SELECT * FROM fahrt WHERE id = ${id}`;
+  if (!cur) throw new HttpError(404, 'Fahrt nicht gefunden');
+  const d = FahrtInput.parse({ ...cur, datum: iso(cur.datum), ...(input as object), id });
+  const patch = { datum: d.datum, km_start: d.km_start, km_ende: d.km_ende, zweck: d.zweck, project_id: d.project_id ?? null, fahrzeug_id: d.fahrzeug_id };
+  const [row] = await tx`UPDATE fahrt SET ${tx(patch as never)} WHERE id = ${id} RETURNING *`;
+  if (!row) throw new HttpError(403, 'Nur eigene Fahrten (oder als Leitung)');
+  await korrekturAudit(tx, userId, (cur.project_id as string) ?? null, 'fahrt', id, pick(cur, Object.keys(patch)), patch);
+  return row;
+}
+
+/** Correct a fill-up (own, or Leitung); the same rules as when entering it. */
+export async function editTanken(tx: TxSql, userId: string, id: string, input: unknown) {
+  const [cur] = await tx`SELECT * FROM tankvorgang WHERE id = ${id}`;
+  if (!cur) throw new HttpError(404, 'Tankvorgang nicht gefunden');
+  const d = TankenInput.parse({ ...cur, datum: iso(cur.datum), liter: Number(cur.liter), betrag_brutto: cur.betrag_brutto == null ? null : Number(cur.betrag_brutto),
+    betriebsstunden: cur.betriebsstunden == null ? null : Number(cur.betriebsstunden), ...(input as object), id });
+  const [fz] = await tx`SELECT art FROM fahrzeug WHERE id = ${d.fahrzeug_id}`;
+  const fehler = tankenPflicht((fz?.art ?? 'fahrzeug') as FahrzeugArt, d);
+  if (fehler) throw new HttpError(422, fehler);
+  const patch = { datum: d.datum, liter: d.liter, betrag_brutto: d.betrag_brutto ?? null, km_stand: d.km_stand ?? null, betriebsstunden: d.betriebsstunden ?? null,
+    tankstelle: d.tankstelle ?? null, quelle_id: d.quelle_id ?? null, project_id: d.project_id ?? null };
+  const [row] = await tx`UPDATE tankvorgang SET ${tx(patch as never)} WHERE id = ${id} RETURNING *`;
+  if (!row) throw new HttpError(403, 'Nur eigene Tankvorgänge (oder als Leitung)');
+  await korrekturAudit(tx, userId, (cur.project_id as string) ?? null, 'tankvorgang', id, pick(cur, Object.keys(patch)), patch);
+  return row;
+}

@@ -27,6 +27,7 @@ export function EinkaeufePage({ info, me, run }: { info: ProjectInfo; me: { name
   const [rows, setRows] = useState<Einkauf[]>([]);
   const [neu, setNeu] = useState(false);
   const [reject, setReject] = useState<Einkauf | null>(null);
+  const [korr, setKorr] = useState<Einkauf | null>(null);
   const [scope, setScope] = useState<'offen' | 'alle' | 'erstatten'>('offen');
   const leitung = info.role === 'bauleitung';
   const reload = useCallback(async () => setRows((await api<{ einkaeufe: Einkauf[] }>(`/projects/${info.project.id}/einkaeufe`)).einkaeufe), [info.project.id]);
@@ -79,6 +80,7 @@ export function EinkaeufePage({ info, me, run }: { info: ProjectInfo; me: { name
                   <td><span className={`pill ${EK_TONE[e.status]}`}>{EINKAUF_STATUS_LABELS[e.status]}</span></td>
                   <td style={{ textAlign: 'right', width: 330 }}>
                     <div className="meta-row" style={{ justifyContent: 'flex-end' }}>
+                      {e.status === 'eingereicht' && <button className="btn small plain" onClick={() => setKorr(e)}>Ändern</button>}
                       {e.has_beleg ? <button className="btn small" onClick={() => run(() => openPdf(`/einkaeufe/${e.id}/beleg`), 'Beleg geöffnet')}>Beleg</button> : (
                         <label className="btn small plain" style={{ cursor: 'pointer' }}>Beleg anhängen
                           <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(ev) => { const f = ev.target.files?.[0]; if (f) void runAndReload(() => uploadBeleg(`/einkaeufe/${e.id}/beleg`, f), 'Beleg gespeichert'); }} />
@@ -100,6 +102,9 @@ export function EinkaeufePage({ info, me, run }: { info: ProjectInfo; me: { name
         </div>
         <div className="footnote">Auf der Baustelle: in der iPhone-App unter „Mehr“ mit Foto vom Beleg, auch ohne Netz. Freigegebene Einkäufe fließen in die Kostenübersicht; privat Ausgelegtes wird an die Buchhaltung zur Erstattung übergeben (die App zahlt nicht aus).</div>
       </div>
+      {korr && <KorrekturSheet title={`EK-${String(korr.number).padStart(3, '0')} ändern`} url={`/einkaeufe/${korr.id}`} run={runAndReload} onClose={() => setKorr(null)}
+        fields={[{ key: 'haendler', label: 'Händler' }, { key: 'zweck', label: 'Wofür' }, { key: 'betrag_brutto', label: 'Betrag brutto (€)', type: 'number' }, { key: 'datum', label: 'Datum', type: 'date' }, { key: 'gekauft_von', label: 'Gekauft von' }]}
+        initial={{ haendler: korr.haendler, zweck: korr.zweck, betrag_brutto: korr.brutto, datum: korr.datum, gekauft_von: korr.gekauft_von }} />}
       {neu && <EinkaufSheet info={info} me={me} run={runAndReload} onClose={() => setNeu(false)} />}
       {reject && <Reason title="Einkauf ablehnen" onCancel={() => setReject(null)} onOk={(r) => { const e = reject; setReject(null); void decide(e, 'ablehnen', r); }} />}
     </>
@@ -149,6 +154,8 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
   const [d, setD] = useState<{ leitung: boolean; fahrzeuge: Fahrzeug[]; fahrten: Fahrt[]; tanken: Tanken[] } | null>(null);
   const [fz, setFz] = useState<string>('alle');
   const [sheet, setSheet] = useState<'fahrt' | 'tanken' | 'fahrzeug' | null>(null);
+  const [korrFahrt, setKorrFahrt] = useState<Fahrt | null>(null);
+  const [korrTanken, setKorrTanken] = useState<Tanken | null>(null);
   const reload = useCallback(async () => setD(await api('/fahrtenbuch')), []);
   useEffect(() => void reload(), [reload]);
   const runAndReload: Run = async (fn, ok) => {
@@ -203,12 +210,13 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
           <div className="group-title">Fahrten {d.leitung ? '(alle Fahrer)' : '(meine)'}</div>
           <div className="card">
             <table className="table">
-              <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer</th><th className="money">km-Stand</th><th className="money">km</th><th>Zweck</th></tr></thead>
+              <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer</th><th className="money">km-Stand</th><th className="money">km</th><th>Zweck</th><th /></tr></thead>
               <tbody>{fahrten.map((f) => (
                 <tr key={f.id} style={{ cursor: 'default' }}>
                   <td className="tabular">{formatDate(f.datum)}</td><td>{name(f.fahrzeug_id)?.kennzeichen}</td><td>{f.fahrer_name}</td>
                   <td className="money sub">{f.km_start.toLocaleString('de-DE')} – {f.km_ende.toLocaleString('de-DE')}</td><td className="money">{f.km.toLocaleString('de-DE')}</td>
                   <td>{f.zweck}<div className="sub">{f.project_name ?? 'ohne Projekt'}</div></td>
+                  <td><button className="btn small plain" onClick={() => setKorrFahrt(f)}>Korrigieren</button></td>
                 </tr>))}</tbody>
             </table>
             {fahrten.length === 0 && <div className="empty">Keine Fahrten</div>}
@@ -225,7 +233,7 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
                   <td className="money">{t.liter_f.toLocaleString('de-DE', { minimumFractionDigits: 2 })} l</td><td className="money">{t.betrag_f != null ? formatEuro(t.betrag_f) : '–'}</td>
                   <td className="money sub">{t.km_stand != null ? `${t.km_stand.toLocaleString('de-DE')} km` : t.bh != null ? `${t.bh.toLocaleString('de-DE')} Bh` : '–'}</td>
                   <td className="money">{t.verbrauch != null ? `${t.verbrauch.toLocaleString('de-DE')} l/100 km` : t.verbrauch_h != null ? `${t.verbrauch_h.toLocaleString('de-DE')} l/h` : '–'}</td>
-                  <td>{t.has_beleg ? <button className="btn small" onClick={() => run(() => openPdf(`/tankvorgaenge/${t.id}/beleg`), 'Beleg geöffnet')}>Beleg</button> : (
+                  <td><button className="btn small plain" onClick={() => setKorrTanken(t)}>Korrigieren</button>{' '}{t.has_beleg ? <button className="btn small" onClick={() => run(() => openPdf(`/tankvorgaenge/${t.id}/beleg`), 'Beleg geöffnet')}>Beleg</button> : (
                     <label className="btn small plain" style={{ cursor: 'pointer' }}>Beleg<input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(ev) => { const f = ev.target.files?.[0]; if (f) void runAndReload(() => uploadBeleg(`/tankvorgaenge/${t.id}/beleg`, f), 'Beleg gespeichert'); }} /></label>)}</td>
                 </tr>))}</tbody>
             </table>
@@ -234,6 +242,13 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
         </div>
         <div className="footnote">Einfaches Fahrtenbuch (kein Finanzamt-Fahrtenbuch). Fahrer sehen ihre eigenen Einträge, Bau- und Projektleitung alle (ANNAHME D2). Lücken im km-Stand werden gemeldet, aber nicht gesperrt.</div>
       </div>
+      {korrFahrt && <KorrekturSheet title="Fahrt korrigieren" url={`/fahrten/${korrFahrt.id}`} run={runAndReload} onClose={() => setKorrFahrt(null)}
+        fields={[{ key: 'datum', label: 'Datum', type: 'date' }, { key: 'km_start', label: 'km Start', type: 'number' }, { key: 'km_ende', label: 'km Ende', type: 'number' }, { key: 'zweck', label: 'Zweck' }]}
+        initial={{ datum: korrFahrt.datum, km_start: korrFahrt.km_start, km_ende: korrFahrt.km_ende, zweck: korrFahrt.zweck }} />}
+      {korrTanken && <KorrekturSheet title="Tankvorgang korrigieren" url={`/tankvorgaenge/${korrTanken.id}`} run={runAndReload} onClose={() => setKorrTanken(null)}
+        fields={[{ key: 'datum', label: 'Datum', type: 'date' }, { key: 'liter', label: 'Liter', type: 'number' }, { key: 'betrag_brutto', label: 'Betrag (€)', type: 'number' },
+          ...(korrTanken.km_stand != null ? [{ key: 'km_stand', label: 'km-Stand', type: 'number' as const }] : []), ...(korrTanken.bh != null ? [{ key: 'betriebsstunden', label: 'Betriebsstunden', type: 'number' as const }] : [])]}
+        initial={{ datum: korrTanken.datum, liter: korrTanken.liter_f, betrag_brutto: korrTanken.betrag_f, km_stand: korrTanken.km_stand, betriebsstunden: korrTanken.bh }} />}
       {sheet === 'fahrt' && <FahrtSheet info={info} fz={d.fahrzeuge} preset={fz} run={runAndReload} onClose={() => setSheet(null)} />}
       {sheet === 'tanken' && <TankenSheet info={info} fz={d.fahrzeuge} preset={fz} run={runAndReload} onClose={() => setSheet(null)} />}
       {sheet === 'fahrzeug' && <FahrzeugSheet run={runAndReload} onClose={() => setSheet(null)} />}
@@ -325,6 +340,31 @@ function Reason({ title, onCancel, onOk }: { title: string; onCancel: () => void
   return (
     <Sheet title={title} primary="Ablehnen" destructive primaryDisabled={!r.trim()} onCancel={onCancel} onPrimary={() => onOk(r)}>
       <div className="group"><div className="row stack"><textarea autoFocus placeholder="Grund (Pflicht)" value={r} onChange={(e) => setR(e.target.value)} /></div></div>
+    </Sheet>
+  );
+}
+
+/** Generic correction dialog (decided 12.11.2026: almost everything editable afterwards; audited on the server). */
+function KorrekturSheet({ title, url, fields, initial, run, onClose }: {
+  title: string; url: string; run: Run; onClose: () => void;
+  fields: { key: string; label: string; type?: 'text' | 'date' | 'number' }[]; initial: Record<string, string | number | null>;
+}) {
+  const [f, setF] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((x) => [x.key, initial[x.key] == null ? '' : String(initial[x.key]).replace(/^(\d{4}-\d{2}-\d{2}).*$/, '$1')])));
+  return (
+    <Sheet title={title} primary="Sichern" onCancel={onClose}
+      onPrimary={() => run(async () => {
+        const body = Object.fromEntries(fields.filter((x) => f[x.key] !== String(initial[x.key] ?? '').replace(/^(\d{4}-\d{2}-\d{2}).*$/, '$1'))
+          .map((x) => [x.key, x.type === 'number' ? (f[x.key] === '' ? null : parseNum(f[x.key]!)) : f[x.key] || null]));
+        if (Object.keys(body).length) await api(url, { method: 'PATCH', body });
+        onClose();
+      }, 'Korrigiert')}>
+      <div className="group">
+        {fields.map((x) => (
+          <div key={x.key} className="row"><span className="k">{x.label}</span>
+            <input type={x.type === 'date' ? 'date' : 'text'} inputMode={x.type === 'number' ? 'decimal' : undefined} value={f[x.key]} onChange={(e) => setF({ ...f, [x.key]: e.target.value })} /></div>
+        ))}
+      </div>
+      <div className="footnote">Die Korrektur wird mit altem und neuem Wert im Protokoll festgehalten.</div>
     </Sheet>
   );
 }

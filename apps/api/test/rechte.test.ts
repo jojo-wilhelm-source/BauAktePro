@@ -1152,3 +1152,24 @@ describe('Raum-QR-Etiketten', () => {
     expect((await call('uPolier', 'GET', `/projects/${ID.project}/etiketten-format`)).body.zeilen).toBe(10);
   });
 });
+
+describe('Nachträglich bearbeiten', () => {
+  it('Mangel: Polier ändert Text, Ort und Priorität; NU nicht; Protokoll', async () => {
+    const m = (await maengel('uPolier')).find((x) => x.number === 2);
+    const r = await call('uPolier', 'PATCH', `/maengel/${m.id}`, { base_version: m.version, description: 'Steckdose neben Herd fehlt (2-fach)', priority: 'normal' });
+    expect(r.status).toBe(200);
+    expect(r.body.description).toMatch(/2-fach/);
+    expect((await call('uElektro', 'PATCH', `/maengel/${m.id}`, { base_version: r.body.version, description: 'x' })).status).toBe(409);
+    expect((await adminSql`SELECT count(*)::int AS n FROM audit_log WHERE entity_id = ${m.id} AND action = 'geaendert'`)[0]!.n).toBe(1);
+  });
+  it('Fahrt und Tanken: eigene korrigieren, fremde nicht (außer Leitung); Einkauf nur solange eingereicht', async () => {
+    const f = '00000000-0000-4000-8000-000000000c01';
+    expect((await call('uPolier', 'PATCH', `/fahrten/${f}`, { km_ende: 48270, zweck: 'Material und Container' })).body.km_ende).toBe(48270);
+    expect((await call('uBauleitung', 'PATCH', `/fahrten/${f}`, { zweck: 'korrigiert durch BL' })).status).toBe(200);
+    expect((await call('uPolier', 'PATCH', '/fahrten/00000000-0000-4000-8000-000000000c02', { zweck: 'fremd' })).status).toBe(404); // not even visible
+    expect((await call('uPolier', 'PATCH', '/fahrten/' + f, { km_ende: 100 })).status).not.toBe(200); // end before start
+    expect((await call('uPolier', 'PATCH', '/tankvorgaenge/00000000-0000-4000-8000-000000000d04', { betriebsstunden: 1212 })).status).toBe(200);
+    expect((await call('uPolier', 'PATCH', `/einkaeufe/${ID.ekBaumarkt}`, { betrag_brutto: 89.9 })).status).toBe(200);
+    expect((await call('uPolier', 'PATCH', `/einkaeufe/${ID.ekTanke}`, { betrag_brutto: 1 })).status).toBe(409); // already freigegeben
+  });
+});

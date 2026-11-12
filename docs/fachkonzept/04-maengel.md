@@ -87,3 +87,8 @@ Kritische Mängel haben **keine eigenen Eskalationszeiten**; sie unterscheiden s
 - **Link-Verwaltung** (nur Bau-/Projektleitung, in der Mangelanzeige): QR-Code anzeigen, Link kopieren, **sperren / wieder freigeben**, **neu erzeugen** (der alte Link, auch auf dem PDF, gilt dann nicht mehr). Der Link gilt **ohne Ablauf** (entschieden 12.11.2026).
 - Protokoll: Jede Freimeldung und jede Link-Änderung steht im Audit Log; Freimeldungen über den Link mit dem eingetippten Namen und der Firma („per QR-Link“).
 - Schutz: Langer Zufallsschlüssel je Anzeige; höchstens 30 Meldungen je Link und IP in 10 Minuten; Fotos höchstens 15 MB (JPG, PNG, HEIC).
+
+## Nachträglich bearbeiten (entschieden 12.11.2026)
+- Bauleitung und Polier bearbeiten Text, Ort (auch per Raum-QR), Gewerk und Priorität; die Bauleitung zusätzlich Frist und Bauherr-Sichtbarkeit. Im Web („Bearbeiten“ im Mangel) und in der App, auch offline (Warteschlange, geprüft gegen den aktuellen Stand).
+- Jede Änderung steht im Protokoll. Abgenommene Mängel bleiben gesperrt (Grundprinzip 3).
+- Ebenso korrigierbar: eigene Fahrten und Tankvorgänge (Leitung: alle), eigene Einkäufe solange „eingereicht“, Kontakte, Besprechungspunkte (in der Folgesitzung), Bautagebuch-Entwürfe (danach Nachtrag), LV-Entwürfe.
