@@ -10,11 +10,13 @@ import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 
 interface ListItem { id: string; datum: string; bereich: string | null; status: 'entwurf' | 'unterschrieben'; signed_at: string | null; countersigned_at: string | null; personen: number; leistungen: number; signed_by_name: string | null; countersigned_by_name: string | null; nachtraege: number; wetter: Wetter }
-interface Wetter { text?: string; temp_min?: number | null; temp_max?: number | null; niederschlag?: string; wind?: string }
-interface Personal { firma: string; company_id?: string | null; anzahl: number; taetigkeit?: string }
+interface Wetter { text?: string; temp_min?: number | null; temp_max?: number | null; niederschlag?: string; wind?: string; messungen?: { zeit?: string; witterung?: string; temp?: number | null }[] }
+interface Einsatz { von?: string; bis?: string; aufsicht?: number | null; arbeiter?: number | null }
+interface Personal { firma: string; company_id?: string | null; gewerk?: string; anzahl: number; taetigkeit?: string }
 interface Detail {
   id: string; project_id: string; datum: string; bereich: string | null; wetter: Wetter; personal: Personal[]; geraete: { name: string; anzahl: number }[];
-  leistungen: { text: string; ort?: string; gewerk?: string }[]; lieferungen: string | null; behinderungen: string | null; besonderheiten: string | null;
+  leistungen: { text: string; firma?: string; ort?: string; gewerk?: string }[]; lieferungen: string | null; behinderungen: string | null; besonderheiten: string | null;
+  einsatz: Einsatz; besuche: string | null; anordnungen: string | null; blatt_nr?: number | null;
   status: 'entwurf' | 'unterschrieben'; version: number; signed_by_name: string | null; signed_at: string | null; countersigned_by_name: string | null; countersigned_at: string | null;
   nachtraege: { id: string; text: string; created_at: string; name: string }[]; can_edit: boolean; can_countersign: boolean; created_by_name: string;
   can_release?: boolean; can_bauherr_sign?: boolean; bauherr_freigabe?: boolean; bauherr_abschnitte?: TbAbschnitt[]; bauherr_signed_at?: string | null;
@@ -61,6 +63,7 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
     setDirty(true);
     setDraft({
       id: crypto.randomUUID(), project_id: info.project.id, datum, bereich: v.bereich, wetter: {}, personal: v.personal, geraete: v.geraete, leistungen: [{ text: '' }],
+      einsatz: {}, besuche: null, anordnungen: null,
       lieferungen: null, behinderungen: null, besonderheiten: null, status: 'entwurf', version: 0, signed_by_name: null, signed_at: null, countersigned_by_name: null,
       countersigned_at: null, nachtraege: [], can_edit: true, can_countersign: false, created_by_name: '',
       // A template fills in what it contains (on top of the Vortag-Übernahme).
@@ -78,7 +81,7 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
   const save = async () => {
     if (!draft) return;
     await run(async () => {
-      const body = { ...draft, leistungen: draft.leistungen.filter((l) => l.text.trim()), personal: draft.personal.filter((p) => p.firma.trim()), geraete: draft.geraete.filter((g) => g.name.trim()), version: draft.version || undefined };
+      const body = { ...draft, besuche: draft.besuche || null, anordnungen: draft.anordnungen || null, leistungen: draft.leistungen.filter((l) => l.text.trim()), personal: draft.personal.filter((p) => p.firma.trim()), geraete: draft.geraete.filter((g) => g.name.trim()), version: draft.version || undefined };
       await api('/tagesberichte', { method: 'PUT', body });
       await reload();
       await open(draft.id);
@@ -121,33 +124,53 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
           {t ? (
             <div className="tb-form">
               <div className="group-head">
-                <h3>{wochentag(t.datum)}, {formatDate(t.datum)}</h3>
+                <h3>{wochentag(t.datum)}, {formatDate(t.datum)}{t.blatt_nr ? <span className="sub" style={{ fontWeight: 400 }}> · Blatt {t.blatt_nr}</span> : null}</h3>
                 <span className={`pill ${t.status === 'entwurf' ? 'c-orange' : t.countersigned_at ? 'c-green' : 'c-blue'}`}>
                   {t.status === 'entwurf' ? 'Entwurf' : t.countersigned_at ? 'Gegengezeichnet' : 'Unterschrieben'}
                 </span>
               </div>
               <div className="group">
                 <div className="row"><span className="k">Bereich</span><input disabled={ro} placeholder="z. B. Bauteil A, 1.–3. OG" value={t.bereich ?? ''} onChange={(e) => set({ bereich: e.target.value })} /></div>
-                <div className="row"><span className="k">Wetter</span><input disabled={ro} placeholder="z. B. sonnig, bewölkt, Regen" value={t.wetter.text ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, text: e.target.value } })} /></div>
-                <div className="row"><span className="k">Temperatur °C</span>
-                  <span className="tb-pair">
-                    <input disabled={ro} inputMode="decimal" placeholder="min" value={t.wetter.temp_min ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, temp_min: num(e.target.value) } })} />
-                    <span>bis</span>
-                    <input disabled={ro} inputMode="decimal" placeholder="max" value={t.wetter.temp_max ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, temp_max: num(e.target.value) } })} />
-                  </span>
-                </div>
-                <div className="row"><span className="k">Niederschlag</span><input disabled={ro} placeholder="keiner" value={t.wetter.niederschlag ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, niederschlag: e.target.value } })} /></div>
-                <div className="row"><span className="k">Wind</span><input disabled={ro} placeholder="schwach" value={t.wetter.wind ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, wind: e.target.value } })} /></div>
               </div>
 
-              <div className="group-title tb-title">Personal auf der Baustelle · {t.personal.reduce((s, p) => s + (Number(p.anzahl) || 0), 0)} Personen</div>
+              <div className="tb-two">
+                <div>
+                  <div className="group-title tb-title">Arbeitseinsatz (eigene Leute)</div>
+                  <div className="group">
+                    <div className="row"><span className="k">Uhrzeit</span><span className="tb-pair">
+                      <input disabled={ro} placeholder="06:45" value={t.einsatz?.von ?? ''} onChange={(e) => set({ einsatz: { ...t.einsatz, von: e.target.value } })} /><span>bis</span>
+                      <input disabled={ro} placeholder="16:00" value={t.einsatz?.bis ?? ''} onChange={(e) => set({ einsatz: { ...t.einsatz, bis: e.target.value } })} /></span></div>
+                    <div className="row"><span className="k">Aufsicht</span><input disabled={ro} className="tb-n" type="number" min={0} value={t.einsatz?.aufsicht ?? ''} onChange={(e) => set({ einsatz: { ...t.einsatz, aufsicht: num(e.target.value) } })} /></div>
+                    <div className="row"><span className="k">Arbeiter</span><input disabled={ro} className="tb-n" type="number" min={0} value={t.einsatz?.arbeiter ?? ''} onChange={(e) => set({ einsatz: { ...t.einsatz, arbeiter: num(e.target.value) } })} /></div>
+                    <div className="row"><span className="k">Summe</span><span className="v">{(Number(t.einsatz?.aufsicht) || 0) + (Number(t.einsatz?.arbeiter) || 0)}</span></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="group-title tb-title">Wetter</div>
+                  <div className="group">
+                    {(t.wetter.messungen?.length ? t.wetter.messungen : [{}]).map((m, i, arr) => (
+                      <div className="row" key={i}>
+                        <input disabled={ro} className="tb-left" placeholder="Witterung, z. B. sonnig" value={m.witterung ?? (i === 0 ? t.wetter.text ?? '' : '')}
+                          onChange={(e) => set({ wetter: { ...t.wetter, messungen: arr.map((x, j) => (j === i ? { ...x, witterung: e.target.value } : x)) } })} />
+                        <span className="tb-pair">
+                          <input disabled={ro} placeholder="Zeit" value={m.zeit ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, messungen: arr.map((x, j) => (j === i ? { ...x, zeit: e.target.value } : x)) } })} />
+                          <input disabled={ro} placeholder="°C" inputMode="decimal" value={m.temp ?? ''} onChange={(e) => set({ wetter: { ...t.wetter, messungen: arr.map((x, j) => (j === i ? { ...x, temp: num(e.target.value) } : x)) } })} />
+                        </span>
+                      </div>
+                    ))}
+                    {!ro && (t.wetter.messungen?.length ?? 1) < 4 && <button className="row action" onClick={() => set({ wetter: { ...t.wetter, messungen: [...(t.wetter.messungen?.length ? t.wetter.messungen : [{}]), {}] } })}>+ Messung (z. B. 14:00)</button>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="group-title tb-title">Firmen auf der Baustelle (Firma, Gewerk, Anzahl) · {t.personal.reduce((s, p) => s + (Number(p.anzahl) || 0), 0)} Personen</div>
               <div className="group">
                 {t.personal.map((p, i) => (
                   <div className="row" key={i}>
                     {ro ? <span className="k">{p.firma}{p.taetigkeit ? <div className="sub">{p.taetigkeit}</div> : null}</span> : (
                       <span className="k tb-grow">
                         <input list="tb-firmen" placeholder="Firma" value={p.firma} onChange={(e) => { const f = firmen.find((x) => x.name === e.target.value); set({ personal: t.personal.map((x, j) => (j === i ? { ...x, firma: e.target.value, company_id: f?.id ?? null } : x)) }); }} />
-                        <input placeholder="Tätigkeit" value={p.taetigkeit ?? ''} onChange={(e) => set({ personal: t.personal.map((x, j) => (j === i ? { ...x, taetigkeit: e.target.value } : x)) })} />
+                        <input placeholder="Gewerk" value={p.gewerk ?? ''} onChange={(e) => set({ personal: t.personal.map((x, j) => (j === i ? { ...x, gewerk: e.target.value } : x)) })} />
                       </span>
                     )}
                     <span className="tb-pair">
@@ -175,11 +198,17 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
                 {!ro && <button className="row action" onClick={() => set({ geraete: [...t.geraete, { name: '', anzahl: 1 }] })}>+ Gerät hinzufügen</button>}
               </div>
 
-              <div className="group-title tb-title">Ausgeführte Leistungen</div>
+              <div className="group-title tb-title">Ausgeführte Arbeiten</div>
               <div className="group">
                 {t.leistungen.map((l, i) => (
                   <div className="row" key={i}>
-                    <input disabled={ro} className="tb-left" placeholder="z. B. Estrich 1. OG Nord eingebracht" value={l.text} onChange={(e) => set({ leistungen: t.leistungen.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+                    <span className="tb-grow tb-leistung">
+                      <span className="tb-pair">
+                        <input disabled={ro} list="tb-firmen" placeholder="Fa." value={l.firma ?? ''} onChange={(e) => set({ leistungen: t.leistungen.map((x, j) => (j === i ? { ...x, firma: e.target.value } : x)) })} />
+                        <input disabled={ro} placeholder="Ort, z. B. EG" value={l.ort ?? ''} onChange={(e) => set({ leistungen: t.leistungen.map((x, j) => (j === i ? { ...x, ort: e.target.value } : x)) })} />
+                      </span>
+                      <input disabled={ro} className="tb-left" placeholder="z. B. Dämmung und Tackerplatten auslegen sowie Estrich einbauen" value={l.text} onChange={(e) => set({ leistungen: t.leistungen.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+                    </span>
                     {!ro && <button className="btn plain small destructive" aria-label="Entfernen" onClick={() => set({ leistungen: t.leistungen.filter((_, j) => j !== i) })}>✕</button>}
                   </div>
                 ))}
@@ -187,9 +216,9 @@ export function BautagebuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
               </div>
               {hint.length > 0 && !ro && <div className="footnote">Heute erfasste Mängel: {hint.join(' · ')}</div>}
 
-              {(['lieferungen', 'behinderungen', 'besonderheiten'] as const).map((k) => (
+              {(['besuche', 'anordnungen', 'behinderungen', 'lieferungen', 'besonderheiten'] as const).map((k) => (
                 <div key={k}>
-                  <div className="group-title tb-title">{{ lieferungen: 'Lieferungen', behinderungen: 'Behinderungen', besonderheiten: 'Besonderheiten / Unfälle / Besuche' }[k]}</div>
+                  <div className="group-title tb-title">{{ besuche: 'Besuche (Abnahmen, Ortstermine, etc.)', anordnungen: 'Anordnungen', lieferungen: 'Lieferungen', behinderungen: 'Behinderungen', besonderheiten: 'Hinweise / Besonderheiten / Unfälle' }[k]}</div>
                   <div className="group"><div className="row stack"><textarea disabled={ro} rows={2} placeholder={ro ? '–' : ''} value={t[k] ?? ''} onChange={(e) => set({ [k]: e.target.value })} /></div></div>
                 </div>
               ))}

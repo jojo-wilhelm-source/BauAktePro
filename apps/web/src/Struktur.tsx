@@ -21,7 +21,7 @@ const KINDS = ['gebaeude', 'geschoss', 'abschnitt', 'raum'] as const;
 
 interface Loc { id: string; parent_id: string | null; kind: string; name: string; sort: number; maengel: number; plaene: number }
 interface Struktur {
-  project: { id: string; name: string; address: string | null; created_at: string };
+  project: { id: string; name: string; address: string | null; bauort: string | null; baustellen_nr: string | null; bauherr_name: string | null; created_at: string };
   locations: Loc[];
   gewerke: { id: string; name: string; maengel: number; firmen: string[] }[];
   team: { id: string; name: string; email: string; role: ProjectRole; company: string; company_kind: string }[];
@@ -83,7 +83,7 @@ export function NewProjectSheet({ me, current, onCancel, onCreated, run }: { me:
 export function StrukturPage({ info, me, run, onReload, onMeReload }: { info: ProjectInfo; me: Me; run: Run; onReload: () => void; onMeReload: () => void }) {
   const [s, setS] = useState<Struktur | null>(null);
   const [adding, setAdding] = useState<{ parent: Loc | null } | null>(null);
-  const [rename, setRename] = useState<{ kind: 'location' | 'gewerk' | 'project'; id: string; name: string; address?: string } | null>(null);
+  const [rename, setRename] = useState<{ kind: 'location' | 'gewerk' | 'project'; id: string; name: string; address?: string; bauort?: string; baustellen_nr?: string; bauherr_name?: string } | null>(null);
   const [takeOver, setTakeOver] = useState(false);
   const [gw, setGw] = useState('');
   const [zu, setZu] = useState<Set<string>>(new Set());
@@ -131,7 +131,7 @@ export function StrukturPage({ info, me, run, onReload, onMeReload }: { info: Pr
     <>
       <PageHeader eyebrow={`angelegt ${formatDate(s.project.created_at)}`} title="Projekt & Struktur"
         action={<div className="meta-row">
-          <button className="btn" onClick={() => setRename({ kind: 'project', id: s.project.id, name: s.project.name, address: s.project.address ?? '' })}><Icon name="stift" size={16} /> Projekt umbenennen</button>
+          <button className="btn" onClick={() => setRename({ kind: 'project', id: s.project.id, name: s.project.name, address: s.project.address ?? '', bauort: s.project.bauort ?? '', baustellen_nr: s.project.baustellen_nr ?? '', bauherr_name: s.project.bauherr_name ?? '' })}><Icon name="stift" size={16} /> Projektdaten</button>
           <button className="btn filled" onClick={() => setTakeOver(true)}>Struktur übernehmen …</button>
         </div>} />
       <div className="list-pad struktur">
@@ -183,7 +183,7 @@ export function StrukturPage({ info, me, run, onReload, onMeReload }: { info: Pr
         <Sheet title={rename.kind === 'project' ? 'Projekt' : 'Umbenennen'} primary="Sichern" primaryDisabled={!rename.name.trim()} onCancel={() => setRename(null)}
           onPrimary={() => runAndLoad(async () => {
             if (rename.kind === 'project') {
-              await api(`/projects/${rename.id}`, { method: 'PATCH', body: { name: rename.name, address: rename.address || null } });
+              await api(`/projects/${rename.id}`, { method: 'PATCH', body: { name: rename.name, address: rename.address || null, bauort: rename.bauort || null, baustellen_nr: rename.baustellen_nr || null, bauherr_name: rename.bauherr_name || null } });
               onMeReload();
             } else await api(`/${rename.kind === 'location' ? 'locations' : 'gewerke'}/${rename.id}`, { method: 'PATCH', body: { name: rename.name } });
             setRename(null);
@@ -191,7 +191,11 @@ export function StrukturPage({ info, me, run, onReload, onMeReload }: { info: Pr
           <div className="group">
             <div className="row"><span className="k">Name</span><input autoFocus value={rename.name} onChange={(e) => setRename({ ...rename, name: e.target.value })} /></div>
             {rename.kind === 'project' && <div className="row"><span className="k">Adresse</span><input value={rename.address ?? ''} onChange={(e) => setRename({ ...rename, address: e.target.value })} /></div>}
+            {rename.kind === 'project' && <div className="row"><span className="k">Bauort</span><input value={rename.bauort ?? ''} onChange={(e) => setRename({ ...rename, bauort: e.target.value })} /></div>}
+            {rename.kind === 'project' && <div className="row"><span className="k">Baustellen-Nr.</span><input value={rename.baustellen_nr ?? ''} onChange={(e) => setRename({ ...rename, baustellen_nr: e.target.value })} /></div>}
+            {rename.kind === 'project' && <div className="row"><span className="k">Bauherr (für Berichte)</span><input placeholder="sonst Bauherr-Firma" value={rename.bauherr_name ?? ''} onChange={(e) => setRename({ ...rename, bauherr_name: e.target.value })} /></div>}
           </div>
+          {rename.kind === 'project' && <div className="footnote">Bauort, Baustellen-Nr. und Bauherr erscheinen im Kopf von Bautagebuch und Protokollen.</div>}
         </Sheet>
       )}
       {takeOver && <TakeOverSheet info={info} me={me} onCancel={() => setTakeOver(false)} run={runAndLoad} />}

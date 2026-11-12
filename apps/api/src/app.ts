@@ -16,7 +16,7 @@ import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, pa
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
 import { angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
-import { adminAssign, adminOverview, adminUpdateUser } from './admin-service';
+import { adminAssign, adminOverview, adminUpdateUser, ownCompany, ownLogo, updateOwnCompany } from './admin-service';
 import { startPage } from './start-service';
 import { addFoto as addTbFoto, bauherrFreigabe as tbBauherrFreigabe, bauherrZeichnen as tbBauherrZeichnen, removeVorlage as removeTbVorlage, saveVorlage as saveTbVorlage, addNachtrag, berichtPdf, fotoFile as tbFotoFile, getBericht, listBerichte, saveBericht, signBericht, vorschlag } from './bautagebuch-service';
 import { changeLink, linkInfo, listFreimeldungen, publicAnzeige, publicFoto, submitFreimeldung } from './freimeldung-service';
@@ -256,6 +256,19 @@ export function buildApp(sql: Sql) {
   app.put('/kontakte', async (req) => asUser(sql, req.userId, (tx) => saveKontakt(tx, req.userId, req.body)));
   app.delete<{ Params: { id: string } }>('/kontakte/:id', async (req) => asUser(sql, req.userId, (tx) => removeKontakt(tx, req.params.id)));
   app.patch<{ Params: { id: string } }>('/mitglieder/:id', async (req) => asUser(sql, req.userId, (tx) => updateMember(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get('/firma', async (req) => asUser(sql, req.userId, (tx) => ownCompany(tx)));
+  app.get('/firma/logo', async (req, reply) => {
+    const f = await asUser(sql, req.userId, (tx) => ownLogo(tx));
+    reply.header('content-type', f.type);
+    return reply.send(f.bytes);
+  });
+  app.post('/admin/firma', async (req) => {
+    if (req.isMultipart()) {
+      const u = await readUpload(req);
+      return asUser(sql, req.userId, (tx) => updateOwnCompany(tx, u.fields, u));
+    }
+    return asUser(sql, req.userId, (tx) => updateOwnCompany(tx, req.body, null));
+  });
   app.post<{ Params: { id: string } }>('/admin/users/:id/projekte', async (req) => asUser(sql, req.userId, (tx) => adminAssign(tx, req.userId, req.params.id, req.body, meta(req))));
   app.delete<{ Params: { id: string } }>('/mitglieder/:id', async (req) => asUser(sql, req.userId, (tx) => removeMember(tx, req.userId, req.params.id, meta(req))));
 

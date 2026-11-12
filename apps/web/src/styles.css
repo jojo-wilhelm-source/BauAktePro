@@ -369,3 +369,8 @@ input.ep { width: 110px; text-align: right; border: 0.5px solid var(--separator)
 .etiketten { grid-template-columns: minmax(0, 1fr) 360px; }
 .etikett-preview { height: calc(100vh - 170px); min-height: 520px; padding: 0; }
 .etikett-preview iframe { width: 100%; height: 100%; border: 0; }
+.tb-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .tb-two { grid-template-columns: 1fr; } }
+.tb-leistung { gap: 4px; }
+.tb-leistung .tb-pair input { width: auto; max-width: 160px; text-align: left; }
+.tb-pair input[placeholder="Zeit"], .tb-pair input[placeholder="°C"] { width: 56px; }

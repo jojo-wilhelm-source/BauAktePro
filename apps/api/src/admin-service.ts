@@ -3,7 +3,9 @@
  * all users with their projects and roles, locks/unlocks accounts, grants admin and firm-admin rights.
  * Every change is a rights change and goes to the audit log (per affected project, or tenant-wide entry).
  */
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { LOGO_DIR } from './bautagebuch-service';
 import type { TxSql } from '@bap/db';
 import { HttpError, type WriteMeta } from './mangel-service';
 
@@ -71,4 +73,32 @@ export async function adminAssign(tx: TxSql, adminId: string, userId: string, in
     INSERT INTO audit_log (tenant_id, project_id, entity, entity_id, action, actor_id, device_id, occurred_at, data)
     VALUES (app.user_tenant(), ${d.project_id}, 'project_member', ${userId}, ${ex ? 'rolle_geaendert' : 'zugang_erteilt'}, ${adminId}, ${meta.deviceId}, ${meta.occurredAt}, ${tx.json({ email: u.email, role: d.role } as never)})`;
   return { ok: true };
+}
+
+/** Own company: short name (e.g. "WHB", used in reports and the meeting) and logo for PDFs. */
+export async function ownCompany(tx: TxSql) {
+  const [c] = await tx`SELECT id, name, kurzname, logo_key IS NOT NULL AS has_logo FROM company WHERE tenant_id = app.user_tenant() AND kind = 'own' LIMIT 1`;
+  return c ?? null;
+}
+export async function updateOwnCompany(tx: TxSql, input: unknown, logo: { bytes: Buffer; name: string } | null) {
+  await requireAdmin(tx);
+  const d = z.object({ kurzname: z.string().trim().max(12).nullish() }).parse(input ?? {});
+  const [c] = await tx`SELECT id FROM company WHERE tenant_id = app.user_tenant() AND kind = 'own' LIMIT 1`;
+  if (!c) throw new HttpError(404, 'Eigene Firma nicht gefunden');
+  if (d.kurzname !== undefined) await tx`UPDATE company SET kurzname = ${d.kurzname || null} WHERE id = ${c.id}`;
+  if (logo) {
+    const ext = (logo.name.split('.').pop() ?? '').toLowerCase().replace('jpeg', 'jpg');
+    if (!['jpg', 'png'].includes(ext)) throw new HttpError(422, 'Logo bitte als JPG oder PNG');
+    const key = `${c.id}-${Date.now()}.${ext}`;
+    await mkdir(LOGO_DIR, { recursive: true });
+    await writeFile(LOGO_DIR + key, logo.bytes);
+    await tx`UPDATE company SET logo_key = ${key} WHERE id = ${c.id}`;
+  }
+  return ownCompany(tx);
+}
+export async function ownLogo(tx: TxSql) {
+  const [c] = await tx`SELECT logo_key FROM company WHERE tenant_id = app.user_tenant() AND kind = 'own' AND logo_key IS NOT NULL LIMIT 1`;
+  if (!c) throw new HttpError(404, 'Kein Logo');
+  const key = (c.logo_key as string).replace(/[^a-z0-9._-]/gi, '');
+  return { bytes: await readFile(LOGO_DIR + key), type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }

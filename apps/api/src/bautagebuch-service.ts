@@ -97,11 +97,14 @@ export async function saveBericht(tx: TxSql, userId: string, input: unknown, met
   const fields = {
     bereich: d.bereich ?? null, wetter: tx.json(d.wetter as never), personal: tx.json(d.personal as never), geraete: tx.json(d.geraete as never),
     leistungen: tx.json(d.leistungen as never), lieferungen: d.lieferungen ?? null, behinderungen: d.behinderungen ?? null, besonderheiten: d.besonderheiten ?? null,
+    einsatz: tx.json(d.einsatz as never), besuche: d.besuche ?? null, anordnungen: d.anordnungen ?? null,
   };
   const [cur] = await tx`SELECT * FROM tagesbericht WHERE id = ${d.id} OR (project_id = ${d.project_id} AND datum = ${d.datum})` // no FOR UPDATE: RLS would hide locked rows; the version check is in the UPDATE;
   if (!cur) {
     const [row] = await tx`
-      INSERT INTO tagesbericht ${tx({ id: d.id, project_id: d.project_id, datum: d.datum, ...fields, created_by: userId, created_at: meta.occurredAt } as never)} RETURNING *`;
+      INSERT INTO tagesbericht ${tx({ id: d.id, project_id: d.project_id, datum: d.datum, ...fields, created_by: userId, created_at: meta.occurredAt,
+        // Blatt-Nr. as in the paper Bautagebuch: running number per project.
+        blatt_nr: ((await tx`SELECT coalesce(max(blatt_nr), 0) + 1 AS n FROM tagesbericht WHERE project_id = ${d.project_id}`)[0]!.n as number) } as never)} RETURNING *`;
     await audit(tx, userId, d.project_id, d.id, 'angelegt', meta, { datum: d.datum });
     return { ok: true, bericht: row! };
   }
@@ -177,16 +180,19 @@ export async function fotoFile(tx: TxSql, id: string) {
   return { bytes: await readFile(FOTO_DIR + key), type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }
 
-// --- PDF -----------------------------------------------------------------------------------------
+// --- PDF in the company format (template "Vorlage_Bautagesbericht") ------------------------------
 
 const A4: [number, number] = [595.28, 841.89];
-const M = 50;
-const GREY = rgb(0.45, 0.45, 0.48);
-const LINE = rgb(0.85, 0.85, 0.87);
+const M = 40;
+const INK = rgb(0.08, 0.08, 0.1);
+const GREY = rgb(0.42, 0.42, 0.45);
+const RULE = rgb(0, 0, 0);
+const FILL = rgb(0.9, 0.9, 0.9);
+export const LOGO_DIR = fileURLToPath(new URL('../../../storage/logos/', import.meta.url));
 const safe = (s: string) => s.replace(/[^\x20-\x7E\xA0-\xFF–—„“”‚‘’…•€·\n]/g, '?');
+const zeit = (d: unknown) => new Date(d as string).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Berlin' });
 
 function drawSignature(page: PDFPage, s: Signature | null, x: number, y: number, w: number, h: number) {
-  page.drawRectangle({ x, y, width: w, height: h, borderColor: LINE, borderWidth: 0.6 });
   if (!s) return;
   const scale = Math.min(w / s.w, h / s.h);
   const ox = x + (w - s.w * scale) / 2;
@@ -196,7 +202,7 @@ function drawSignature(page: PDFPage, s: Signature | null, x: number, y: number,
       page.drawLine({
         start: { x: ox + st[i - 1]![0] * s.w * scale, y: oy + (1 - st[i - 1]![1]) * s.h * scale },
         end: { x: ox + st[i]![0] * s.w * scale, y: oy + (1 - st[i]![1]) * s.h * scale },
-        thickness: 1.2, color: rgb(0.05, 0.1, 0.35),
+        thickness: 1.1, color: rgb(0.05, 0.1, 0.35),
       });
     }
   }
@@ -204,87 +210,188 @@ function drawSignature(page: PDFPage, s: Signature | null, x: number, y: number,
 
 export async function berichtPdf(tx: TxSql, userId: string, id: string) {
   const t = (await getBericht(tx, userId, id)) as Record<string, any>;
-  const [ctx] = await tx`SELECT p.name AS project, (SELECT c.name FROM company c WHERE c.tenant_id = p.tenant_id AND c.kind = 'own' LIMIT 1) AS own FROM project p WHERE p.id = ${t.project_id}`;
+  const [ctx] = await tx`
+    SELECT p.name AS project, p.bauort, p.baustellen_nr, coalesce(p.bauherr_name,
+      (SELECT c.name FROM company c JOIN project_member pm ON pm.company_id = c.id WHERE pm.project_id = p.id AND pm.role = 'bauherr' LIMIT 1)) AS bauherr,
+      o.id AS own_id, o.name AS own, coalesce(o.kurzname, o.name) AS own_short, o.logo_key
+    FROM project p LEFT JOIN company o ON o.tenant_id = p.tenant_id AND o.kind = 'own' WHERE p.id = ${t.project_id} LIMIT 1`;
   const doc = await PDFDocument.create();
   doc.setTitle(`Bautagebuch ${formatDate(t.datum)} – ${ctx!.project}`);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  let logo: Awaited<ReturnType<typeof doc.embedPng>> | null = null;
+  if (ctx!.logo_key) {
+    try {
+      const bytes = await readFile(LOGO_DIR + (ctx!.logo_key as string).replace(/[^a-z0-9._-]/gi, ''));
+      logo = (ctx!.logo_key as string).endsWith('.png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+    } catch { /* no logo file */ }
+  }
   let page = doc.addPage(A4);
+  const W = A4[0] - 2 * M;
   let y = A4[1] - M;
-  const width = A4[0] - 2 * M;
-  const text = (s: string, x: number, yy: number, size = 10, f: PDFFont = font, color = rgb(0.1, 0.1, 0.12)) => page.drawText(safe(s), { x, y: yy, size, font: f, color });
+  const text = (s: string, x: number, yy: number, size = 9, f: PDFFont = font, color = INK) => page.drawText(safe(s), { x, y: yy, size, font: f, color });
+  const box = (x: number, yTop: number, w: number, h: number, fill = false) => page.drawRectangle({ x, y: yTop - h, width: w, height: h, borderColor: RULE, borderWidth: 0.8, ...(fill ? { color: FILL } : {}) });
+  const wrap = (s: string, size: number, w: number, f: PDFFont = font) => {
+    const out: string[] = [];
+    for (const para of safe(s).split('\n')) {
+      let line = '';
+      for (const word of para.split(/\s+/)) {
+        const next = line ? `${line} ${word}` : word;
+        if (f.widthOfTextAtSize(next, size) > w && line) { out.push(line); line = word; } else line = next;
+      }
+      out.push(line);
+    }
+    return out;
+  };
+  const labelValue = (label: string, value: string, x: number, yy: number, size = 9.5) => {
+    text(label, x, yy, size, bold);
+    text(value, x + bold.widthOfTextAtSize(label, size) + 3, yy, size, bold);
+  };
+
+  // --- Kopf: Titel, Blatt-Nr., Baumaßnahme, Bauort, Baustellen-Nr., Bauherr | Logo, Datum
+  const lw = W * 0.68;
+  const rw = W - lw;
+  const rows = [34, 40, 26, 30];
+  let yy = y;
+  rows.forEach((h, i) => {
+    if (i === 2) { box(M, yy, lw * 0.45, h); box(M + lw * 0.45, yy, lw * 0.55, h); } else box(M, yy, lw, h);
+    yy -= h;
+  });
+  box(M + lw, y, rw, rows[0]! + rows[1]! + rows[2]!);
+  box(M + lw, y - rows[0]! - rows[1]! - rows[2]!, rw, rows[3]!);
+  text('Bautagebuch', M + 4, y - 24, 18, bold);
+  const blatt = `Blatt-Nr.: ${t.blatt_nr ?? '–'}`;
+  text(blatt, M + lw - font.widthOfTextAtSize(blatt, 9) - 4, y - 24, 9);
+  labelValue('Baumaßnahme:', ctx!.project as string, M + 4, y - rows[0]! - 24, 11);
+  const r3 = y - rows[0]! - rows[1]! - 17;
+  labelValue('Bauort:', (ctx!.bauort as string) ?? '–', M + 4, r3);
+  labelValue('Baustellen-Nr.:', (ctx!.baustellen_nr as string) ?? '–', M + lw * 0.45 + 4, r3);
+  labelValue('Bauherr:', (ctx!.bauherr as string) ?? '–', M + 4, y - rows[0]! - rows[1]! - rows[2]! - 19);
+  if (logo) {
+    const sc = Math.min((rw - 16) / logo.width, 52 / logo.height);
+    page.drawImage(logo, { x: M + lw + (rw - logo.width * sc) / 2, y: y - (rows[0]! + rows[1]! + rows[2]!) / 2 - (logo.height * sc) / 2, width: logo.width * sc, height: logo.height * sc });
+  } else text(ctx!.own as string, M + lw + 8, y - 50, 12, bold);
+  labelValue('Datum:', `${formatDate(t.datum)} (${wochentag(t.datum).slice(0, 2)})`, M + lw + 4, y - rows[0]! - rows[1]! - rows[2]! - 19);
+  y = yy - 16;
+
+  // --- Arbeitseinsatz (eigene Leute) | Wetter
+  const e = (t.einsatz ?? {}) as { von?: string; bis?: string; aufsicht?: number | null; arbeiter?: number | null };
+  const personal = (t.personal ?? []) as { firma: string; company_id?: string | null; gewerk?: string; anzahl: number }[];
+  const eigene = personal.filter((p) => p.company_id === ctx!.own_id || p.firma === ctx!.own);
+  const nus = personal.filter((p) => !eigene.includes(p));
+  const arbeiter = e.arbeiter ?? (e.aufsicht == null ? eigene.reduce((s, p) => s + (Number(p.anzahl) || 0), 0) : null);
+  const aw = W * 0.56;
+  const ww = W - aw - 10;
+  const bh = 92;
+  box(M, y, aw, 18, true); box(M + aw + 10, y, ww, 18, true);
+  text('Arbeitseinsatz:', M + 4, y - 13, 9.5, bold); text('Wetter:', M + aw + 14, y - 13, 9.5, bold);
+  const y2 = y - 18;
+  box(M, y2, aw, bh); box(M + aw + 10, y2, ww, bh);
+  // Uhrzeit von / bis | MA-Zahl: Aufsicht, Arbeiter, Summe
+  const c1 = aw * 0.42;
+  page.drawLine({ start: { x: M + c1, y: y2 }, end: { x: M + c1, y: y2 - bh }, thickness: 0.6, color: RULE });
+  text('Uhrzeit', M + 4, y2 - 14, 9, bold);
+  text('Von', M + 4, y2 - 32, 8.5, bold); text('Bis', M + c1 / 2 + 2, y2 - 32, 8.5, bold);
+  text(e.von ?? '–', M + 4, y2 - 50, 10); text(e.bis ?? '–', M + c1 / 2 + 2, y2 - 50, 10);
+  text(`MA-Zahl ${ctx!.own_short as string}`, M + c1 + 4, y2 - 14, 9, bold);
+  const z = (lbl: string, v: number | null | undefined, yv: number, b = false) => {
+    text(lbl, M + c1 + 4, yv, 9, b ? bold : font);
+    const vs = v == null ? '–' : String(v);
+    text(vs, M + aw - 8 - font.widthOfTextAtSize(vs, 10), yv, 10, b ? bold : font);
+  };
+  z('Aufsicht', e.aufsicht, y2 - 34); z('Arbeiter', arbeiter, y2 - 52);
+  page.drawLine({ start: { x: M + c1, y: y2 - 64 }, end: { x: M + aw, y: y2 - 64 }, thickness: 0.6, color: RULE });
+  z('Summe', (Number(e.aufsicht) || 0) + (Number(arbeiter) || 0), y2 - 80, true);
+  // Wetter: Witterung | Zeit | °C
+  const w = (t.wetter ?? {}) as { text?: string; temp_min?: number | null; temp_max?: number | null; niederschlag?: string; wind?: string; messungen?: { zeit?: string; witterung?: string; temp?: number | null }[] };
+  const mess = w.messungen?.length ? w.messungen : [{ zeit: '', witterung: [w.text, w.niederschlag, w.wind].filter(Boolean).join(', '), temp: w.temp_max ?? w.temp_min ?? null }];
+  const wx = M + aw + 10;
+  text('Witterung', wx + 4, y2 - 14, 9, bold); text('Zeit', wx + ww * 0.62, y2 - 14, 9, bold); text('°C', wx + ww * 0.84, y2 - 14, 9, bold);
+  mess.slice(0, 4).forEach((m, i) => {
+    const yv = y2 - 32 - i * 16;
+    text(wrap(m.witterung || '–', 9, ww * 0.58)[0] ?? '–', wx + 4, yv, 9);
+    text(m.zeit || '', wx + ww * 0.62, yv, 9);
+    text(m.temp == null ? '' : String(m.temp), wx + ww * 0.84, yv, 9);
+  });
+  y = y2 - bh - 14;
+
+  // --- Nachunternehmer: Firma | Gewerk | Anzahl (two columns as on the paper form)
+  const colW = (W - 10) / 2;
+  const half = Math.ceil(Math.max(nus.length, 1) / 2);
+  const rowH = 14;
+  const tableH = 18 + Math.max(half, 2) * rowH + 4;
+  [0, 1].forEach((col) => {
+    const x = M + col * (colW + 10);
+    box(x, y, colW, tableH);
+    page.drawLine({ start: { x, y: y - 18 }, end: { x: x + colW, y: y - 18 }, thickness: 0.6, color: RULE });
+    text('Firma', x + 4, y - 13, 9, bold); text('Gewerk', x + colW * 0.45, y - 13, 9, bold); text('Anzahl', x + colW * 0.82, y - 13, 9, bold);
+    nus.slice(col * half, col * half + half).forEach((p, i) => {
+      const yv = y - 18 - (i + 1) * rowH + 3;
+      text(wrap(p.firma, 9, colW * 0.42)[0]!, x + 4, yv, 9);
+      text(wrap(p.gewerk ?? '', 9, colW * 0.35)[0] ?? '', x + colW * 0.45, yv, 9);
+      text(String(p.anzahl ?? ''), x + colW * 0.82, yv, 9);
+    });
+  });
+  y -= tableH + 12;
+
+  // --- Text blocks with a grey label (Geräteeinsatz, Ausgeführte Arbeiten, Besuche, Anordnungen, …)
   const ensure = (need: number) => {
     if (y - need < M + 30) {
       page = doc.addPage(A4);
       y = A4[1] - M;
     }
   };
-  const wrap = (s: string, size: number, w: number) => {
-    const out: string[] = [];
-    for (const para of safe(s).split('\n')) {
-      let line = '';
-      for (const word of para.split(/\s+/)) {
-        const next = line ? `${line} ${word}` : word;
-        if (font.widthOfTextAtSize(next, size) > w && line) { out.push(line); line = word; } else line = next;
-      }
-      out.push(line);
-    }
-    return out;
-  };
-  const section = (title: string, lines: string[]) => {
-    if (!lines.length) return;
-    ensure(30 + lines.length * 13);
-    y -= 8;
-    text(title, M, y, 11, bold);
-    y -= 5;
-    page.drawLine({ start: { x: M, y }, end: { x: A4[0] - M, y }, thickness: 0.6, color: LINE });
-    y -= 14;
-    for (const l of lines.flatMap((x) => wrap(x, 10, width))) {
-      ensure(14);
-      text(l, M, y);
-      y -= 13;
+  const block = (label: string, lines: string[]) => {
+    const body = lines.flatMap((l) => wrap(l, 9.5, W - 12));
+    if (!body.length) body.push('–');
+    let i = 0;
+    while (i < body.length) {
+      ensure(40);
+      const fit = Math.max(1, Math.min(body.length - i, Math.floor((y - M - 30 - 22) / 12)));
+      const h = 20 + fit * 12 + 6;
+      box(M, y, W, h);
+      page.drawRectangle({ x: M, y: y - 16, width: bold.widthOfTextAtSize(label, 9.5) + 8, height: 16, color: FILL, borderColor: RULE, borderWidth: 0.6 });
+      text(label, M + 4, y - 12, 9.5, bold);
+      body.slice(i, i + fit).forEach((l, k) => text(l, M + 6, y - 30 - k * 12, 9.5));
+      i += fit;
+      y -= h + 8;
     }
   };
+  block('Geräteeinsatz:', ((t.geraete ?? []) as { name: string; anzahl: number }[]).map((g) => `${g.anzahl} × ${g.name}`));
+  block('Ausgeführte Arbeiten:', ((t.leistungen ?? []) as { text: string; firma?: string; ort?: string }[]).map((l) =>
+    `${l.firma ? `Fa. ${l.firma}${l.ort ? ` (${l.ort})` : ''}: ` : l.ort ? `(${l.ort}) ` : ''}${l.text}`));
+  if (t.besuche) block('Besuche (Abnahmen, Ortstermine, etc.):', [t.besuche]);
+  if (t.anordnungen) block('Anordnungen:', [t.anordnungen]);
+  if (t.behinderungen) block('Behinderungen:', [t.behinderungen]);
+  if (t.lieferungen) block('Lieferungen:', [t.lieferungen]);
+  if (t.besonderheiten) block('Hinweise / Besonderheiten:', [t.besonderheiten]);
+  if ((t.nachtraege as unknown[]).length) block('Nachträge:', (t.nachtraege as { created_at: string; name: string; text: string }[]).map((n) => `${zeit(n.created_at)} ${n.name}: ${n.text}`));
 
-  text(ctx!.own as string, M, y, 9.5, font, GREY);
-  y -= 24;
-  text(`Bautagebuch · ${wochentag(t.datum)}, ${formatDate(t.datum)}`, M, y, 17, bold);
-  y -= 16;
-  text(`${ctx!.project as string}${t.bereich ? ` · ${t.bereich}` : ''}`, M, y, 10.5, font, GREY);
-  y -= 10;
-  const w = t.wetter ?? {};
-  section('Wetter', [[w.text, w.temp_min != null || w.temp_max != null ? `${w.temp_min ?? '–'} bis ${w.temp_max ?? '–'} °C` : null, w.niederschlag, w.wind].filter(Boolean).join(' · ') || '–']);
-  section('Personal', (t.personal as any[]).map((p) => `${p.firma}: ${p.anzahl} Personen${p.taetigkeit ? ` – ${p.taetigkeit}` : ''}`));
-  section('Geräte', (t.geraete as any[]).map((g) => `${g.anzahl} × ${g.name}`));
-  section('Ausgeführte Leistungen', (t.leistungen as any[]).map((l) => `• ${l.text}${l.ort || l.gewerk ? ` (${[l.ort, l.gewerk].filter(Boolean).join(', ')})` : ''}`));
-  if (t.lieferungen) section('Lieferungen', [t.lieferungen]);
-  if (t.behinderungen) section('Behinderungen', [t.behinderungen]);
-  if (t.besonderheiten) section('Besonderheiten / Unfälle', [t.besonderheiten]);
-  section('Nachträge', (t.nachtraege as any[]).map((n) => `${new Date(n.created_at).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })} ${n.name}: ${n.text}`));
-
-  ensure(120);
-  y -= 20;
-  const bw = (width - 20) / 2;
-  text('Aufgestellt', M, y, 9.5, bold);
-  text('Gegengezeichnet (Bauleitung)', M + bw + 20, y, 9.5, bold);
-  y -= 70;
-  drawSignature(page, t.signature ?? null, M, y, bw, 60);
-  drawSignature(page, t.countersignature ?? null, M + bw + 20, y, bw, 60);
-  y -= 13;
-  text(t.signed_at ? `${t.signed_by_name}, ${new Date(t.signed_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Berlin' })}` : 'noch nicht unterschrieben', M, y, 8.5, font, GREY);
-  text(t.countersigned_at ? `${t.countersigned_by_name}, ${new Date(t.countersigned_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Berlin' })}` : '–', M + bw + 20, y, 8.5, font, GREY);
-  if (t.bauherr_signed_at) {
-    ensure(100);
-    y -= 26;
-    text('Gegengezeichnet (Bauherr)', M, y, 9.5, bold);
-    y -= 70;
-    drawSignature(page, t.bauherr_signature ?? null, M, y, bw, 60);
-    y -= 13;
-    text(new Date(t.bauherr_signed_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Berlin' }), M, y, 8.5, font, GREY);
+  // --- Unterschriften: Polier/Schachtmeister | Auftraggeber; Prüfvermerk Bauleitung
+  if (y - 130 < M + 10) {
+    page = doc.addPage(A4);
+    y = A4[1] - M;
   }
+  y -= 6;
+  const sw = (W - 40) / 2;
+  drawSignature(page, t.signature ?? null, M, y - 52, sw, 48);
+  drawSignature(page, t.bauherr_signature ?? null, M + sw + 40, y - 52, sw, 48);
+  y -= 56;
+  page.drawLine({ start: { x: M, y }, end: { x: M + sw, y }, thickness: 0.8, color: RULE });
+  page.drawLine({ start: { x: M + sw + 40, y }, end: { x: W + M, y }, thickness: 0.8, color: RULE });
+  text('Unterschrift Polier/ Schachtmeister', M, y - 12, 8.5);
+  text('Unterschrift Auftraggeber', M + sw + 40, y - 12, 8.5);
+  if (t.signed_at) text(`${t.signed_by_name}, ${zeit(t.signed_at)}`, M, y - 24, 7.5, font, GREY);
+  if (t.bauherr_signed_at) text(zeit(t.bauherr_signed_at), M + sw + 40, y - 24, 7.5, font, GREY);
+  if (t.countersigned_at) {
+    y -= 40;
+    drawSignature(page, t.countersignature ?? null, M, y - 30, 120, 28);
+    text(`Geprüft Bauleitung: ${t.countersigned_by_name}, ${zeit(t.countersigned_at)}`, M + 130, y - 18, 8.5, font, GREY);
+  }
+
   const pages = doc.getPages();
   pages.forEach((pg, i) => {
-    pg.drawText(safe(`Bautagebuch ${formatDate(t.datum)} · ${ctx!.project as string} · Seite ${i + 1} von ${pages.length} · Unterschriften dienen der Dokumentation`), { x: M, y: 28, size: 7.5, font, color: GREY });
+    pg.drawText(safe(`Bautagebuch Blatt ${t.blatt_nr ?? '–'} · ${formatDate(t.datum)} · ${ctx!.project as string} · Seite ${i + 1} von ${pages.length}`), { x: M, y: 22, size: 7.5, font, color: GREY });
     if (t.status === 'entwurf') pg.drawText('ENTWURF', { x: 170, y: 420, size: 80, font: bold, color: rgb(1, 0.6, 0), opacity: 0.12 });
   });
   return doc.save();
@@ -295,12 +402,14 @@ export async function berichtPdf(tx: TxSql, userId: string, id: string) {
 /** What the Bauherr sees of a released report: only the released sections, no internal names of the crew. */
 function fuerBauherr(t: Record<string, any>) {
   const ab = new Set<string>(t.bauherr_abschnitte ?? []);
-  const leer = { wetter: {}, personal: [], geraete: [], leistungen: [], lieferungen: null, behinderungen: null, besonderheiten: null };
+  const leer = { wetter: {}, personal: [], geraete: [], leistungen: [], besuche: null, anordnungen: null, lieferungen: null, behinderungen: null, besonderheiten: null };
   const out: Record<string, any> = { id: t.id, project_id: t.project_id, datum: t.datum, bereich: t.bereich, status: t.status, version: t.version,
     signed_at: t.signed_at, signed_by_name: t.signed_by_name, countersigned_at: t.countersigned_at, countersigned_by_name: t.countersigned_by_name,
+    blatt_nr: t.blatt_nr, einsatz: t.einsatz, signature: t.signature, bauherr_signature: t.bauherr_signature,
     bauherr_freigabe: t.bauherr_freigabe, bauherr_abschnitte: t.bauherr_abschnitte, bauherr_signed_at: t.bauherr_signed_at,
     nachtraege: t.nachtraege, fotos: [], can_edit: false, can_countersign: false, can_release: false, can_bauherr_sign: !t.bauherr_signed_at };
   for (const k of Object.keys(leer)) out[k] = ab.has(k) ? t[k] : (leer as Record<string, unknown>)[k];
+  if (!ab.has('personal')) out.einsatz = {};
   return out;
 }
 

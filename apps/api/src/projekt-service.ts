@@ -279,10 +279,13 @@ export async function deleteGewerk(tx: TxSql, userId: string, id: string, meta: 
 }
 
 export async function renameProject(tx: TxSql, userId: string, id: string, input: unknown, meta: WriteMeta) {
-  const d = z.object({ name: z.string().trim().min(1).max(200), address: z.string().trim().max(300).nullish() }).parse(input);
+  const d = z.object({ name: z.string().trim().min(1).max(200), address: z.string().trim().max(300).nullish(),
+    bauort: z.string().trim().max(120).nullish(), baustellen_nr: z.string().trim().max(40).nullish(), bauherr_name: z.string().trim().max(200).nullish() }).parse(input);
   await requireLeitung(tx, userId, id);
-  const [p] = await tx`SELECT name, address FROM project WHERE id = ${id}`;
-  await tx`UPDATE project SET name = ${d.name}, address = ${d.address ?? null} WHERE id = ${id}`;
+  const [p] = await tx`SELECT name, address, bauort, baustellen_nr, bauherr_name FROM project WHERE id = ${id}`;
+  await tx`UPDATE project SET name = ${d.name}, address = ${d.address ?? null},
+    bauort = ${d.bauort === undefined ? p!.bauort : d.bauort || null}, baustellen_nr = ${d.baustellen_nr === undefined ? p!.baustellen_nr : d.baustellen_nr || null},
+    bauherr_name = ${d.bauherr_name === undefined ? p!.bauherr_name : d.bauherr_name || null} WHERE id = ${id}`;
   await audit(tx, userId, id, 'project', id, 'geaendert', meta, { from: p, ...d });
   return { ok: true };
 }
@@ -290,7 +293,7 @@ export async function renameProject(tx: TxSql, userId: string, id: string, input
 /** Structure overview for the "Projekt & Struktur" page, incl. how often each Ort/Gewerk is used. */
 export async function structure(tx: TxSql, userId: string, projectId: string) {
   const a = await actorFor(tx, userId, projectId);
-  const [project] = await tx`SELECT id, name, address, created_at FROM project WHERE id = ${projectId}`;
+  const [project] = await tx`SELECT id, name, address, bauort, baustellen_nr, bauherr_name, created_at FROM project WHERE id = ${projectId}`;
   const locations = await tx`
     SELECT l.id, l.parent_id, l.kind, l.name, l.sort,
       (SELECT count(*)::int FROM mangel m WHERE m.location_id = l.id AND m.deleted_at IS NULL) AS maengel,

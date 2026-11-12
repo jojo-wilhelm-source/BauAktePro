@@ -19,10 +19,18 @@ export const TagesberichtInput = z.object({
   project_id: z.string().uuid(),
   datum: z.string().date(),
   bereich: text(200),
-  wetter: z.object({ text: text(200), temp_min: z.number().min(-40).max(50).nullish(), temp_max: z.number().min(-40).max(55).nullish(), niederschlag: text(80), wind: text(80) }).default({}),
-  personal: z.array(z.object({ firma: z.string().trim().min(1).max(160), company_id: z.string().uuid().nullish(), anzahl: z.coerce.number().int().min(0).max(999), taetigkeit: text(300) })).max(60).default([]),
+  wetter: z.object({
+    text: text(200), temp_min: z.number().min(-40).max(50).nullish(), temp_max: z.number().min(-40).max(55).nullish(), niederschlag: text(80), wind: text(80),
+    /** Readings during the day as in the company form: time, Witterung, °C (e.g. 06:30 bewölkt 8 °C, 14:00 sonnig 21 °C). */
+    messungen: z.array(z.object({ zeit: text(10), witterung: text(80), temp: z.number().min(-40).max(55).nullish() })).max(6).optional(),
+  }).default({}),
+  /** Own crew (Arbeitseinsatz): working hours and head count split into Aufsicht and Arbeiter. */
+  einsatz: z.object({ von: text(10), bis: text(10), aufsicht: z.coerce.number().int().min(0).max(999).nullish(), arbeiter: z.coerce.number().int().min(0).max(999).nullish() }).default({}),
+  personal: z.array(z.object({ firma: z.string().trim().min(1).max(160), company_id: z.string().uuid().nullish(), gewerk: text(160), anzahl: z.coerce.number().int().min(0).max(999), taetigkeit: text(300) })).max(60).default([]),
   geraete: z.array(z.object({ name: z.string().trim().min(1).max(160), anzahl: z.coerce.number().int().min(0).max(999) })).max(60).default([]),
-  leistungen: z.array(z.object({ text: z.string().trim().min(1).max(1000), ort: text(160), gewerk: text(160) })).max(100).default([]),
+  leistungen: z.array(z.object({ text: z.string().trim().min(1).max(1000), firma: text(160), ort: text(160), gewerk: text(160) })).max(100).default([]),
+  besuche: text(),
+  anordnungen: text(),
   lieferungen: text(),
   behinderungen: text(),
   besonderheiten: text(),
@@ -46,9 +54,9 @@ export function kalenderwoche(isoDate: string): { jahr: number; kw: number } {
 }
 
 /** Sections of a Tagesbericht that can be released to the Bauherr. */
-export const TB_ABSCHNITTE = ['wetter', 'personal', 'geraete', 'leistungen', 'lieferungen', 'behinderungen', 'besonderheiten'] as const;
+export const TB_ABSCHNITTE = ['wetter', 'personal', 'geraete', 'leistungen', 'besuche', 'anordnungen', 'lieferungen', 'behinderungen', 'besonderheiten'] as const;
 export type TbAbschnitt = (typeof TB_ABSCHNITTE)[number];
 export const TB_ABSCHNITT_LABELS: Record<TbAbschnitt, string> = {
-  wetter: 'Wetter', personal: 'Personal', geraete: 'Geräte', leistungen: 'Ausgeführte Leistungen', lieferungen: 'Lieferungen',
+  wetter: 'Wetter', personal: 'Personal', geraete: 'Geräte', leistungen: 'Ausgeführte Leistungen', besuche: 'Besuche (Abnahmen, Ortstermine)', anordnungen: 'Anordnungen', lieferungen: 'Lieferungen',
   behinderungen: 'Behinderungen', besonderheiten: 'Besonderheiten',
 };

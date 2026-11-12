@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="de"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAZ EN-Kreis – NU-Besprechung</title>
+<style>
+:root{--b:#12385b;--l:#cbd5dd;--r:#f8d7da;--o:#ffe5c0;--y:#fff3bf;--g:#d9f2df;--x:#e9edef}
+*{box-sizing:border-box} body{margin:0;background:#f3f6f8;font:14px Arial;color:#1d2b36}
+.app{max-width:1550px;margin:auto;padding:18px}
+header{background:var(--b);color:#fff;padding:16px 22px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+h1{margin:0 0 5px} h2{color:var(--b);margin:0 0 10px;font-size:19px} h3{margin:0}
+.toolbar,.section{background:#fff;border:1px solid var(--l);padding:14px}.toolbar{border-top:0;display:flex;gap:8px;flex-wrap:wrap}.section{margin-top:16px;border-radius:6px}
+button{border:0;border-radius:4px;background:var(--b);color:#fff;font-weight:bold;padding:9px 12px;cursor:pointer}.green{background:#287a41}.orange{background:#a36000}.grey{background:#60707d}.red{background:#a0252d}.delete{background:transparent;border:1px solid #a0252d;color:#a0252d;padding:5px 8px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px}.full{grid-column:1/-1}
+label{display:block;font-size:12px;font-weight:bold;color:#49606f;margin-bottom:4px} input,select,textarea{width:100%;border:1px solid #b7c4cd;border-radius:4px;padding:7px;font:inherit}
+textarea{min-height:36px;resize:none;overflow:hidden;line-height:1.35}
+.hint{color:#637480;line-height:1.4;font-weight:normal}.form{background:#edf5fa;border:1px solid #c9dce8;padding:14px;border-radius:5px}
+summary{cursor:pointer;color:var(--b);font-size:18px;font-weight:bold}.contacts-content{margin-top:14px}.row{display:grid;grid-template-columns:1fr 1fr 1fr 45px;gap:8px;padding:7px 0;border-bottom:1px solid #e1e7eb}
+.building{border:1px solid var(--l);border-radius:5px;overflow:hidden;margin-top:12px}.building-head{background:var(--b);color:white;padding:7px 10px;font-size:14px}.floor{padding:8px;border-top:1px solid var(--l)}.floor-head{background:#edf4f8;color:var(--b);border-left:4px solid #1d527f;padding:5px 8px;font-weight:bold;margin-bottom:6px;font-size:13px}
+.group{border:1px solid var(--l);border-radius:4px;overflow:hidden;margin-top:6px}.group-head{background:#e7edf1;padding:6px 8px;font-weight:bold;font-size:13px}.company{background:#dcebf5;color:var(--b)}
+
+.card{border-top:1px solid var(--l);padding:0}
+.blocked{background:var(--r)}.important{background:var(--o)}.working{background:var(--y)}.done{background:var(--g)}.notdue{background:var(--x)}
+
+.card-summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 8px;cursor:pointer}
+.card-summary:hover{filter:brightness(0.97)}
+.status-symbol{font-size:16px;line-height:1}
+.card-task-preview{flex:1;min-width:180px;font-size:13px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.due-inline{font-size:12px;font-weight:bold;color:#49606f;white-space:nowrap}
+.overdue-inline{color:#a0252d!important}
+.overdue-note{color:#a0252d;font-size:11px;font-weight:bold}
+.point-id{font-size:10px;color:#8494a0}
+.toggle-arrow{font-size:12px;color:#49606f;transition:transform .15s}
+.card.open .toggle-arrow{transform:rotate(90deg)}
+.card-body{display:none;padding:0 8px 9px}
+.card.open .card-body{display:block}
+
+.card-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:6px}
+.status-select{width:auto;min-width:145px;padding:5px 6px;font-weight:bold}
+.due-box{display:flex;align-items:center;gap:5px;margin-left:auto;font-size:12px;font-weight:bold;color:#49606f}
+.due-box input{width:auto;padding:5px 6px}
+.card-line{margin-top:5px}
+.card-line label{margin-bottom:2px}
+.overdue{background:#ffe0e2!important;border-left:4px solid #a0252d}
+.overdue-label{color:#a0252d!important}
+
+.whb-share{margin-top:7px;padding:7px 8px;border-radius:4px;background:rgba(255,255,255,.55)}
+.helper-task{margin-top:7px;margin-left:15px;padding:7px 8px;border-radius:4px;background:#eaf3f8;border-left:3px solid #1d527f}
+.helper-task-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-weight:bold;margin-bottom:5px}
+.helper-task-head select{width:auto;min-width:135px}
+.helper-task-head input{width:auto}
+
+.compact-check{display:flex;align-items:center;gap:6px;margin-top:6px}
+.compact-check label{min-width:155px;margin:0}
+
+.helper-row{display:grid;grid-template-columns:1.2fr 2fr 150px 145px 38px;gap:7px;align-items:end;margin-top:7px;padding:7px;background:#f4f8fb;border:1px solid #c9dce8;border-radius:4px}
+
+.recipient{display:grid;grid-template-columns:28px 1.2fr 1.5fr 1.5fr 40px;gap:7px;padding:7px 0;border-bottom:1px solid #e1e7eb}
+.recipient-category{display:grid;grid-template-columns:28px 1.1fr 1.4fr 1.2fr 40px;gap:7px;padding:7px 0;border-bottom:1px solid #e1e7eb}
+.recipient-group{margin-top:12px;border:1px solid #d7e0e6;border-radius:4px;overflow:hidden}
+.recipient-group-head{padding:7px 9px;color:var(--b);font-weight:bold;background:#edf4f8}
+.company-dist-row{display:grid;grid-template-columns:28px 1.4fr 1.6fr 40px;gap:7px;padding:6px 0;border-bottom:1px solid #e1e7eb;align-items:center}
+
+.meta-summary{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:#3b4c58}
+.meta-summary b{color:var(--b)}
+
+.mini{font-size:11px;font-weight:bold;color:#50616e;margin-bottom:3px}.badge{padding:4px 7px;border-radius:4px;font-weight:bold;font-size:12px}.legend{display:flex;gap:7px;flex-wrap:wrap}.empty{padding:9px;color:#687985;font-style:italic}
+.notice{display:none;position:fixed;right:20px;bottom:20px;background:#287a41;color:#fff;padding:12px;border-radius:5px;z-index:10}
+
+.checkbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;max-height:260px;overflow:auto;padding:8px;border:1px solid var(--l);border-radius:4px;background:#fafcfd}
+.checkbox-grid label{display:flex;align-items:center;gap:6px;font-weight:normal;font-size:13px;margin:0;color:#1d2b36}
+.checkbox-grid input{width:auto}
+.checkbox-group-title{grid-column:1/-1;font-weight:bold;color:var(--b);margin-top:6px;font-size:12px}
+.freetext-item{display:flex;gap:8px;margin-top:6px;align-items:flex-start}
+.freetext-item textarea{flex:1}
+.history-item{display:flex;justify-content:space-between;align-items:center;padding:9px;border:1px solid var(--l);border-radius:5px;margin-bottom:7px;background:#fafcfd;gap:10px;flex-wrap:wrap}
+.history-item .meta{font-size:12.5px;color:#3b4c58}
+.actions-bar{display:flex;flex-wrap:wrap;gap:10px}
+
+/* Logo im Header */
+.header-logo{display:inline-flex;align-items:center;background:#fff;padding:5px 12px;border-radius:6px;flex-shrink:0}
+.header-logo-icon{width:38px;height:38px;background:#E30613;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.header-logo-icon svg{width:60%;height:60%;display:block}
+.header-logo-text{font-weight:800;font-size:19px;letter-spacing:.5px;color:#000;margin-left:10px;white-space:nowrap;font-family:Arial,Helvetica,sans-serif}
+
+/* Projektkonfiguration – Struktur übersichtlicher */
+.area-block{border:1px solid var(--l);border-radius:6px;margin-top:12px;overflow:hidden;background:#fff}
+.area-block>summary{list-style:none;cursor:pointer;padding:10px 14px;background:#eaf1f6;display:flex;align-items:center;gap:10px}
+.area-block>summary::-webkit-details-marker{display:none}
+.area-block>summary::before{content:"▶";font-size:10px;color:var(--b);transition:transform .15s;flex-shrink:0}
+.area-block[open]>summary::before{transform:rotate(90deg)}
+.area-title-input{flex:1;font-weight:bold;color:var(--b);border:1px solid transparent;background:transparent;padding:5px 7px;border-radius:4px;font-size:14px;min-width:120px}
+.area-title-input:hover,.area-title-input:focus{border-color:#b7c4cd;background:#fff}
+.area-count{font-size:11px;color:#637480;white-space:nowrap}
+.area-body{padding:12px 14px;background:#fbfdfe}
+.building-card{border:1px solid #d7e0e6;border-radius:5px;padding:10px 12px;margin-top:10px;background:#fff}
+.building-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.building-title-input{flex:1;min-width:140px;font-weight:bold;border:1px solid transparent;padding:5px 7px;border-radius:4px}
+.building-title-input:hover,.building-title-input:focus{border-color:#b7c4cd}
+.floor-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.floor-chip{display:flex;align-items:center;background:#e7edf1;border-radius:14px;padding:3px 4px 3px 10px;gap:2px}
+.floor-chip input{border:0;background:transparent;padding:0;width:auto;max-width:100px;font:inherit;font-weight:bold;font-size:12px;color:#1d2b36}
+.floor-chip button{background:transparent;border:0;color:#a0252d;font-weight:bold;cursor:pointer;font-size:13px;padding:0 5px;line-height:1}
+.add-inline{display:flex;gap:6px;margin-top:9px}
+.add-inline input{flex:1}
+.add-inline button{white-space:nowrap}
+
+@media(max-width:1000px){.grid,.grid3{grid-template-columns:repeat(2,1fr)}.helper-row,.recipient-category{grid-template-columns:1fr 1fr}.due-box{margin-left:0}}
+@media print{body{background:#fff;font-size:10px}.app{padding:0;max-width:none}.toolbar,.form,#contacts,#projectConfig,#distributionSection,#completedSection,#actionsSection,#historySection,.delete,.notice,.toggle-arrow{display:none!important}.card-body{display:block!important}header{color:#000;background:#fff;border-bottom:2px solid #000;padding:8px 0}.section{border:0;padding:8px 0}.building-head{background:#ddd;color:#000}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="header-logo" title="W. Hundhausen Bauunternehmung GmbH">
+    <div class="header-logo-icon">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 5 L95 45 L95 95 L60 95 L60 55 L40 55 L40 95 L5 95 L5 45 Z" fill="#ffffff"/>
+        <rect x="40" y="5" width="20" height="90" fill="#E30613"/>
+      </svg>
+    </div>
+    <div class="header-logo-text">HUNDHAUSEN</div>
+  </div>
+  <div>
+    <h1>Nachunternehmerbesprechung – Maßnahmensteuerung</h1>
+    <p id="headerSubtitle">GAZ EN-Kreis | Allgemeine Informationen – Bauteile – Fassade – Dächer</p>
+  </div>
+</header>
+
+<div class="toolbar">
+<button class="green" onclick="saveLocal()">Zwischenspeicher im Browser</button>
+<button class="grey" onclick="loadLocal()">Zwischenspeicher laden</button>
+<button class="orange" onclick="copyMail()">E-Mail-Vorschau kopieren</button>
+<button onclick="openMail()">E-Mail im Standardprogramm öffnen</button>
+<button class="green" onclick="exportHTML()">Besprechungsdatei speichern / aktualisieren</button>
+<button class="grey" onclick="window.print()">Drucken / PDF speichern</button>
+</div>
+
+<details class="section" id="projectConfig">
+<summary>0. Projektkonfiguration</summary>
+<div class="contacts-content">
+
+<div class="grid3">
+<div><label>Projekttitel</label><input id="cfgProjectTitle" onchange="applyProjectConfig()"></div>
+<div><label>Bauleitung (Standard)</label>
+  <select id="cfgWhb" onchange="applyProjectConfig()"><option value="">-- Auswahl --</option></select>
+</div>
+<div><label>Projektleitung</label><input id="cfgProjectManager" onchange="applyProjectConfig()"></div>
+</div>
+
+<hr style="border:0;border-top:1px solid #cbd5dd;margin:18px 0">
+<h3 style="color:#12385b;margin:0 0 10px">Struktur: Hauptbereiche, Bauteile und Geschosse</h3>
+<p class="hint" style="margin:0 0 10px">Diese Struktur steuert die Auswahlmenüs bei „Neuen Punkt aufnehmen" sowie die Gliederung der Punkteübersicht. Bereiche sind aufklappbar, Geschosse werden als kleine Chips angezeigt.</p>
+
+<div class="grid3">
+<div><label>Neuer Hauptbereich</label><input id="newAreaName" placeholder="z. B. AUSSENANLAGEN"></div>
+<div><button class="green" onclick="addArea()">+ Hauptbereich hinzufügen</button></div>
+</div>
+
+<div id="structureConfig" style="margin-top:12px"></div>
+</div>
+</details>
+
+<section class="section">
+<h2>1. Protokollkopf / Besprechungsdaten</h2>
+<div class="meta-summary" style="margin-bottom:10px">
+  <span><b>Projekt:</b> <span id="metaProjectDisplay">–</span></span>
+  <span><b>Bauleitung:</b> <span id="metaWhbDisplay">–</span></span>
+  <span><b>Projektleitung:</b> <span id="metaPmDisplay">–</span></span>
+  <span class="hint">(Bearbeitung unter „0. Projektkonfiguration")</span>
+</div>
+<div class="grid">
+<div><label>Besprechungs-Nr.</label><input id="meetingNo"></div>
+<div><label>Besprechungsdatum</label><input id="meetingDate" type="date" onchange="fillKW()"></div>
+<div><label>Kalenderwoche</label><input id="meetingKW" readonly></div>
+<div><label>Ort / Format</label><select id="meetingOrt"><option>Baustelle</option><option>Baucontainer</option><option>MS Teams</option><option>Telefonisch</option></select></div>
+<div><label>Nächster Termin</label><input id="nextDate" type="date"></div>
+<div><label>Protokollführung</label><select id="minutes"><option value="">-- Auswahl --</option><option>Johannes Wilhelm</option><option>Laura Thiel</option><option>Lukas Pogorzalski</option></select><input id="minutesCustom" placeholder="Oder individuell eingeben" style="margin-top:5px"></div>
+<div><label>Dokumentenstand</label><input id="docState"></div>
+</div>
+
+<hr style="border:0;border-top:1px solid #cbd5dd;margin:16px 0">
+<h3 style="color:#12385b;margin:0 0 8px">Teilnehmer der Besprechung</h3>
+<p class="hint" style="margin:0 0 8px">Interne Namen, feste Verteiler-Kontakte und Firmen können direkt als Teilnehmer markiert werden. Teilnehmende Firmen werden automatisch für den E-Mail-Verteiler vorgeschlagen (Punkt 7).</p>
+<div class="checkbox-grid" id="participantGrid"></div>
+
+<div class="grid3" style="margin-top:10px">
+<div><label>Manueller Teilnehmer – Name</label><input id="manualParticipantName" placeholder="z. B. externer Gast"></div>
+<div><label>Manueller Teilnehmer – E-Mail (optional)</label><input id="manualParticipantMail" type="email"></div>
+<div><button class="green" onclick="addManualParticipant()">+ Manuellen Teilnehmer hinzufügen</button></div>
+</div>
+<div id="manualParticipantList"></div>
+
+<div class="full" style="margin-top:10px">
+<label>Weitere CC-Empfänger (kommagetrennt, nicht in Listen erfasst)</label>
+<textarea id="ccList" oninput="autoResize(this)" placeholder="z. B. externe Planer, Bauherrenvertreter ..."></textarea>
+</div>
+</section>
+
+<details class="section" id="contacts">
+<summary>2. Firmen, Ansprechpartner und interne Namen verwalten</summary>
+<div class="contacts-content">
+<h3 style="color:#12385b;margin:0 0 10px">Interne Namen</h3>
+<div class="grid3">
+<div><label>Name</label><input id="personName" placeholder="z. B. Johannes Wilhelm"></div>
+<div><label>Funktion</label><select id="personRole"><option>Bauleitung</option><option>Protokollführung</option><option value="Beides">Bauleitung und Protokollführung</option></select></div>
+<div><label>E-Mail-Adresse</label><input id="personMail" type="email" placeholder="name@hundhausen.de"></div>
+<div><button class="green" onclick="addPerson()">+ Internen Namen speichern</button></div>
+</div>
+<div id="peopleList"></div>
+
+<hr style="border:0;border-top:1px solid #cbd5dd;margin:18px 0">
+<h3 style="color:#12385b;margin:0 0 10px">Firmen und Ansprechpartner</h3>
+<div class="grid3">
+<div><label>Firma</label><input id="companyName" placeholder="z. B. Fa. Bremicker"></div>
+<div><label>Ansprechpartner</label><input id="companyContact" placeholder="Name"></div>
+<div><label>E-Mail-Adresse</label><input id="companyMail" type="email" placeholder="name@firma.de"></div>
+<div><button class="green" onclick="addCompany()">+ Firma speichern</button></div>
+</div>
+<div id="companyList"></div>
+</div>
+</details>
+
+<section class="section">
+<h2>3. Allgemeine Informationen (Freitext)</h2>
+<p class="hint" style="margin:0 0 8px">Kurze, verbindliche Hinweise ohne eigenen Bearbeitungsstatus – z. B. Arbeitsschutz, Ordnung, Zutrittszeiten. Für Punkte mit Status/Fälligkeit/Verantwortlichkeit weiterhin Punkt 4 „Neuen Punkt aufnehmen" nutzen.</p>
+<div id="generalNotesList"></div>
+<button class="grey" onclick="addGeneralNote()">+ Allgemeinen Hinweis hinzufügen</button>
+</section>
+
+<section class="section">
+<h2>4. Neuen Punkt aufnehmen</h2>
+<div class="form"><div class="grid3">
+<div><label>Hauptbereich</label><select id="area" onchange="buildings()"></select></div>
+<div><label>Bauteil / Unterbereich</label><select id="building" onchange="floors()"></select></div>
+<div id="floorBox"><label>Geschoss / Teilbereich</label><select id="floor"></select></div>
+<div><label>Punktart</label><select id="type" onchange="companyFields()"><option value="Allgemein">Allgemeiner Punkt</option><option value="Firma">Firma / Gewerk</option></select></div>
+<div id="companyPick" style="display:none"><label>Firma / Ansprechpartner auswählen</label><select id="companySelect" onchange="fillCompany()"></select></div>
+<div id="companyManual" style="display:none"><label>Firma individuell</label><input id="manualCompany"></div>
+<div id="contactManual" style="display:none"><label>Ansprechpartner individuell</label><input id="manualContact"></div>
+<div><label>Status</label><select id="status"><option value="BLOCKIERT">🟥 BLOCKIERT</option><option value="WICHTIG">🟧 WICHTIG</option><option value="IN ARBEIT" selected>🟨 IN ARBEIT</option><option value="ERLEDIGT">🟩 ERLEDIGT / FREIGEMELDET</option><option value="NICHT FÄLLIG">⬜ NICHT FÄLLIG</option></select></div>
+<div><label>Fällig am</label><input id="due" type="date"></div>
+<div><label>WHB-Kontrolle / Freigabe</label><input id="check"></div>
+
+<div class="full"><label>Aufgabe / verbindliches Ergebnis</label><textarea id="task" oninput="autoResize(this)"></textarea></div>
+<div class="full"><label>Notiz / Abhängigkeit / Folgegewerk / Hindernis</label><textarea id="notes" oninput="autoResize(this)"></textarea></div>
+
+<div class="full">
+<label>WHB-Anteil <span class="hint">(optional)</span></label>
+<textarea id="whbShare" oninput="autoResize(this)" placeholder="Welchen übergeordneten Beitrag leistet WHB?"></textarea>
+</div>
+
+<div class="full">
+<label>Beteiligte / unterstützende Firmen und Teilaufgaben <span class="hint">(optional)</span></label>
+<p class="hint" style="margin:0 0 7px">WHB kann hier ebenfalls ausgewählt werden. Für jede Firma wird eine separate Teilaufgabe direkt unter dem Hauptpunkt angezeigt. Mehrere Firmen sind möglich.</p>
+<div id="helperRows"></div>
+<button type="button" class="grey" onclick="addHelperRow()">+ Weitere Firma / WHB hinzufügen</button>
+</div>
+
+<div><button class="green" onclick="addTask()">+ Punkt aufnehmen</button></div>
+</div></div>
+</section>
+
+<section class="section"><h2>5. Aktive Punkte</h2>
+<div class="legend"><span class="badge blocked">🟥 BLOCKIERT</span><span class="badge important">🟧 WICHTIG</span><span class="badge working">🟨 IN ARBEIT</span><span class="badge notdue">⬜ NICHT FÄLLIG</span><span class="badge" style="background:#ffe0e2;color:#a0252d">⚠ ÜBERFÄLLIG</span></div>
+<p class="hint" style="margin:8px 0 0">Klicke auf einen Punkt, um Details, Notizen, WHB-Anteil und beteiligte Firmen ein- oder auszublenden.</p>
+<div id="active"></div>
+</section>
+
+<section class="section" id="completedSection"><h2>6. Erledigte Punkte / Historie der Punkte</h2><div id="completed"></div></section>
+
+<section class="section" id="distributionSection">
+<h2>7. E-Mail-Verteiler und Versand</h2>
+<p class="hint">Erledigte Punkte sind weder in der E-Mail noch in der PDF-Druckansicht enthalten. Doppelte E-Mail-Adressen werden automatisch entfernt. Die Punkte 0 (Projektkonfiguration), 2 (Firmen-/Kontaktverwaltung) und 7 (dieser Verteiler) erscheinen weder in der E-Mail noch im PDF-Ausdruck – sie dienen ausschließlich der internen Pflege der Daten.</p>
+
+<details class="section" id="mailTemplateBox" style="margin:0 0 16px">
+<summary>E-Mail-Textvorlage anpassen</summary>
+<div class="contacts-content">
+<p class="hint" style="margin:0 0 10px">Vorlage wählen oder Einleitung, Schlusstext und Signatur frei bearbeiten. Eigene Änderungen werden automatisch als „Eigene Vorlage" übernommen.</p>
+<div class="grid3">
+<div class="full"><label>Vorlage</label>
+<select id="mailTemplateSelect" onchange="applyMailTemplatePreset()">
+<option value="standard">Standard</option>
+<option value="kurz">Kurzform</option>
+<option value="foermlich">Förmlich</option>
+<option value="custom">Eigene Vorlage</option>
+</select>
+</div>
+</div>
+<div class="full" style="margin-top:10px"><label>Einleitungstext (nach der Anrede, vor den Terminangaben)</label>
+<textarea id="mailIntro" oninput="autoResize(this)" onchange="saveMailTemplate()"></textarea>
+</div>
+<div class="full" style="margin-top:10px"><label>Schlusstext (nach den Punkten, vor der Signatur)</label>
+<textarea id="mailOutro" oninput="autoResize(this)" onchange="saveMailTemplate()"></textarea>
+</div>
+<div class="full" style="margin-top:10px"><label>Signatur</label>
+<textarea id="mailSignature" oninput="autoResize(this)" onchange="saveMailTemplate()"></textarea>
+</div>
+</div>
+</details>
+
+<h3 style="color:#12385b">Fester Verteiler</h3>
+<div class="grid3">
+<div><label>Name / Funktion</label><input id="fixedName"></div>
+<div><label>E-Mail-Adresse</label><input id="fixedMail" type="email"></div>
+<div><label>Kategorie</label>
+<select id="fixedCategory">
+<option value="Projektleiter">Projektleiter</option>
+<option value="Bauleiter">Bauleiter</option>
+<option value="Poliere">Poliere</option>
+<option value="Sonstige Projektbeteiligte" selected>Sonstige Projektbeteiligte</option>
+</select>
+</div>
+</div>
+<div style="margin-top:8px"><button class="green" onclick="addRecipient('fixed')">+ Festen Empfänger hinzufügen</button></div>
+<div id="fixedList"></div>
+
+<h3 style="color:#12385b;margin-top:18px">Variabler Verteiler für diese Besprechung</h3>
+<div class="grid3">
+<div><label>Name / Funktion</label><input id="variableName"></div>
+<div><label>E-Mail-Adresse</label><input id="variableMail" type="email"></div>
+<div><button class="green" onclick="addRecipient('variable')">+ Variablen Empfänger hinzufügen</button></div>
+</div>
+<div id="variableList"></div>
+
+<h3 style="color:#12385b;margin-top:18px">Firmen im Verteiler</h3>
+<p class="hint" style="margin:0 0 8px">Firmen mit offenen Punkten oder als Teilnehmer markierte Firmen werden automatisch vorgeschlagen. Jede Firma kann unabhängig davon manuell per Häkchen hinzugefügt oder entfernt werden.</p>
+<button class="orange" onclick="updateAffected()">Vorschläge automatisch aktualisieren (offene Punkte + Teilnehmer)</button>
+<div id="companyDistList" style="margin-top:10px"></div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+<button class="grey" onclick="copyRecipients()">Aktive Empfänger kopieren</button>
+<button class="orange" onclick="copyMail()">E-Mail-Vorschau kopieren</button>
+<button class="green" onclick="openMail()">E-Mail im Standardprogramm öffnen</button>
+</div>
+</section>
+
+<section class="section" id="actionsSection">
+<h2>8. Speichern, Drucken &amp; Versenden</h2>
+<p class="hint" style="margin:0 0 10px">Zentrale Sammelstelle für alle Ausgabe-Optionen dieser Besprechung.</p>
+<div class="actions-bar">
+<button class="green" onclick="saveProtocolToHistory()">💾 Protokoll in Historie speichern</button>
+<button class="grey" onclick="window.print()">🖨️ Als PDF drucken / speichern</button>
+<button class="orange" onclick="copyMail()">📋 E-Mail-Vorschau kopieren</button>
+<button onclick="openMail()">✉️ E-Mail im Standardprogramm öffnen</button>
+<button class="green" onclick="exportHTML()">⬇️ Besprechungsdatei (HTML) speichern</button>
+</div>
+<p class="small-note hint" style="margin-top:8px">„E-Mail im Standardprogramm öffnen" befüllt Empfänger, Betreff und formatierten Protokolltext automatisch aus den Angaben unter Punkt 1 und 7.</p>
+
+<div class="actions-bar" style="margin-top:10px">
+<button class="green" onclick="sendInternalWithFile()">🏢 Protokoll + aktuelle HTML-Datei an Hundhausen-Mitarbeiter senden</button>
+</div>
+<p class="small-note hint" style="margin-top:8px">Lädt die aktuelle Besprechungsdatei herunter und öffnet einen E-Mail-Entwurf an interne Hundhausen-Empfänger (interne Namen + aktiver fester Verteiler). Die heruntergeladene Datei muss im E-Mail-Programm manuell als Anhang hinzugefügt werden – ein automatischer Anhang ist über mailto: technisch nicht möglich.</p>
+</section>
+
+<section class="section" id="historySection">
+<h2>9. Gespeicherte Protokolle (Historie)</h2>
+<p class="hint" style="margin:0 0 10px">Vollständige Zustände früherer Besprechungen. „Laden" ersetzt den aktuellen Bearbeitungsstand.</p>
+<div id="historyList"></div>
+</section>
+
+</div>
+<div class="notice" id="notice"></div>
+
+<script>
+const DEFAULT_STRUCTURE={
+"ALLGEMEINE INFORMATIONEN":{"Geschossübergreifend":["Allgemein"],"Arbeitsschutz":["Allgemein"],"Baustellenlogistik / ZuKo":["Allgemein"],"Allgemein":["Allgemein"]},
+"BAUTEILE":{"BT A/C – UG / Tiefgarage":["UG / Tiefgarage"],"Bauteil A":["5. OG","4. OG","3. OG","2. OG","1. OG","EG","-1. OG"],"Bauteil B":["Tiefgarage","EG"],"Bauteil C":["EG"],"Bauteil D":["EG"],"Bauteil S":["EG"]},
+"FASSADE":{"Allgemein":["Ohne Geschoss"],"Bauteil A":["Ohne Geschoss"],"Bauteil B":["Ohne Geschoss"],"Bauteil C":["Ohne Geschoss"],"Bauteil D":["Ohne Geschoss"],"Bauteil S":["Ohne Geschoss"]},
+"DÄCHER":{"Allgemein":["Dach"],"Bauteil A":["Dach"],"Bauteil B":["Dach"],"Bauteil C":["Dach"],"Bauteil D":["Dach"],"Bauteil S":["Dach"]}
+};
+const PRE=["Ambrock","Baupart","Beckhoff","Bender","Bremicker","Dübler","DWI","Hardes","Jaeger","Jansen","Keller","Kd-Plan","König","Neite","QLIMATE","Schlichter","Schwetlik","TGL","WHB"];
+const RECIPIENT_CATEGORIES=["Projektleiter","Bauleiter","Poliere","Sonstige Projektbeteiligte"];
+
+const MAIL_PRESETS={
+  standard:{
+    intro:"Guten Tag,\n\nnachfolgend das Protokoll bzw. die offenen Punkte aus der NU-Besprechung.",
+    outro:"Bitte prüfen Sie die Ihnen zugeordneten Punkte und melden Rückfragen zeitnah zurück.",
+    signature:"Mit freundlichen Grüßen\nW. Hundhausen Bauunternehmung GmbH"
+  },
+  kurz:{
+    intro:"Hallo zusammen,\n\nanbei die offenen Punkte aus der Besprechung.",
+    outro:"Bitte kurzfristig bearbeiten, danke.",
+    signature:"Viele Grüße\nHundhausen Bauunternehmung"
+  },
+  foermlich:{
+    intro:"Sehr geehrte Damen und Herren,\n\nim Rahmen der Nachunternehmerbesprechung wurden die nachfolgenden Punkte festgehalten und sind Bestandteil dieses Protokolls.",
+    outro:"Wir bitten um Kenntnisnahme sowie um fristgerechte Bearbeitung der genannten Punkte. Für Rückfragen stehen wir Ihnen gerne zur Verfügung.",
+    signature:"Mit freundlichen Grüßen\nim Auftrag\nW. Hundhausen Bauunternehmung GmbH"
+  }
+};
+
+let S=window.__NU_DATA__||{companies:PRE.map(company=>({company,name:"",mail:""})),people:[],tasks:[],fixed:[],variable:[],affected:[],structure:JSON.parse(JSON.stringify(DEFAULT_STRUCTURE)),generalNotes:[],participants:[],companyDist:{},mailTemplate:{preset:"standard",...MAIL_PRESETS.standard}};
+S.companies=S.companies||[];S.people=S.people||[];S.tasks=S.tasks||[];S.fixed=S.fixed||[];S.variable=S.variable||[];S.affected=S.affected||[];
+S.structure=S.structure||JSON.parse(JSON.stringify(DEFAULT_STRUCTURE));
+S.generalNotes=S.generalNotes||[];
+S.participants=S.participants||[];
+S.companyDist=S.companyDist||{};
+S.mailTemplate=S.mailTemplate||{preset:"standard",...MAIL_PRESETS.standard};
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const cls=s=>({BLOCKIERT:"blocked",WICHTIG:"important","IN ARBEIT":"working",ERLEDIGT:"done","NICHT FÄLLIG":"notdue"}[s]||"working");
+const statusIcon=s=>({BLOCKIERT:"🟥",WICHTIG:"🟧","IN ARBEIT":"🟨",ERLEDIGT:"🟩","NICHT FÄLLIG":"⬜"}[s]||"🟨");
+
+let openCards=new Set();
+
+function CFG(){return S.structure}
+function order(){return Object.keys(CFG())}
+
+function todayISO(){return new Date().toISOString().slice(0,10)}
+function isOverdue(t){return !!(t.due&&t.status!=="ERLEDIGT"&&t.due<todayISO())}
+
+function notice(t){$("notice").textContent=t;$("notice").style.display="block";setTimeout(()=>$("notice").style.display="none",3000)}
+
+function autoResize(el){if(!el)return;el.style.height="auto";el.style.height=el.scrollHeight+"px"}
+function autoResizeAll(){document.querySelectorAll("textarea").forEach(autoResize)}
+
+/* ---------- KW-Berechnung ---------- */
+function getISOWeek(date){
+  const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
+  d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return {week:Math.ceil((((d-yearStart)/86400000)+1)/7),year:d.getUTCFullYear()};
+}
+function fillKW(){
+  let v=$("meetingDate").value;
+  if(!v){$("meetingKW").value="";return}
+  let w=getISOWeek(new Date(v+"T12:00:00"));
+  $("meetingKW").value=`KW ${w.week}/${w.year}`;
+}
+
+/* ---------- Projektkonfiguration ---------- */
+
+function renderProjectConfig(){
+  $("cfgProjectTitle").value=S.meta_project||$("cfgProjectTitle").value;
+
+  let whbSelect=$("cfgWhb");
+  let currentWhb=whbSelect.value;
+  whbSelect.innerHTML=`<option value="">-- Auswahl --</option>`+S.people
+    .filter(p=>p.role==="Bauleitung"||p.role==="Beides")
+    .map(p=>`<option>${esc(p.name)}</option>`).join("");
+  if(currentWhb)whbSelect.value=currentWhb;
+
+  renderStructureConfig();
+  updateMetaDisplay();
+}
+
+function applyProjectConfig(){
+  updateMetaDisplay();
+  saveLocal(false);
+}
+
+function updateMetaDisplay(){
+  const title=$("cfgProjectTitle").value.trim()||"GAZ EN-Kreis";
+  const whb=$("cfgWhb").value.trim()||"–";
+  const pm=$("cfgProjectManager").value.trim()||"–";
+
+  $("metaProjectDisplay").textContent=title;
+  $("metaWhbDisplay").textContent=whb;
+  $("metaPmDisplay").textContent=pm;
+  $("headerSubtitle").textContent=title+" | Allgemeine Informationen – Bauteile – Fassade – Dächer";
+  document.title=title+" – NU-Besprechung";
+}
+
+function addArea(){
+  let name=$("newAreaName").value.trim();
+  if(!name)return notice("Bitte einen Namen für den Hauptbereich eingeben.");
+  if(S.structure[name])return notice("Dieser Hauptbereich existiert bereits.");
+  S.structure[name]={"Allgemein":["Allgemein"]};
+  $("newAreaName").value="";
+  renderStructureConfig();
+  buildings();
+  saveLocal(false);
+}
+
+function deleteArea(area){
+  if(!confirm(`Hauptbereich „${area}" inkl. aller Bauteile und Geschosse wirklich löschen?`))return;
+  delete S.structure[area];
+  renderStructureConfig();
+  buildings();
+  saveLocal(false);
+}
+
+function addBuilding(area){
+  let input=document.querySelector(`[data-new-building="${CSS.escape(area)}"]`);
+  let name=input.value.trim();
+  if(!name)return notice("Bitte einen Namen für das Bauteil eingeben.");
+  if(S.structure[area][name])return notice("Dieses Bauteil existiert bereits.");
+  S.structure[area][name]=["Allgemein"];
+  renderStructureConfig();
+  buildings();
+  saveLocal(false);
+}
+
+function deleteBuilding(area,building){
+  if(!confirm(`Bauteil „${building}" inkl. aller Geschosse wirklich löschen?`))return;
+  delete S.structure[area][building];
+  renderStructureConfig();
+  buildings();
+  saveLocal(false);
+}
+
+function addFloor(area,building){
+  let input=document.querySelector(`[data-new-floor="${CSS.escape(area)}|${CSS.escape(building)}"]`);
+  let name=input.value.trim();
+  if(!name)return notice("Bitte einen Namen für das Geschoss eingeben.");
+  if(S.structure[area][building].includes(name))return notice("Dieses Geschoss existiert bereits.");
+  S.structure[area][building].push(name);
+  renderStructureConfig();
+  floors();
+  saveLocal(false);
+}
+
+function deleteFloor(area,building,floor){
+  S.structure[area][building]=S.structure[area][building].filter(f=>f!==floor);
+  if(!S.structure[area][building].length)S.structure[area][building]=["Allgemein"];
+  renderStructureConfig();
+  floors();
+  saveLocal(false);
+}
+
+function renameEntry(path,value){
+  let parts=path.split("::");
+  if(parts.length===1){
+    let old=parts[0];
+    if(value===old||!value.trim())return;
+    let entry=S.structure[value]=S.structure[old];
+    delete S.structure[old];
+    if(!entry)S.structure[value]={"Allgemein":["Allgemein"]};
+  }else if(parts.length===2){
+    let [area,building]=parts;
+    if(value===building||!value.trim())return;
+    S.structure[area][value]=S.structure[area][building];
+    delete S.structure[area][building];
+  }else{
+    let [area,building,idx]=parts;
+    if(!value.trim())return;
+    S.structure[area][building][+idx]=value;
+  }
+  renderStructureConfig();
+  buildings();
+  saveLocal(false);
+}
+
+function areaCounts(area){
+  let bs=Object.keys(S.structure[area]);
+  let floorsTotal=bs.reduce((sum,b)=>sum+S.structure[area][b].length,0);
+  return {buildings:bs.length,floors:floorsTotal};
+}
+
+function renderStructureConfig(){
+  let box=$("structureConfig");
+  box.innerHTML="";
+
+  Object.keys(S.structure).forEach(area=>{
+    let c=areaCounts(area);
+    let details=document.createElement("details");
+    details.className="area-block";
+    details.open=true;
+    details.innerHTML=`
+      <summary>
+        <input class="area-title-input" value="${esc(area)}" onclick="event.stopPropagation()" onchange="renameEntry('${esc(area)}',this.value)">
+        <span class="area-count">${c.buildings} Bauteil(e) · ${c.floors} Geschoss(e)</span>
+        <button class="delete" title="Hauptbereich löschen" onclick="event.stopPropagation();deleteArea('${esc(area)}')">×</button>
+      </summary>
+      <div class="area-body">
+        <div id="buildings-${esc(area)}"></div>
+        <div class="add-inline">
+          <input data-new-building="${esc(area)}" placeholder="Neues Bauteil / Unterbereich">
+          <button class="grey" onclick="addBuilding('${esc(area)}')">+ Bauteil hinzufügen</button>
+        </div>
+      </div>
+    `;
+    box.append(details);
+
+    let buildingsBox=details.querySelector(`#buildings-${CSS.escape(area)}`);
+
+    Object.keys(S.structure[area]).forEach(building=>{
+      let card=document.createElement("div");
+      card.className="building-card";
+      card.innerHTML=`
+        <div class="building-card-head">
+          <input class="building-title-input" value="${esc(building)}" onchange="renameEntry('${esc(area)}::${esc(building)}',this.value)">
+          <span class="hint">${S.structure[area][building].length} Geschoss(e)</span>
+          <button class="delete" title="Bauteil löschen" onclick="deleteBuilding('${esc(area)}','${esc(building)}')">×</button>
+        </div>
+        <div class="floor-chips" id="floors-${esc(area)}-${esc(building)}"></div>
+        <div class="add-inline">
+          <input data-new-floor="${esc(area)}|${esc(building)}" placeholder="Neues Geschoss / Teilbereich">
+          <button class="grey" onclick="addFloor('${esc(area)}','${esc(building)}')">+ Geschoss</button>
+        </div>
+      `;
+      buildingsBox.append(card);
+
+      let floorsBox=card.querySelector(`#floors-${CSS.escape(area)}-${CSS.escape(building)}`);
+
+      S.structure[area][building].forEach((floor,idx)=>{
+        floorsBox.innerHTML+=`
+          <span class="floor-chip">
+            <input value="${esc(floor)}" onchange="renameEntry('${esc(area)}::${esc(building)}::${idx}',this.value)">
+            <button title="Geschoss löschen" onclick="deleteFloor('${esc(area)}','${esc(building)}','${esc(floor)}')">×</button>
+          </span>`;
+      });
+    });
+  });
+}
+
+/* ---------- Auswahlmenüs für Punkte ---------- */
+
+function buildings(){
+  let a=$("area").value;
+  if(!CFG()[a])a=Object.keys(CFG())[0];
+  $("area").value=a;
+  $("building").innerHTML=Object.keys(CFG()[a]).map(x=>`<option>${esc(x)}</option>`).join("");
+  floors();
+}
+function floors(){
+  let a=$("area").value,b=$("building").value;
+  if(!CFG()[a][b])b=Object.keys(CFG()[a])[0];
+  $("building").value=b;
+  $("floor").innerHTML=CFG()[a][b].map(x=>`<option>${esc(x)}</option>`).join("");
+  $("floorBox").style.display=a==="FASSADE"?"none":"block";
+}
+function companyFields(){let x=$("type").value==="Firma";["companyPick","companyManual","contactManual"].forEach(id=>$(id).style.display=x?"block":"none")}
+
+/* ---------- Personen ---------- */
+
+function renderPeople(){
+  let m=$("minutes"),cm=m.value;
+  m.innerHTML=`<option value="">-- Auswahl --</option>`;
+  $("peopleList").innerHTML="";
+  S.people.forEach((p,i)=>{
+    if(p.role==="Protokollführung"||p.role==="Beides")m.innerHTML+=`<option>${esc(p.name)}</option>`;
+    $("peopleList").innerHTML+=`<div class="row"><input value="${esc(p.name)}" onchange="S.people[${i}].name=this.value;saveLocal(false);renderPeople();renderProjectConfig();renderParticipants()"><input value="${esc(p.role)}" readonly><input value="${esc(p.mail)}" onchange="S.people[${i}].mail=this.value;saveLocal(false);renderParticipants()"><button class="delete" onclick="S.people.splice(${i},1);renderPeople();renderProjectConfig();renderParticipants();saveLocal(false)">×</button></div>`;
+  });
+  m.value=cm;
+  renderProjectConfig();
+}
+function addPerson(){let n=$("personName").value.trim(),r=$("personRole").value,e=$("personMail").value.trim();if(!n)return notice("Bitte Namen eingeben.");S.people.push({name:n,role:r,mail:e});$("personName").value=$("personMail").value="";renderPeople();renderParticipants();saveLocal(false)}
+
+/* ---------- Firmen ---------- */
+
+function helperOptions(selected=""){
+  return `<option value="">-- Firma / WHB auswählen --</option>`+
+    S.companies.map(c=>`<option value="${esc(c.company)}" ${c.company===selected?"selected":""}>${esc(c.company+(c.name?" – "+c.name:""))}</option>`).join("");
+}
+
+function renderCompanies(){
+  let q=$("companySelect");
+  q.innerHTML=`<option value="">-- Auswahl optional --</option>`;
+  $("companyList").innerHTML="";
+  S.companies.forEach((c,i)=>{
+    q.innerHTML+=`<option value="${i}">${esc(c.company+(c.name?" – "+c.name:""))}</option>`;
+    $("companyList").innerHTML+=`<div class="row"><input value="${esc(c.company)}" onchange="S.companies[${i}].company=this.value;renderCompanies();renderParticipants();renderCompanyDist();saveLocal(false)"><input value="${esc(c.name)}" onchange="S.companies[${i}].name=this.value;renderCompanies();renderParticipants();saveLocal(false)"><input value="${esc(c.mail)}" onchange="S.companies[${i}].mail=this.value;renderParticipants();renderCompanyDist();saveLocal(false)"><button class="delete" onclick="S.companies.splice(${i},1);renderCompanies();renderParticipants();renderCompanyDist();saveLocal(false)">×</button></div>`;
+  });
+}
+function addCompany(){let c=$("companyName").value.trim(),n=$("companyContact").value.trim(),e=$("companyMail").value.trim();if(!c)return notice("Bitte Firma eingeben.");S.companies.push({company:c,name:n,mail:e});$("companyName").value=$("companyContact").value=$("companyMail").value="";renderCompanies();renderParticipants();renderCompanyDist();saveLocal(false)}
+function fillCompany(){let i=$("companySelect").value;if(i==="")return;let c=S.companies[i];$("manualCompany").value=c.company;$("manualContact").value=c.name}
+
+/* ---------- Hilfsfirmen im Formular ---------- */
+
+function addHelperRow(helper={}){
+  const row=document.createElement("div");
+  row.className="helper-row";
+  row.innerHTML=`
+    <div><label>Firma / WHB</label><select class="helper-company">${helperOptions(helper.company||"")}</select></div>
+    <div><label>Aufgabe dieser Firma</label><textarea class="helper-description" oninput="autoResize(this)" placeholder="Kurze Beschreibung der Teilaufgabe">${esc(helper.task||"")}</textarea></div>
+    <div><label>Status</label>
+      <select class="helper-status">
+        <option value="BLOCKIERT" ${helper.status==="BLOCKIERT"?"selected":""}>🟥 BLOCKIERT</option>
+        <option value="WICHTIG" ${helper.status==="WICHTIG"?"selected":""}>🟧 WICHTIG</option>
+        <option value="IN ARBEIT" ${(!helper.status||helper.status==="IN ARBEIT")?"selected":""}>🟨 IN ARBEIT</option>
+        <option value="ERLEDIGT" ${helper.status==="ERLEDIGT"?"selected":""}>🟩 ERLEDIGT</option>
+        <option value="NICHT FÄLLIG" ${helper.status==="NICHT FÄLLIG"?"selected":""}>⬜ NICHT FÄLLIG</option>
+      </select>
+    </div>
+    <div><label>Fälligkeit</label><input class="helper-due" type="date" value="${helper.due||""}"></div>
+    <div><button type="button" class="delete" title="Teilaufgabe entfernen" onclick="this.closest('.helper-row').remove()">×</button></div>
+  `;
+  $("helperRows").append(row);
+  requestAnimationFrame(autoResizeAll);
+}
+function getHelperRows(){
+  return [...document.querySelectorAll("#helperRows .helper-row")].map(row=>({
+    company:row.querySelector(".helper-company").value.trim(),
+    task:row.querySelector(".helper-description").value.trim(),
+    status:row.querySelector(".helper-status").value,
+    due:row.querySelector(".helper-due").value
+  }));
+}
+
+/* ---------- Allgemeine Informationen (Freitext) ---------- */
+
+function renderGeneralNotes(){
+  let box=$("generalNotesList");box.innerHTML="";
+  if(!S.generalNotes.length){box.innerHTML=`<div class="empty">Noch keine allgemeinen Hinweise erfasst.</div>`;return}
+  S.generalNotes.forEach((n,i)=>{
+    let row=document.createElement("div");
+    row.className="freetext-item";
+    row.innerHTML=`<textarea oninput="autoResize(this)" onchange="S.generalNotes[${i}]=this.value;saveLocal(false)">${esc(n)}</textarea>
+      <button class="delete" title="Entfernen" onclick="S.generalNotes.splice(${i},1);renderGeneralNotes();saveLocal(false)">×</button>`;
+    box.append(row);
+  });
+  requestAnimationFrame(autoResizeAll);
+}
+function addGeneralNote(text=""){S.generalNotes.push(text);renderGeneralNotes();saveLocal(false)}
+
+/* ---------- Teilnehmer ---------- */
+
+function participantPool(){
+  let pool=[];
+  S.people.forEach(p=>pool.push({key:"person:"+p.name,name:p.name,mail:p.mail,group:"Interne Namen"}));
+  S.fixed.forEach(f=>pool.push({key:"fixed:"+f.name,name:f.name+(f.category?" ("+f.category+")":""),mail:f.mail,group:"Fester Verteiler"}));
+  S.companies.forEach(c=>pool.push({key:"company:"+c.company,name:c.company+(c.name?" – "+c.name:""),mail:c.mail,group:"Firmen",companyKey:c.company}));
+  return pool;
+}
+
+function isParticipantChecked(key){
+  return S.participants.some(p=>p.key===key&&p.checked);
+}
+
+function toggleParticipant(key,name,mail,companyKey){
+  let existing=S.participants.find(p=>p.key===key);
+  if(existing){existing.checked=!existing.checked}
+  else{S.participants.push({key,name,mail,companyKey:companyKey||null,checked:true})}
+  renderParticipants();saveLocal(false);
+}
+
+function renderParticipants(){
+  let box=$("participantGrid");
+  box.innerHTML="";
+  let pool=participantPool();
+  let groups={};
+  pool.forEach(p=>{(groups[p.group]??=[]).push(p)});
+  Object.keys(groups).forEach(g=>{
+    box.innerHTML+=`<div class="checkbox-group-title">${esc(g)}</div>`;
+    groups[g].forEach(p=>{
+      let checked=isParticipantChecked(p.key);
+      box.innerHTML+=`<label><input type="checkbox" ${checked?"checked":""} onchange="toggleParticipant('${esc(p.key).replace(/'/g,"\\'")}','${esc(p.name).replace(/'/g,"\\'")}','${esc(p.mail).replace(/'/g,"\\'")}','${p.companyKey?esc(p.companyKey).replace(/'/g,"\\'"):""}')">${esc(p.name)}</label>`;
+    });
+  });
+  renderManualParticipants();
+}
+
+function addManualParticipant(){
+  let n=$("manualParticipantName").value.trim(),m=$("manualParticipantMail").value.trim();
+  if(!n)return notice("Bitte Namen eingeben.");
+  S.participants.push({key:"manual:"+Date.now(),name:n,mail:m,companyKey:null,checked:true,manual:true});
+  $("manualParticipantName").value=$("manualParticipantMail").value="";
+  renderParticipants();saveLocal(false);
+}
+function removeManualParticipant(key){
+  S.participants=S.participants.filter(p=>p.key!==key);
+  renderParticipants();saveLocal(false);
+}
+function renderManualParticipants(){
+  let box=$("manualParticipantList");box.innerHTML="";
+  S.participants.filter(p=>p.manual).forEach(p=>{
+    box.innerHTML+=`<div class="row" style="grid-template-columns:1fr 1fr 45px">
+      <input value="${esc(p.name)}" readonly><input value="${esc(p.mail)}" readonly>
+      <button class="delete" onclick="removeManualParticipant('${p.key}')">×</button></div>`;
+  });
+}
+
+/* ---------- Punkte ---------- */
+
+function addTask(){
+  let t=$("task").value.trim(),type=$("type").value,c=$("manualCompany").value.trim();
+  let helpers=getHelperRows();
+  if(!t)return notice("Bitte Aufgabe eintragen.");
+  if(type==="Firma"&&!c)return notice("Bitte Firma auswählen oder eintragen.");
+  const incomplete=helpers.find(h=>(h.company&&!h.task)||(!h.company&&h.task));
+  if(incomplete)return notice("Bei jeder Hilfsfirma müssen Firma und Aufgabe ausgefüllt sein.");
+
+  S.tasks.push({
+    id:"M-"+Date.now(),
+    area:$("area").value,building:$("building").value,floor:$("floor").value,
+    type,company:type==="Firma"?c:"",contact:type==="Firma"?$("manualContact").value.trim():"",
+    status:$("status").value,due:$("due").value,check:$("check").value,
+    task:t,notes:$("notes").value,whbShare:$("whbShare").value.trim(),
+    helpers:helpers.filter(h=>h.company&&h.task)
+  });
+
+  ["task","notes","due","check","whbShare"].forEach(x=>$(x).value="");
+  $("helperRows").innerHTML="";
+  renderTasks();saveLocal(false);
+}
+
+function sortT(a,b){
+  let ord=order();
+  let z=ord.indexOf(a.area)-ord.indexOf(b.area);if(z)return z;
+  let ba=Object.keys(CFG()[a.area]||{}),bb=Object.keys(CFG()[b.area]||{});
+  z=ba.indexOf(a.building)-bb.indexOf(b.building);if(z)return z;
+  let fa=(CFG()[a.area]||{})[a.building]||[],fb=(CFG()[b.area]||{})[b.building]||[];
+  z=fa.indexOf(a.floor)-fb.indexOf(b.floor);if(z)return z;
+  if(a.type!==b.type)return a.type==="Allgemein"?-1:1;
+  return (a.company||"").localeCompare(b.company||"");
+}
+
+function renderTasks(){
+  renderArea("active",S.tasks.filter(x=>x.status!=="ERLEDIGT"),false);
+  renderArea("completed",S.tasks.filter(x=>x.status==="ERLEDIGT"),true);
+  requestAnimationFrame(autoResizeAll);
+}
+
+function renderArea(id,list,done){
+  let root=$(id);root.innerHTML="";
+  if(!list.length){root.innerHTML=`<div class="empty">${done?"Noch keine erledigten Punkte.":"Keine aktiven Punkte."}</div>`;return}
+  let g={};
+  [...list].sort(sortT).forEach(t=>{
+    g[t.area]??={};g[t.area][t.building]??={};g[t.area][t.building][t.floor]??={a:[],f:{}};
+    let x=g[t.area][t.building][t.floor];
+    if(t.type==="Allgemein")x.a.push(t);else(x.f[t.company]??=[]).push(t);
+  });
+  order().forEach(a=>{
+    if(!g[a])return;
+    root.innerHTML+=`<h2 style="margin-top:20px">${a}</h2>`;
+    Object.keys(CFG()[a]).forEach(b=>{
+      if(!g[a][b])return;
+      let box=document.createElement("div");box.className="building";
+      box.innerHTML=`<div class="building-head"><h3>${esc(b)}</h3></div>`;
+      CFG()[a][b].forEach(f=>{
+        if(!g[a][b][f])return;
+        let d=g[a][b][f],fl=document.createElement("div");fl.className="floor";
+        if(a!=="FASSADE")fl.innerHTML=`<div class="floor-head">${esc(f)}</div>`;
+        let ge=document.createElement("div");ge.className="group";
+        ge.innerHTML=`<div class="group-head">Allgemeine Punkte</div>`;
+        ge.innerHTML+=d.a.length?"":`<div class="empty">Keine allgemeinen Punkte.</div>`;
+        d.a.forEach(t=>ge.append(card(t)));fl.append(ge);
+        Object.keys(d.f).sort().forEach(c=>{
+          let q=document.createElement("div");q.className="group";
+          q.innerHTML=`<div class="group-head company">${esc(c)}${d.f[c][0].contact?" | "+esc(d.f[c][0].contact):""}</div>`;
+          d.f[c].forEach(t=>q.append(card(t)));fl.append(q);
+        });
+        box.append(fl);
+      });
+      root.append(box);
+    });
+  });
+}
+
+function statusOptions(current){
+  return `<option ${current==="BLOCKIERT"?"selected":""}>BLOCKIERT</option>
+    <option ${current==="WICHTIG"?"selected":""}>WICHTIG</option>
+    <option ${current==="IN ARBEIT"?"selected":""}>IN ARBEIT</option>
+    <option ${current==="ERLEDIGT"?"selected":""}>ERLEDIGT</option>
+    <option ${current==="NICHT FÄLLIG"?"selected":""}>NICHT FÄLLIG</option>`;
+}
+
+function toggleCard(id){
+  if(openCards.has(id))openCards.delete(id);else openCards.add(id);
+  renderTasks();
+}
+
+function card(t){
+  let d=document.createElement("div");
+  const overdue=isOverdue(t);
+  const isOpen=openCards.has(t.id);
+  d.className=`card ${cls(t.status)}${overdue?" overdue":""}${isOpen?" open":""}`;
+
+  let preview=(t.task||"").split("\n")[0];
+  if(preview.length>90)preview=preview.slice(0,90)+"…";
+
+  const whbBlock=`
+    <div class="whb-share">
+      <div class="mini">WHB-Anteil <span class="hint">(optional)</span></div>
+      <textarea oninput="autoResize(this)" onclick="event.stopPropagation()" onchange="edit('${t.id}','whbShare',this.value)" placeholder="WHB-Anteil ergänzen">${esc(t.whbShare||"")}</textarea>
+    </div>`;
+
+  const helperBlocks=(t.helpers||[]).map((h,i)=>`
+    <div class="helper-task" onclick="event.stopPropagation()">
+      <div class="helper-task-head">
+        <span>${statusIcon(h.status)}</span>
+        <strong>${esc(h.company)}</strong>
+        <select onchange="editHelper('${t.id}',${i},'status',this.value)">${statusOptions(h.status)}</select>
+        <label style="margin:0 0 0 auto">Fällig: <input type="date" value="${h.due||""}" onchange="editHelper('${t.id}',${i},'due',this.value)"></label>
+        <button class="delete" title="Hilfsfirma entfernen" onclick="deleteHelper('${t.id}',${i})">×</button>
+      </div>
+      <textarea oninput="autoResize(this)" onchange="editHelper('${t.id}',${i},'task',this.value)">${esc(h.task)}</textarea>
+    </div>`).join("");
+
+  d.innerHTML=`
+    <div class="card-summary" onclick="toggleCard('${t.id}')">
+      <span class="toggle-arrow">▶</span>
+      <span class="status-symbol" title="${esc(t.status)}">${statusIcon(t.status)}</span>
+      <span class="card-task-preview">${esc(preview)}</span>
+      <span class="due-inline ${overdue?"overdue-inline":""}">${t.due?("Fällig: "+t.due):"ohne Termin"}${overdue?" ⚠":""}</span>
+      <span class="point-id">${esc(t.id)}</span>
+    </div>
+
+    <div class="card-body">
+      <div class="card-head">
+        <select class="status-select" onclick="event.stopPropagation()" onchange="edit('${t.id}','status',this.value)">${statusOptions(t.status)}</select>
+        <label class="due-box ${overdue?"overdue-label":""}" onclick="event.stopPropagation()">
+          Fälligkeit: <input type="date" value="${t.due||""}" onchange="edit('${t.id}','due',this.value)">
+          ${overdue?`<span class="overdue-note">⚠ Überfällig</span>`:""}
+        </label>
+        <button class="delete" onclick="event.stopPropagation();S.tasks=S.tasks.filter(x=>x.id!=='${t.id}');renderTasks();saveLocal(false)">×</button>
+      </div>
+
+      <div class="card-line" onclick="event.stopPropagation()"><label>Aufgabe</label>
+        <textarea oninput="autoResize(this)" onchange="edit('${t.id}','task',this.value)">${esc(t.task)}</textarea>
+      </div>
+
+      <div class="card-line" onclick="event.stopPropagation()"><label>Notiz / Abhängigkeit</label>
+        <textarea oninput="autoResize(this)" onchange="edit('${t.id}','notes',this.value)">${esc(t.notes)}</textarea>
+      </div>
+
+      <div onclick="event.stopPropagation()">${whbBlock}</div>
+
+      <div class="compact-check" onclick="event.stopPropagation()">
+        <label>WHB-Kontrolle / Freigabe</label>
+        <input value="${esc(t.check)}" onchange="edit('${t.id}','check',this.value)">
+      </div>
+
+      ${helperBlocks}
+    </div>
+  `;
+  return d;
+}
+
+function edit(id,k,v){let t=S.tasks.find(x=>x.id===id);t[k]=v;renderTasks();saveLocal(false)}
+function editHelper(id,i,k,v){let t=S.tasks.find(x=>x.id===id);if(!t||!t.helpers||!t.helpers[i])return;t.helpers[i][k]=v;renderTasks();saveLocal(false)}
+function deleteHelper(id,i){let t=S.tasks.find(x=>x.id===id);if(!t||!t.helpers)return;t.helpers.splice(i,1);renderTasks();saveLocal(false)}
+
+/* ---------- Verteiler ---------- */
+
+function addRecipient(type){
+  let n=$(type+"Name").value.trim(),e=$(type+"Mail").value.trim();
+  if(!e)return notice("Bitte E-Mail-Adresse eingeben.");
+  let r={name:n,mail:e,active:true};
+  if(type==="fixed")r.category=$("fixedCategory").value;
+  S[type].push(r);
+  $(type+"Name").value=$(type+"Mail").value="";
+  renderRecipients();saveLocal(false);
+}
+
+function updateAffected(){
+  let toActivate=new Set();
+  S.tasks.filter(t=>t.status!=="ERLEDIGT").forEach(t=>{
+    if(t.type==="Firma"&&t.company)toActivate.add(t.company);
+    (t.helpers||[]).filter(h=>h.status!=="ERLEDIGT").forEach(h=>{if(h.company)toActivate.add(h.company)});
+  });
+  S.participants.filter(p=>p.checked&&p.companyKey).forEach(p=>toActivate.add(p.companyKey));
+
+  toActivate.forEach(companyName=>{
+    let c=S.companies.find(x=>x.company===companyName);
+    if(c?.mail)S.companyDist[companyName]=true;
+  });
+
+  renderCompanyDist();saveLocal(false);
+  notice("Firmenvorschläge aktualisiert.");
+}
+
+function toggleCompanyDist(companyName,checked){
+  S.companyDist[companyName]=checked;
+  saveLocal(false);
+}
+
+function renderCompanyDist(){
+  let box=$("companyDistList");box.innerHTML="";
+  if(!S.companies.length){box.innerHTML=`<div class="empty">Keine Firmen erfasst.</div>`;return}
+  S.companies.forEach(c=>{
+    let checked=!!S.companyDist[c.company];
+    let hasOpenTask=S.tasks.some(t=>t.status!=="ERLEDIGT"&&((t.type==="Firma"&&t.company===c.company)||(t.helpers||[]).some(h=>h.company===c.company&&h.status!=="ERLEDIGT")));
+    let isParticipant=S.participants.some(p=>p.checked&&p.companyKey===c.company);
+    let tag=[hasOpenTask?"offener Punkt":null,isParticipant?"Teilnehmer":null].filter(Boolean).join(", ");
+    box.innerHTML+=`<div class="company-dist-row">
+      <input type="checkbox" ${checked?"checked":""} ${c.mail?"":"disabled title='Keine E-Mail hinterlegt'"} onchange="toggleCompanyDist('${esc(c.company).replace(/'/g,"\\'")}',this.checked)">
+      <span>${esc(c.company)}${c.name?" – "+esc(c.name):""}${tag?` <span class="hint">(${tag})</span>`:""}</span>
+      <span class="hint">${esc(c.mail)||"keine E-Mail hinterlegt"}</span>
+      <span></span>
+    </div>`;
+  });
+}
+
+function renderRecipients(){
+  const fixedList=$("fixedList");
+  fixedList.innerHTML="";
+  RECIPIENT_CATEGORIES.forEach(category=>{
+    const group=document.createElement("div");
+    group.className="recipient-group";
+    group.innerHTML=`<div class="recipient-group-head">${category}</div>`;
+    const inCategory=S.fixed.filter(r=>(r.category||"Sonstige Projektbeteiligte")===category);
+    if(!inCategory.length)group.innerHTML+=`<div class="empty">Keine Empfänger in dieser Kategorie.</div>`;
+    S.fixed.forEach((r,i)=>{
+      const rc=r.category||"Sonstige Projektbeteiligte";
+      if(rc!==category)return;
+      group.innerHTML+=`
+        <div class="recipient-category">
+          <input type="checkbox" ${r.active?"checked":""} onchange="S.fixed[${i}].active=this.checked;saveLocal(false)">
+          <input value="${esc(r.name)}" onchange="S.fixed[${i}].name=this.value;saveLocal(false)">
+          <input value="${esc(r.mail)}" onchange="S.fixed[${i}].mail=this.value;saveLocal(false)">
+          <select onchange="S.fixed[${i}].category=this.value;renderRecipients();saveLocal(false)">
+            ${RECIPIENT_CATEGORIES.map(cat=>`<option ${cat===rc?"selected":""}>${cat}</option>`).join("")}
+          </select>
+          <button class="delete" onclick="S.fixed.splice(${i},1);renderRecipients();saveLocal(false)">×</button>
+        </div>`;
+    });
+    fixedList.append(group);
+  });
+
+  let el=$("variableList");el.innerHTML="";
+  S.variable.forEach((r,i)=>{
+    el.innerHTML+=`<div class="recipient">
+      <input type="checkbox" ${r.active?"checked":""} onchange="S.variable[${i}].active=this.checked;saveLocal(false)">
+      <input value="${esc(r.name)}" onchange="S.variable[${i}].name=this.value;saveLocal(false)">
+      <input value="${esc(r.mail)}" onchange="S.variable[${i}].mail=this.value;saveLocal(false)">
+      <span>Nur diese Besprechung</span>
+      <button class="delete" onclick="S.variable.splice(${i},1);renderRecipients();saveLocal(false)">×</button>
+    </div>`;
+  });
+
+  renderCompanyDist();
+}
+
+function recipients(){
+  let a=[...S.fixed,...S.variable].filter(x=>x.active&&x.mail).map(x=>x.mail.trim());
+  S.companies.forEach(c=>{if(S.companyDist[c.company]&&c.mail)a.push(c.mail.trim())});
+  return [...new Set(a)];
+}
+
+function internalRecipients(){
+  let a=[];
+  S.fixed.filter(r=>r.active&&r.mail).forEach(r=>a.push(r.mail.trim()));
+  S.people.filter(p=>p.mail).forEach(p=>a.push(p.mail.trim()));
+  return [...new Set(a)];
+}
+
+/* ---------- E-Mail-Textvorlage ---------- */
+
+function renderMailTemplate(){
+  let t=S.mailTemplate||{preset:"standard",...MAIL_PRESETS.standard};
+  $("mailTemplateSelect").value=t.preset||"custom";
+  $("mailIntro").value=t.intro||"";
+  $("mailOutro").value=t.outro||"";
+  $("mailSignature").value=t.signature||"";
+  requestAnimationFrame(()=>{autoResize($("mailIntro"));autoResize($("mailOutro"));autoResize($("mailSignature"))});
+}
+
+function applyMailTemplatePreset(){
+  let p=$("mailTemplateSelect").value;
+  if(p==="custom"){saveMailTemplate();return}
+  let preset=MAIL_PRESETS[p];
+  $("mailIntro").value=preset.intro;
+  $("mailOutro").value=preset.outro;
+  $("mailSignature").value=preset.signature;
+  S.mailTemplate={preset:p,...preset};
+  saveLocal(false);
+  autoResize($("mailIntro"));autoResize($("mailOutro"));autoResize($("mailSignature"));
+}
+
+function saveMailTemplate(){
+  S.mailTemplate={
+    preset:"custom",
+    intro:$("mailIntro").value,
+    outro:$("mailOutro").value,
+    signature:$("mailSignature").value
+  };
+  $("mailTemplateSelect").value="custom";
+  saveLocal(false);
+}
+
+function mailText(){
+  let p=$("cfgProjectTitle").value||"GAZ EN-Kreis",d=$("meetingDate").value||"",kw=$("meetingKW").value||"",ort=$("meetingOrt").value||"";
+  let author=$("minutesCustom").value.trim()||$("minutes").value.trim()||"–";
+  let tpl=S.mailTemplate||MAIL_PRESETS.standard;
+  let x=`Betreff: ${p} / NU-Besprechung ${d}${kw?" ("+kw+")":""}\n\n${tpl.intro||MAIL_PRESETS.standard.intro}\n\nDatum: ${d}${kw?" – "+kw:""} | Ort/Format: ${ort} | Protokollführung: ${author}\n`;
+
+  let participantsChecked=S.participants.filter(p=>p.checked).map(p=>p.name);
+  if(participantsChecked.length)x+=`Teilnehmer: ${participantsChecked.join(", ")}\n`;
+  if($("ccList").value.trim())x+=`CC: ${$("ccList").value.trim()}\n`;
+
+  if(S.generalNotes.filter(n=>n.trim()).length){
+    x+=`\nALLGEMEINE INFORMATIONEN:\n`;
+    S.generalNotes.filter(n=>n.trim()).forEach(n=>x+=` - ${n}\n`);
+  }
+
+  let last="";
+  [...S.tasks].filter(t=>t.status!=="ERLEDIGT").sort(sortT).forEach(t=>{
+    let k=t.area+"|"+t.building+"|"+t.floor;
+    if(k!==last){x+=`\n${t.area} – ${t.building}${t.area==="FASSADE"?"":" – "+t.floor}\n----------------------------------------\n`;last=k}
+    x+=`\n[${t.status}] ${t.type==="Firma"?t.company:"ALLGEMEIN"}\nAufgabe: ${t.task}\n`;
+    if(t.notes)x+=`Notiz: ${t.notes}\n`;
+    if(t.whbShare)x+=`WHB-Anteil: ${t.whbShare}\n`;
+    if(t.due)x+=`Fällig: ${t.due}\n`;
+    (t.helpers||[]).forEach(h=>{
+      x+=`Anteil ${h.company}: ${h.task}${h.due?" (Fällig: "+h.due+")":""}\n`;
+    });
+  });
+
+  if(tpl.outro)x+=`\n${tpl.outro}\n`;
+  return x+"\n"+(tpl.signature||MAIL_PRESETS.standard.signature);
+}
+
+function copyRecipients(){navigator.clipboard.writeText(recipients().join("; "));notice("Aktive Empfänger wurden kopiert.")}
+function copyMail(){navigator.clipboard.writeText(mailText());notice("E-Mail-Vorschau wurde kopiert.")}
+function openMail(){
+  let to=recipients().join(";");
+  let cc=$("ccList").value.trim();
+  let sub=encodeURIComponent(($("cfgProjectTitle").value||"GAZ EN-Kreis")+" / NU-Besprechung "+($("meetingDate").value||""));
+  let body=encodeURIComponent(mailText().replace(/^Betreff:.*\n\n/,""));
+  window.location.href=`mailto:${to}?cc=${encodeURIComponent(cc)}&subject=${sub}&body=${body}`;
+}
+
+function sendInternalWithFile(){
+  const to=internalRecipients();
+  if(!to.length)return notice("Keine internen E-Mail-Adressen im festen Verteiler/den internen Namen hinterlegt.");
+
+  exportHTML();
+
+  const sub=encodeURIComponent(($("cfgProjectTitle").value||"GAZ EN-Kreis")+" / NU-Besprechung "+($("meetingDate").value||"")+" – Protokolldatei");
+  const body=encodeURIComponent(
+    mailText().replace(/^Betreff:.*\n\n/,"")
+    +"\n\n---\nHinweis: Die aktuelle Besprechungsdatei (HTML) wurde soeben heruntergeladen. Bitte diese Datei aus dem Download-Ordner manuell an diese E-Mail anhängen, bevor sie versendet wird."
+  );
+
+  setTimeout(()=>{
+    window.location.href=`mailto:${to.join(";")}?subject=${sub}&body=${body}`;
+  },400);
+
+  notice("Datei wird heruntergeladen – bitte im E-Mail-Programm manuell anhängen.");
+}
+
+/* ---------- Meta / Speichern ---------- */
+
+function meta(){
+  return {
+    project:$("cfgProjectTitle").value,
+    meetingNo:$("meetingNo").value,
+    meetingDate:$("meetingDate").value,
+    meetingKW:$("meetingKW").value,
+    meetingOrt:$("meetingOrt").value,
+    nextDate:$("nextDate").value,
+    whb:$("cfgWhb").value,
+    whbCustom:"",
+    minutes:$("minutes").value,
+    minutesCustom:$("minutesCustom").value,
+    projectManager:$("cfgProjectManager").value,
+    docState:$("docState").value,
+    ccList:$("ccList").value
+  };
+}
+function loadMeta(m){
+  if(!m)return;
+  if($("cfgProjectTitle"))$("cfgProjectTitle").value=m.project||"";
+  if($("meetingNo"))$("meetingNo").value=m.meetingNo||"";
+  if($("meetingDate"))$("meetingDate").value=m.meetingDate||"";
+  if($("meetingKW"))$("meetingKW").value=m.meetingKW||"";
+  if($("meetingOrt"))$("meetingOrt").value=m.meetingOrt||"Baustelle";
+  if($("nextDate"))$("nextDate").value=m.nextDate||"";
+  if($("cfgWhb"))$("cfgWhb").value=m.whb||"";
+  if($("minutes"))$("minutes").value=m.minutes||"";
+  if($("minutesCustom"))$("minutesCustom").value=m.minutesCustom||"";
+  if($("cfgProjectManager"))$("cfgProjectManager").value=m.projectManager||"";
+  if($("docState"))$("docState").value=m.docState||"";
+  if($("ccList"))$("ccList").value=m.ccList||"";
+  updateMetaDisplay();
+  if(!m.meetingKW)fillKW();
+}
+
+function saveLocal(msg=true){localStorage.setItem("NU_GAZ",JSON.stringify({meta:meta(),...S}));if(msg)notice("Zwischenspeicher aktualisiert.")}
+function loadLocal(){let x=localStorage.getItem("NU_GAZ");if(!x)return notice("Kein Zwischenspeicher vorhanden.");let d=JSON.parse(x);S=d;S.structure=S.structure||JSON.parse(JSON.stringify(DEFAULT_STRUCTURE));S.generalNotes=S.generalNotes||[];S.participants=S.participants||[];S.companyDist=S.companyDist||{};S.mailTemplate=S.mailTemplate||{preset:"standard",...MAIL_PRESETS.standard};loadMeta(d.meta);renderAll();notice("Zwischenspeicher geladen.")}
+
+function shortName(n){let p=n.trim().split(/\s+/);if(p.length<2)return(p[0]||"OhneName").slice(0,4);return(p[p.length-1].slice(0,2)+p[0].slice(0,2)).replace(/[^a-zA-Z0-9]/g,"")}
+
+function exportHTML(){
+  let d={meta:meta(),...S};
+  let old=$("dataExport");if(old)old.remove();
+  let q=document.createElement("script");q.id="dataExport";
+  q.textContent="window.__NU_DATA__="+JSON.stringify(d)+";";
+  document.head.append(q);
+  let date=($("meetingDate").value||new Date().toISOString().slice(0,10)).replaceAll("-","_"),
+      name=$("minutesCustom").value.trim()||$("minutes").value.trim()||"OhneName",
+      file=`${date}_NU_Besprechung_GAZ_${shortName(name)}.html`;
+  let blob=new Blob(["<!DOCTYPE html>\n"+document.documentElement.outerHTML],{type:"text/html;charset=utf-8"}),
+      a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=file;a.click();URL.revokeObjectURL(a.href);
+  notice("Besprechungsdatei gespeichert: "+file);
+}
+
+/* ---------- Historie gespeicherter Protokolle ---------- */
+
+function saveProtocolToHistory(){
+  let snapshot={meta:meta(),...JSON.parse(JSON.stringify(S))};
+  let entry={
+    id:Date.now(),
+    project:snapshot.meta.project||"Unbenanntes Projekt",
+    date:snapshot.meta.meetingDate||"",
+    kw:snapshot.meta.meetingKW||"",
+    pointCount:S.tasks.filter(t=>t.status!=="ERLEDIGT").length,
+    snapshot
+  };
+  let all=JSON.parse(localStorage.getItem("NU_HISTORY")||"[]");
+  all.unshift(entry);
+  localStorage.setItem("NU_HISTORY",JSON.stringify(all));
+  renderHistory();
+  notice("Protokoll in Historie gespeichert.");
+}
+
+function renderHistory(){
+  let all=JSON.parse(localStorage.getItem("NU_HISTORY")||"[]");
+  let box=$("historyList");
+  if(!all.length){box.innerHTML=`<div class="empty">Noch keine gespeicherten Protokolle.</div>`;return}
+  box.innerHTML=all.map(p=>`
+    <div class="history-item">
+      <div class="meta"><b>${esc(p.project)}</b> – ${esc(p.date)} ${p.kw?"("+esc(p.kw)+")":""} – ${p.pointCount} offene Punkte</div>
+      <div>
+        <button class="grey" onclick="loadProtocolFromHistory(${p.id})">Laden</button>
+        <button class="delete" onclick="deleteProtocolFromHistory(${p.id})">Löschen</button>
+      </div>
+    </div>`).join("");
+}
+
+function loadProtocolFromHistory(id){
+  if(!confirm("Aktueller Bearbeitungsstand wird durch das gespeicherte Protokoll ersetzt. Fortfahren?"))return;
+  let all=JSON.parse(localStorage.getItem("NU_HISTORY")||"[]");
+  let entry=all.find(x=>x.id===id);
+  if(!entry)return;
+  S=entry.snapshot;
+  S.structure=S.structure||JSON.parse(JSON.stringify(DEFAULT_STRUCTURE));
+  S.generalNotes=S.generalNotes||[];
+  S.participants=S.participants||[];
+  S.companyDist=S.companyDist||{};
+  S.mailTemplate=S.mailTemplate||{preset:"standard",...MAIL_PRESETS.standard};
+  loadMeta(entry.snapshot.meta);
+  renderAll();
+  window.scrollTo(0,0);
+  notice("Protokoll geladen: "+entry.project+" ("+entry.date+")");
+}
+
+function deleteProtocolFromHistory(id){
+  let all=JSON.parse(localStorage.getItem("NU_HISTORY")||"[]");
+  all=all.filter(x=>x.id!==id);
+  localStorage.setItem("NU_HISTORY",JSON.stringify(all));
+  renderHistory();
+}
+
+function renderAll(){
+  renderPeople();renderCompanies();renderTasks();renderRecipients();buildings();companyFields();renderProjectConfig();
+  renderGeneralNotes();renderParticipants();renderMailTemplate();
+  requestAnimationFrame(autoResizeAll);
+}
+
+$("meetingDate").value=new Date().toISOString().slice(0,10);
+$("area").innerHTML=order().map(x=>`<option>${x}</option>`).join("");
+buildings();companyFields();
+if(window.__NU_DATA__)loadMeta(S.meta);
+fillKW();
+renderAll();
+renderHistory();
+</script>
+
+</body></html>

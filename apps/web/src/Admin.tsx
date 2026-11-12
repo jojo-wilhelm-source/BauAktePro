@@ -1,7 +1,8 @@
 /** Administration: all users and projects of the company; lock/unlock, admin and firm-admin rights. */
 import { useCallback, useEffect, useState } from 'react';
 import { formatDate, roleLabel } from '@bap/domain';
-import { api } from './api';
+import { api, ApiError, getToken } from './api';
+import { Foto } from './ui/Foto';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 
@@ -28,6 +29,7 @@ export function AdminPage({ meId, run, onOpenProject }: { meId: string; run: Run
         <label className="search"><Icon name="suche" size={16} /><input placeholder="Person oder Firma suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       </PageHeader>
       <div className="list-pad admin">
+        <FirmaSection run={run} />
         <div>
           <div className="group-title">Projekte ({d.projects.length})</div>
           <div className="group">
@@ -130,5 +132,32 @@ function AssignSheet({ u, projects, onClose, run }: { u: User; projects: Project
         </>
       )}
     </Sheet>
+  );
+}
+
+/** Own company: short name (e.g. "WHB") and logo for the report headers (Bautagebuch, Protokolle). */
+function FirmaSection({ run }: { run: Run }) {
+  const [c, setC] = useState<{ name: string; kurzname: string | null; has_logo: boolean } | null>(null);
+  const [v, setV] = useState(0);
+  useEffect(() => void api<typeof c>('/firma').then(setC), [v]);
+  if (!c) return null;
+  const upload = (f: File) => run(async () => {
+    const fd = new FormData();
+    fd.set('file', f);
+    const r = await fetch('/api/admin/firma', { method: 'POST', body: fd, headers: { authorization: `Bearer ${getToken()}` } });
+    if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
+    setV(v + 1);
+  }, 'Logo gespeichert');
+  return (
+    <div>
+      <div className="group-title">Eigene Firma</div>
+      <div className="group">
+        <div className="row"><span className="k">{c.name}</span>{c.has_logo && <Foto id={`logo${v}`} src="/api/firma/logo" size={36} />}</div>
+        <div className="row"><span className="k">Kurzname (z. B. WHB)</span>
+          <input defaultValue={c.kurzname ?? ''} onBlur={(e) => e.target.value !== (c.kurzname ?? '') && void run(async () => { await api('/admin/firma', { method: 'POST', body: { kurzname: e.target.value } }); setV(v + 1); }, 'Kurzname gespeichert')} /></div>
+        <label className="row action">Logo hochladen (JPG/PNG)<input type="file" accept="image/png,image/jpeg" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }} /></label>
+      </div>
+      <div className="footnote">Logo und Kurzname erscheinen im Kopf von Bautagebuch und Protokollen; der Kurzname auch bei „Anteil“ und „Kontrolle“ in der Besprechung.</div>
+    </div>
   );
 }

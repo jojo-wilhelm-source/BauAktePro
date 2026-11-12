@@ -11,12 +11,13 @@ import { formatDate, isPlausibleSignature, wochentag, type Signature } from '@ba
 import { C, T } from './theme';
 import { Pill, Row, Section, SheetBar } from './ui';
 
-interface Wetter { text?: string; temp_min?: number | null; temp_max?: number | null; niederschlag?: string; wind?: string }
+interface Wetter { text?: string; temp_min?: number | null; temp_max?: number | null; niederschlag?: string; wind?: string; messungen?: { zeit?: string; witterung?: string; temp?: number | null }[] }
+interface Einsatz { von?: string; bis?: string; aufsicht?: number | null; arbeiter?: number | null }
 interface Draft {
-  id: string; project_id: string; datum: string; bereich: string; wetter: Wetter; personal: { firma: string; anzahl: number; taetigkeit?: string }[];
-  geraete: { name: string; anzahl: number }[]; leistungen: { text: string }[]; lieferungen: string; behinderungen: string; besonderheiten: string;
+  id: string; project_id: string; datum: string; bereich: string; wetter: Wetter; personal: { firma: string; anzahl: number; gewerk?: string; taetigkeit?: string }[]; einsatz: Einsatz; besuche: string; anordnungen: string;
+  geraete: { name: string; anzahl: number }[]; leistungen: { text: string; firma?: string; ort?: string }[]; lieferungen: string; behinderungen: string; besonderheiten: string;
 }
-interface Synced { id: string; datum: string; bereich: string | null; wetter: string; personal: string; geraete: string; leistungen: string; lieferungen: string | null; behinderungen: string | null; besonderheiten: string | null; status: string; signed_at: string | null; countersigned_at: string | null; version: number }
+interface Synced { id: string; datum: string; bereich: string | null; einsatz: string | null; besuche: string | null; anordnungen: string | null; blatt_nr: number | null; wetter: string; personal: string; geraete: string; leistungen: string; lieferungen: string | null; behinderungen: string | null; besonderheiten: string | null; status: string; signed_at: string | null; countersigned_at: string | null; version: number }
 interface Lokal { id: string; datum: string; payload: string; status: string; expected_version: number; nachtraege: string; countersigned: number }
 
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
@@ -27,6 +28,7 @@ const input = { ...T.body, paddingHorizontal: 16, paddingVertical: 12 } as const
 const fromSynced = (r: Synced, projectId: string): Draft => ({
   id: r.id, project_id: projectId, datum: r.datum, bereich: r.bereich ?? '', wetter: j(r.wetter, {}), personal: j(r.personal, []), geraete: j(r.geraete, []),
   leistungen: j(r.leistungen, []), lieferungen: r.lieferungen ?? '', behinderungen: r.behinderungen ?? '', besonderheiten: r.besonderheiten ?? '',
+  einsatz: j(r.einsatz, {}), besuche: r.besuche ?? '', anordnungen: r.anordnungen ?? '',
 });
 
 export function BautagebuchScreen({ projectId, role, onClose }: { projectId: string; role: string | undefined; onClose: () => void }) {
@@ -75,6 +77,8 @@ export function BautagebuchScreen({ projectId, role, onClose }: { projectId: str
     const draft: Draft = {
       id, project_id: projectId, datum: d, bereich: last?.bereich ?? '', wetter: {}, personal: last ? j(last.personal, []) : [{ firma: 'Eigene Firma', anzahl: 0 }],
       geraete: last ? j(last.geraete, []) : [], leistungen: [{ text: '' }], lieferungen: '', behinderungen: '', besonderheiten: '',
+      // Working hours as yesterday; head counts are entered fresh.
+      einsatz: last ? { von: j<Einsatz>(last.einsatz, {}).von, bis: j<Einsatz>(last.einsatz, {}).bis } : {}, besuche: '', anordnungen: '',
       ...vorlage,
     };
     await db.execute('INSERT INTO tagesbericht_lokal (id, project_id, datum, payload, status, expected_version, nachtraege, countersigned, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
@@ -136,7 +140,8 @@ function BerichtScreen({ id, projectId, leitung, synced, lokal, onClose }: { id:
   const clean = (x: Draft): Draft => ({ ...x, leistungen: x.leistungen.filter((l) => l.text.trim()), personal: x.personal.filter((p) => p.firma.trim()), geraete: x.geraete.filter((g) => g.name.trim()) });
   const save = async () => {
     const c = clean(d);
-    await queue('speichern', { ...c, bereich: c.bereich || null, lieferungen: c.lieferungen || null, behinderungen: c.behinderungen || null, besonderheiten: c.besonderheiten || null }, { draft: d, status: 'entwurf' });
+    await queue('speichern', { ...c, bereich: c.bereich || null, lieferungen: c.lieferungen || null, behinderungen: c.behinderungen || null, besonderheiten: c.besonderheiten || null,
+      besuche: c.besuche || null, anordnungen: c.anordnungen || null, einsatz: c.einsatz ?? {} }, { draft: d, status: 'entwurf' });
     setDirty(false);
   };
   const onSigned = async (s: Signature) => {
@@ -174,7 +179,7 @@ function BerichtScreen({ id, projectId, leitung, synced, lokal, onClose }: { id:
         placeholderTextColor={C.label3 as unknown as string} keyboardType={numeric ? 'numbers-and-punctuation' : 'default'} />
     </View>
   );
-  const area = (label: string, key: 'lieferungen' | 'behinderungen' | 'besonderheiten') => (
+  const area = (label: string, key: 'lieferungen' | 'behinderungen' | 'besonderheiten' | 'besuche' | 'anordnungen') => (
     <Section title={label}>
       <TextInput editable={!ro} multiline style={[input, { minHeight: 64, color: ro ? C.label2 : C.label }]} value={d[key]} onChangeText={(v) => set({ [key]: v })} placeholder={ro ? '–' : ''} placeholderTextColor={C.label3 as unknown as string} />
     </Section>
@@ -193,20 +198,37 @@ function BerichtScreen({ id, projectId, leitung, synced, lokal, onClose }: { id:
           </Pill>
         </View>
         <Section>
-          {field('Bereich', d.bereich, (v) => set({ bereich: v }), 'z. B. Bauteil A')}{sep}
-          {field('Wetter', d.wetter.text ?? '', (v) => set({ wetter: { ...d.wetter, text: v } }), 'z. B. bewölkt')}{sep}
-          {field('Temp. min °C', d.wetter.temp_min == null ? '' : String(d.wetter.temp_min), (v) => set({ wetter: { ...d.wetter, temp_min: num(v) } }), '–', true)}{sep}
-          {field('Temp. max °C', d.wetter.temp_max == null ? '' : String(d.wetter.temp_max), (v) => set({ wetter: { ...d.wetter, temp_max: num(v) } }), '–', true)}{sep}
-          {field('Niederschlag', d.wetter.niederschlag ?? '', (v) => set({ wetter: { ...d.wetter, niederschlag: v } }), 'keiner')}
+          {field('Bereich', d.bereich, (v) => set({ bereich: v }), 'z. B. Bauteil A')}
+        </Section>
+        <Section title="Arbeitseinsatz (eigene Leute)" footer={`Summe: ${(Number(d.einsatz?.aufsicht) || 0) + (Number(d.einsatz?.arbeiter) || 0)}`}>
+          {field('Uhrzeit von', d.einsatz?.von ?? '', (v) => set({ einsatz: { ...d.einsatz, von: v } }), '06:45')}{sep}
+          {field('Uhrzeit bis', d.einsatz?.bis ?? '', (v) => set({ einsatz: { ...d.einsatz, bis: v } }), '16:00')}{sep}
+          {field('Aufsicht', d.einsatz?.aufsicht == null ? '' : String(d.einsatz.aufsicht), (v) => set({ einsatz: { ...d.einsatz, aufsicht: num(v) } }), '0', true)}{sep}
+          {field('Arbeiter', d.einsatz?.arbeiter == null ? '' : String(d.einsatz.arbeiter), (v) => set({ einsatz: { ...d.einsatz, arbeiter: num(v) } }), '0', true)}
+        </Section>
+        <Section title="Wetter (Witterung, Zeit, °C)">
+          {(d.wetter.messungen?.length ? d.wetter.messungen : [{}]).map((m, i, arr) => (
+            <View key={i}>
+              {i > 0 && sep}
+              {field(`Witterung ${arr.length > 1 ? i + 1 : ''}`, m.witterung ?? (i === 0 ? d.wetter.text ?? '' : ''), (v) => set({ wetter: { ...d.wetter, messungen: arr.map((x, k) => (k === i ? { ...x, witterung: v } : x)) } }), 'z. B. sonnig')}{sep}
+              {field('Zeit', m.zeit ?? '', (v) => set({ wetter: { ...d.wetter, messungen: arr.map((x, k) => (k === i ? { ...x, zeit: v } : x)) } }), '06:30')}{sep}
+              {field('°C', m.temp == null ? '' : String(m.temp), (v) => set({ wetter: { ...d.wetter, messungen: arr.map((x, k) => (k === i ? { ...x, temp: num(v) } : x)) } }), '–', true)}
+            </View>
+          ))}
+          {!ro && (d.wetter.messungen?.length ? d.wetter.messungen : [{}]).length < 4 && <Row label="Messung hinzufügen" icon="plus" iconBg="green" tone="accent" onPress={() => set({ wetter: { ...d.wetter, messungen: [...(d.wetter.messungen?.length ? d.wetter.messungen : [{}]), {}] } })} />}
         </Section>
 
-        <Section title={`Personal · ${d.personal.reduce((a, p) => a + (Number(p.anzahl) || 0), 0)} Personen`}>
+        <Section title={`Firmen auf der Baustelle · ${d.personal.reduce((a, p) => a + (Number(p.anzahl) || 0), 0)} Personen`} footer="Firma, Gewerk und Anzahl wie im Bautagebuch-Formular.">
           {d.personal.map((p, i) => (
             <View key={i}>
               {i > 0 && sep}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <TextInput editable={!ro} style={[input, { flex: 1, color: C.label }]} value={p.firma} placeholder="Firma" placeholderTextColor={C.label3 as unknown as string}
-                  onChangeText={(v) => set({ personal: d.personal.map((x, k) => (k === i ? { ...x, firma: v } : x)) })} />
+                <View style={{ flex: 1 }}>
+                  <TextInput editable={!ro} style={[input, { color: C.label, paddingBottom: 2 }]} value={p.firma} placeholder="Firma" placeholderTextColor={C.label3 as unknown as string}
+                    onChangeText={(v) => set({ personal: d.personal.map((x, k) => (k === i ? { ...x, firma: v } : x)) })} />
+                  <TextInput editable={!ro} style={[input, { color: C.label2, paddingTop: 0, fontSize: 15 }]} value={p.gewerk ?? ''} placeholder="Gewerk" placeholderTextColor={C.label3 as unknown as string}
+                    onChangeText={(v) => set({ personal: d.personal.map((x, k) => (k === i ? { ...x, gewerk: v } : x)) })} />
+                </View>
                 <Stepper value={p.anzahl} disabled={ro} onChange={(n) => set({ personal: d.personal.map((x, k) => (k === i ? { ...x, anzahl: n } : x)) })} />
               </View>
             </View>
@@ -229,19 +251,27 @@ function BerichtScreen({ id, projectId, leitung, synced, lokal, onClose }: { id:
           {!ro && <Row label="Gerät hinzufügen" icon="plus" iconBg="green" tone="accent" onPress={() => set({ geraete: [...d.geraete, { name: '', anzahl: 1 }] })} />}
         </Section>
 
-        <Section title="Ausgeführte Leistungen">
+        <Section title="Ausgeführte Arbeiten" footer="Je Zeile: Firma, Ort (z. B. EG) und was gemacht wurde.">
           {d.leistungen.map((l, i) => (
             <View key={i}>
               {i > 0 && sep}
-              <TextInput editable={!ro} multiline style={[input, { color: C.label }]} value={l.text} placeholder="z. B. Estrich 1. OG Nord eingebracht" placeholderTextColor={C.label3 as unknown as string}
-                onChangeText={(v) => set({ leistungen: d.leistungen.map((x, k) => (k === i ? { text: v } : x)) })} />
+              <View style={{ flexDirection: 'row' }}>
+                <TextInput editable={!ro} style={[input, { flex: 1, color: C.label, paddingBottom: 2 }]} value={l.firma ?? ''} placeholder="Fa." placeholderTextColor={C.label3 as unknown as string}
+                  onChangeText={(v) => set({ leistungen: d.leistungen.map((x, k) => (k === i ? { ...x, firma: v } : x)) })} />
+                <TextInput editable={!ro} style={[input, { width: 120, color: C.label, paddingBottom: 2 }]} value={l.ort ?? ''} placeholder="Ort" placeholderTextColor={C.label3 as unknown as string}
+                  onChangeText={(v) => set({ leistungen: d.leistungen.map((x, k) => (k === i ? { ...x, ort: v } : x)) })} />
+              </View>
+              <TextInput editable={!ro} multiline style={[input, { color: C.label, paddingTop: 2 }]} value={l.text} placeholder="z. B. Estrich einbauen" placeholderTextColor={C.label3 as unknown as string}
+                onChangeText={(v) => set({ leistungen: d.leistungen.map((x, k) => (k === i ? { ...x, text: v } : x)) })} />
             </View>
           ))}
           {!ro && <Row label="Leistung hinzufügen" icon="plus" iconBg="green" tone="accent" onPress={() => set({ leistungen: [...d.leistungen, { text: '' }] })} />}
         </Section>
-        {area('Lieferungen', 'lieferungen')}
+        {area('Besuche (Abnahmen, Ortstermine)', 'besuche')}
+        {area('Anordnungen', 'anordnungen')}
         {area('Behinderungen', 'behinderungen')}
-        {area('Besonderheiten / Unfälle / Besuche', 'besonderheiten')}
+        {area('Lieferungen', 'lieferungen')}
+        {area('Hinweise / Besonderheiten / Unfälle', 'besonderheiten')}
 
         {ro && (
           <Section title="Nachträge" footer="Der unterschriebene Bericht bleibt unverändert; Nachträge werden mit Name und Zeit angehängt.">

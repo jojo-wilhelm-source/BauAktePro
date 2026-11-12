@@ -25,3 +25,6 @@
 - **Bauherr:** Nach der Unterschrift gibt die Bau-/Projektleitung den Bericht frei und wählt die Abschnitte (Standard: Wetter, Leistungen). Der Bauherr sieht nur diese Abschnitte und kann gegenzeichnen.
 - **Ablage:** Mit der Unterschrift wird das PDF automatisch unter Dokumente › Bautagebuch › Jahr › KW xx als „TT.MM.JJJJ Wochentag“ abgelegt (freigegeben); Gegenzeichnung und Nachtrag erzeugen eine neue Version.
 - ANNAHME: Layout des PDF wie bisher, bis das gewünschte Format des Nutzers vorliegt (offene-punkte D10).
+
+## Format (nach Vorlage des Nutzers, 12.11.2026 – docs/vorlagen/Vorlage_Bautagesbericht_WiJo.docx)
+Kopf: „Bautagebuch“, Blatt-Nr. (fortlaufend je Projekt), Firmenlogo, Baumaßnahme, Bauort, Baustellen-Nr., Bauherr, Datum. Arbeitseinsatz der eigenen Leute (Uhrzeit von/bis, Aufsicht, Arbeiter, Summe) neben dem Wetter (bis zu vier Messungen: Witterung, Zeit, °C). Nachunternehmer als zweispaltige Tabelle Firma/Gewerk/Anzahl. Danach Geräteeinsatz, Ausgeführte Arbeiten („Fa. X (EG): …“), Besuche (Abnahmen, Ortstermine), Anordnungen, Behinderungen, Lieferungen, Hinweise. Unterschriften Polier/Schachtmeister und Auftraggeber (Bauherr), Prüfvermerk der Bauleitung. Logo und Kurzname der Firma pflegt der Administrator; Bauort, Baustellen-Nr. und Bauherr stehen in den Projektdaten.

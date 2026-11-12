@@ -1173,3 +1173,28 @@ describe('Nachträglich bearbeiten', () => {
     expect((await call('uPolier', 'PATCH', `/einkaeufe/${ID.ekTanke}`, { betrag_brutto: 1 })).status).toBe(409); // already freigegeben
   });
 });
+
+describe('Bautagebuch im Firmenformat', () => {
+  it('Blatt-Nr. läuft je Projekt hoch; Arbeitseinsatz nur für den Bauherrn sichtbar, wenn Personal freigegeben', async () => {
+    const mk = async (datum: string) => {
+      const id = randomUUID();
+      await call('uPolier', 'PUT', '/tagesberichte', { id, project_id: ID.project, datum, einsatz: { von: '06:45', bis: '16:00', aufsicht: 1, arbeiter: 4 },
+        wetter: { messungen: [{ zeit: '06:30', witterung: 'bewölkt', temp: 8 }] }, besuche: 'BG Bau', anordnungen: 'PSA tragen' });
+      return id;
+    };
+    const a = await mk('2026-11-12');
+    const b = await mk('2026-11-13');
+    const ga = (await call('uPolier', 'GET', `/tagesberichte/${a}`)).body;
+    expect(ga.blatt_nr).toBe(1);
+    expect((await call('uPolier', 'GET', `/tagesberichte/${b}`)).body.blatt_nr).toBe(2);
+    expect(ga.einsatz.arbeiter).toBe(4);
+    expect(ga.besuche).toBe('BG Bau');
+    const sig = { w: 300, h: 100, strokes: [[[0.1, 0.5], [0.4, 0.2], [0.7, 0.8], [0.9, 0.4]]] };
+    await call('uPolier', 'POST', `/tagesberichte/${a}/unterschreiben`, { signature: sig, base_version: 1 });
+    await call('uBauleitung', 'POST', `/tagesberichte/${a}/bauherr-freigabe`, { freigabe: true, abschnitte: ['wetter', 'besuche'] });
+    const bh = (await call('uBauherr', 'GET', `/tagesberichte/${a}`)).body;
+    expect(bh.einsatz).toEqual({});
+    expect(bh.besuche).toBe('BG Bau');
+    expect(bh.anordnungen).toBeNull();
+  });
+});

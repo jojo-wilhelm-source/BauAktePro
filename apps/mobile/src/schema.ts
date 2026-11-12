@@ -118,6 +118,7 @@ const tagesbericht = new Table(
     project_id: column.text, datum: column.text, bereich: column.text, wetter: column.text, personal: column.text, geraete: column.text, leistungen: column.text,
     lieferungen: column.text, behinderungen: column.text, besonderheiten: column.text, status: column.text, signed_by: column.text, signed_at: column.text,
     countersigned_by: column.text, countersigned_at: column.text, version: column.integer, created_by: column.text,
+    einsatz: column.text, besuche: column.text, anordnungen: column.text, blatt_nr: column.integer,
   },
   { indexes: { p: ['project_id', 'datum'] } },
 );
