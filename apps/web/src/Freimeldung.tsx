@@ -107,7 +107,7 @@ function PositionCard({ token, p, me, onDone }: { token: string; p: Position; me
       )}
       {p.meldungen.map((m, i) => (
         <div key={i} className="fm-meldung">
-          <strong>{m.kind === 'behoben' ? 'Behoben gemeldet' : 'Rückfrage'}</strong> von {m.name} ({m.firma}) · {new Date(m.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          <strong>{m.kind === 'behoben' ? 'Behoben gemeldet' : 'Widerspruch'}</strong> von {m.name} ({m.firma}) · {new Date(m.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
           {m.kommentar && <div>„{m.kommentar}“</div>}
           {m.foto_id && <img src={`/api/public/freimeldung/${token}/foto/${m.foto_id}`} alt="Nachweisfoto" loading="lazy" />}
         </div>
@@ -117,7 +117,7 @@ function PositionCard({ token, p, me, onDone }: { token: string; p: Position; me
           <button className={`btn large ${p.status === 'behoben_gemeldet' ? '' : 'filled'}`} onClick={() => setMode('behoben')}>
             {p.status === 'behoben_gemeldet' ? 'Weiteres Foto senden' : 'Behoben melden'}
           </button>
-          <button className="btn large" onClick={() => setMode('rueckfrage')}>Rückfrage</button>
+          <button className="btn large" onClick={() => setMode('rueckfrage')}>Widerspruch</button>
         </div>
       )}
       {mode && (
@@ -132,12 +132,12 @@ function PositionCard({ token, p, me, onDone }: { token: string; p: Position; me
               )}
             </>
           )}
-          <textarea rows={3} placeholder={mode === 'behoben' ? 'Kommentar (optional), z. B. „Fuge neu verfugt“' : 'Ihre Rückfrage (Pflicht)'} value={kommentar} onChange={(e) => setKommentar(e.target.value)} />
+          <textarea rows={3} placeholder={mode === 'behoben' ? 'Kommentar (optional), z. B. „Fuge neu verfugt“' : 'Begründung des Widerspruchs (Pflicht)'} value={kommentar} onChange={(e) => setKommentar(e.target.value)} />
           {!meOk && <p className="fm-error">Bitte oben Ihren Namen und die Firma eintragen.</p>}
           {error && <p className="fm-error">{error}</p>}
           <div className="fm-actions">
             <button className="btn filled large" disabled={busy || !meOk || (mode === 'behoben' ? !foto : !kommentar.trim())} onClick={() => void submit()}>
-              {busy ? 'Wird gesendet …' : mode === 'behoben' ? 'Freimeldung senden' : 'Rückfrage senden'}
+              {busy ? 'Wird gesendet …' : mode === 'behoben' ? 'Freimeldung senden' : 'Widerspruch senden'}
             </button>
             <button className="btn plain" onClick={() => { setMode(null); setFoto(null); setError(null); }}>Abbrechen</button>
           </div>

@@ -358,7 +358,7 @@ function FreimeldungenSection({ anzeigeId, info, run, onChanged }: { anzeigeId: 
         {list.map((f) => (
           <div key={f.id} className="row stack fm-row">
             <span className="k">
-              <strong>Pos. {f.pos} · {mNo(f.number)}</strong> – {f.kind === 'behoben' ? 'behoben gemeldet' : 'Rückfrage'}
+              <strong>Pos. {f.pos} · {mNo(f.number)}</strong> – {f.kind === 'behoben' ? 'behoben gemeldet' : 'Widerspruch'}
               <div className="sub">{f.melder_name} ({f.melder_firma}) · {new Date(f.created_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}</div>
             </span>
             {f.kommentar && <div>„{f.kommentar}“</div>}

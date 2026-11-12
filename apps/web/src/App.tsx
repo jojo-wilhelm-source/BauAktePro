@@ -400,6 +400,9 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
 
   // Selection only counts for Mängel that are still visible (filters may have hidden some).
   const sel = visible.filter((m) => checked.has(m.id));
+  // Selected Mängel grouped by the responsible NU (open ones only): one Mangelanzeige per firm.
+  const anzeigeGruppen = [...new Set(sel.filter((m) => m.assigned_company_id && canBePosition(m, m.assigned_company_id)).map((m) => m.assigned_company_id!))]
+    .map((cid) => [cid, sel.filter((m) => canBePosition(m, cid))] as const);
   const toggle = (ids: string[], on: boolean) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -547,6 +550,12 @@ function MaengelPage({ info, maengel, selected, onSelect, run, onAnzeige }: { in
             Auswahl aufheben
           </button>
         )}
+        {info.role === 'bauleitung' && anzeigeGruppen.map(([cid, list]) => (
+          <button key={cid} className="btn filled" onClick={() => onAnzeige({ companyId: cid, mangelIds: list.map((m) => m.id) })}
+            title="Mangelanzeige mit QR-Code: der Nachunternehmer meldet per Foto frei oder legt Widerspruch ein">
+            Mangelanzeige an {info.companies.find((c) => c.id === cid)?.name ?? 'NU'} ({list.length})
+          </button>
+        ))}
         <button
           className={`btn ${sel.length ? 'filled' : ''}`}
           disabled={visible.length === 0}

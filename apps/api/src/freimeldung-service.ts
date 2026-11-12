@@ -141,7 +141,7 @@ export async function submitFreimeldung(
 ) {
   const d = MeldungInput.parse(fields);
   if (d.art === 'behoben' && !file) throw new HttpError(422, 'Bitte ein Foto als Nachweis aufnehmen');
-  if (d.art === 'rueckfrage' && !d.kommentar) throw new HttpError(422, 'Bitte die Rückfrage kurz beschreiben');
+  if (d.art === 'rueckfrage' && !d.kommentar) throw new HttpError(422, 'Bitte den Widerspruch kurz begründen');
   if (file && file.bytes.length > MAX_FOTO) throw new HttpError(413, 'Das Foto ist zu groß (höchstens 15 MB)');
   const ext = file ? ((file.name.split('.').pop() ?? 'jpg').toLowerCase().replace('jpeg', 'jpg')) : null;
   if (ext && !['jpg', 'png', 'heic'].includes(ext)) throw new HttpError(422, 'Bitte ein Foto (JPG, PNG oder HEIC) hochladen');
@@ -186,7 +186,7 @@ export async function submitFreimeldung(
 
   // Tell the Bauleitung (after commit; a mail problem never loses the report).
   if (result.lead?.email) {
-    const what = d.art === 'behoben' ? 'als behoben gemeldet' : 'mit einer Rückfrage versehen';
+    const what = d.art === 'behoben' ? 'als behoben gemeldet' : 'mit einem Widerspruch versehen';
     await sendMail({
       from: process.env.MAIL_FROM ?? 'Bau Akte Pro <noreply@bauaktepro.example.test>',
       to: result.lead.email as string,
