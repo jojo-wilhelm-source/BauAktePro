@@ -2,7 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { ADMIN_URL, connect } from './index';
-import { ID } from './seed-ids';
+import { hashPassword } from 'better-auth/crypto';
+import { ID, TEST_PASSWORD } from './seed-ids';
 
 const sql = connect(ADMIN_URL, 1);
 const storage = fileURLToPath(new URL('../../../storage/plans', import.meta.url));
@@ -49,6 +50,7 @@ await sql.begin(async (tx) => {
   await tx`UPDATE plan SET current_revision_id = NULL, folder_id = NULL`;
   await tx`UPDATE document SET current_revision_id = NULL`;
   for (const t of [
+    'auth_session', 'auth_account', 'auth_verification', 'einladung',
     'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
     'einreichung', 'stundenzettel_zeile', 'stundenzettel', 'document_revision', 'document', 'folder',
     'besprechung_eintrag', 'besprechung_punkt', 'besprechung_teilnehmer', 'besprechung', 'plan_revision',
@@ -72,6 +74,13 @@ await sql.begin(async (tx) => {
     { id: ID.uBauherr, tenant_id: ID.tenant, company_id: ID.coBauherr, email: 'bauherr@example.test', name: 'Hanna Bauherr' },
     { id: ID.uProjektleitung, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'projektleitung@example.test', name: 'Petra Projektleitung' },
   ])}`;
+  // Real sign-in for local testing: every test user has the same development password (never used in production).
+  const pw = await hashPassword(TEST_PASSWORD);
+  await tx`INSERT INTO auth_account ${tx(
+    [ID.uBauleitung, ID.uPolier, ID.uElektro, ID.uFliesen, ID.uBauherr, ID.uProjektleitung].map((u) => ({
+      id: u, user_id: u, account_id: u, provider_id: 'credential', password: pw,
+    })),
+  )}`;
   await tx`INSERT INTO project ${tx([
     { id: ID.project, tenant_id: ID.tenant, name: 'Wohnanlage Lindenhof' },
     { id: ID.otherProject, tenant_id: ID.tenant, name: 'Bürohaus Am Markt' },

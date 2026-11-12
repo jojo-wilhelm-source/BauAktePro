@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
@@ -12,6 +13,7 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, zugaenge } from './anmeldung';
 import {
   addGewerk, addLocation, canCreateProject, createProject, deleteGewerk, deleteLocation, nuKandidaten, nuUebernehmen, renameGewerk,
   renameLocation, renameProject, structure, takeOverStructure,
@@ -71,6 +73,23 @@ export function buildApp(sql: Sql) {
     return { token: await issueToken(u.id as string), userId: u.id };
   });
 
+  // --- Anmeldung (public; docs/fachkonzept/01) --------------------------------
+  const authP = createAuth();
+  const ipOf = (req: { ip: string; headers: Record<string, unknown> }) => String(req.headers['x-forwarded-for'] ?? req.ip).split(',')[0]!.trim();
+  app.post('/auth/login', async (req) => login(await authP, admin, req.body, ipOf(req), req.headers['user-agent']));
+  app.post('/auth/refresh', async (req) => refresh(admin, req.body));
+  app.post('/auth/logout', async (req) => logout(admin, req.body));
+  app.post('/auth/passwort-vergessen', async (req) => forgotPassword(await authP, req.body, ipOf(req)));
+  app.post('/auth/passwort-neu', async (req) => resetPassword(await authP, req.body));
+  app.get<{ Params: { token: string } }>('/auth/einladung/:token', async (req) => invitationInfo(admin, req.params.token));
+  app.post<{ Params: { token: string } }>('/auth/einladung/:token', async (req) => {
+    const body = z.object({ password: z.string() }).passthrough().parse(req.body);
+    await acceptInvitation(admin, req.params.token, req.body, ipOf(req));
+    const info = await admin`SELECT email FROM einladung WHERE token_hash = ${createHash('sha256').update(req.params.token).digest('hex')}`;
+    // Signed in right away (same answer as /auth/login).
+    return login(await authP, admin, { email: info[0]!.email, password: body.password }, ipOf(req), req.headers['user-agent']);
+  });
+
   // --- authenticated --------------------------------------------------------
   app.addHook('onRequest', async (req) => {
     if (req.url === '/health' || req.url.startsWith('/auth/')) return;
@@ -93,6 +112,12 @@ export function buildApp(sql: Sql) {
       return { user, projects, canCreateProject: await canCreateProject(tx) };
     }),
   );
+
+  // --- Zugänge: Einladungen, Mitglieder ---------------------------------------------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/zugaenge', async (req) => asUser(sql, req.userId, (tx) => zugaenge(tx, req.userId, req.params.projectId)));
+  app.post('/einladungen', async (req) => asUser(sql, req.userId, (tx) => invite(tx, req.userId, req.body, meta(req))));
+  app.post<{ Params: { id: string } }>('/einladungen/:id/zurueckziehen', async (req) => asUser(sql, req.userId, (tx) => revokeInvitation(tx, req.userId, req.params.id, meta(req))));
+  app.delete<{ Params: { id: string } }>('/mitglieder/:id', async (req) => asUser(sql, req.userId, (tx) => removeMember(tx, req.userId, req.params.id, meta(req))));
 
   // --- Projekte und Struktur (docs/fachkonzept/01, 02) --------------------------------
   app.post('/projects', async (req) => asUser(sql, req.userId, (tx) => createProject(tx, req.userId, req.body, meta(req))));

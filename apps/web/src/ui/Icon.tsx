@@ -18,6 +18,7 @@ const PATHS = {
   haken: 'M5 12l5 5 9-10',
   stift: 'M4 20h4L19 9l-4-4L4 16v4Z',
   kalender: 'M4 6h16v14H4V6Zm0 4h16M8 3v4m8-4v4',
+  zugang: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 10v-1a6 6 0 0 1 9.5-4.9M17 14v6m-3-3h6',
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -6,13 +6,14 @@ import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { connect } from '@bap/db';
-import { ID } from '@bap/db/seed-ids';
+import { ADMIN_URL, connect } from '@bap/db';
+import { ID, TEST_PASSWORD } from '@bap/db/seed-ids';
 import { initKeys, issueToken } from '../src/auth';
 import { buildApp } from '../src/app';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const sql = connect();
+const adminSql = connect(ADMIN_URL, 1);
 const app = buildApp(sql);
 const tokens: Record<string, string> = {};
 
@@ -47,6 +48,7 @@ beforeEach(() => {
 afterAll(async () => {
   await app.close();
   await sql.end();
+  await adminSql.end();
 });
 
 describe('NU-Isolation', () => {
@@ -713,5 +715,79 @@ describe('Nachunternehmer aus anderem Projekt übernehmen', () => {
     const nu = (await call('uBauleitung', 'GET', `/projects/${ID.otherProject}/nachunternehmer`)).body.nu as any[];
     expect(nu.map((n) => [n.name, n.gewerke, n.auftrag])).toEqual([['Elektro Blitz GmbH', ['Elektro'], 0]]);
     expect((await call('uElektro', 'GET', `/projects/${ID.otherProject}/maengel`)).status).toBe(403);
+  });
+});
+
+describe('Anmeldung mit Passwort', () => {
+  const post = (url: string, body: object) => app.inject({ method: 'POST', url, payload: body });
+  it('falsches Passwort 401; richtiges liefert Token, das funktioniert; Abmelden beendet die Sitzung', async () => {
+    expect((await post('/auth/login', { email: 'polier@example.test', password: 'falsch-falsch' })).statusCode).toBe(401);
+    expect((await post('/auth/login', { email: 'niemand@example.test', password: TEST_PASSWORD })).statusCode).toBe(401);
+    const r = (await post('/auth/login', { email: 'Polier@Example.test', password: TEST_PASSWORD })).json();
+    const me = await app.inject({ method: 'GET', url: '/me', headers: { authorization: `Bearer ${r.token}` } });
+    expect(me.json().user.id).toBe(ID.uPolier);
+    expect((await post('/auth/refresh', { refresh: r.refresh })).statusCode).toBe(200);
+    await post('/auth/logout', { refresh: r.refresh });
+    expect((await post('/auth/refresh', { refresh: r.refresh })).statusCode).toBe(401);
+  });
+  it('gesperrter Zugang: weder Anmeldung noch Verlängerung', async () => {
+    const r = (await post('/auth/login', { email: 'polier@example.test', password: TEST_PASSWORD })).json();
+    await adminSql`UPDATE app_user SET active = false WHERE id = ${ID.uPolier}`;
+    expect((await post('/auth/refresh', { refresh: r.refresh })).statusCode).toBe(403);
+    expect((await post('/auth/login', { email: 'polier@example.test', password: TEST_PASSWORD })).statusCode).toBe(403);
+  });
+  it('Passwort zurücksetzen per Link; alter Login ungültig, Link nur einmal', async () => {
+    expect((await post('/auth/passwort-vergessen', { email: 'gibtsnicht@example.test' })).json()).toEqual({ ok: true });
+    await post('/auth/passwort-vergessen', { email: 'polier@example.test' });
+    const [v] = await adminSql`SELECT identifier FROM auth_verification WHERE identifier LIKE 'reset-password:%' ORDER BY created_at DESC LIMIT 1`;
+    const token = (v!.identifier as string).slice('reset-password:'.length);
+    expect((await post('/auth/passwort-neu', { token, password: 'kurz' })).statusCode).toBe(422);
+    expect((await post('/auth/passwort-neu', { token, password: 'Neues-Passwort-42' })).statusCode).toBe(200);
+    expect((await post('/auth/passwort-neu', { token, password: 'Noch-eins-12345' })).statusCode).toBe(400);
+    expect((await post('/auth/login', { email: 'polier@example.test', password: TEST_PASSWORD })).statusCode).toBe(401);
+    expect((await post('/auth/login', { email: 'polier@example.test', password: 'Neues-Passwort-42' })).statusCode).toBe(200);
+  });
+});
+
+describe('Einladungen und Zugänge', () => {
+  const einladen = (u: keyof typeof ID, body: object) => call(u, 'POST', '/einladungen', { project_id: ID.project, ...body });
+  const tokenOf = (link: string) => link.split('/einladung/')[1]!;
+  it('nur die Leitung lädt ein; NU nur für Firmen des Projekts', async () => {
+    expect((await einladen('uPolier', { email: 'neu@example.test', role: 'polier' })).status).toBe(403);
+    expect((await einladen('uElektro', { email: 'neu@example.test', role: 'nu', company_id: ID.coElektro })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', '/einladungen', { project_id: ID.otherProject, email: 'x@example.test', role: 'nu', company_id: ID.coElektro })).status).toBe(422);
+    expect((await einladen('uBauleitung', { email: 'x@example.test', role: 'nu' })).status).toBe(422);
+  });
+  it('Monteur nimmt die Einladung an, ist sofort angemeldet und sieht nur die Mängel seiner Firma; Link nur einmal', async () => {
+    const r = await einladen('uBauleitung', { email: 'monteur@fliesen-fuchs.example.test', name: 'Max Monteur', role: 'nu', company_id: ID.coFliesen });
+    expect(r.body.status).toBe('eingeladen');
+    const token = tokenOf(r.body.devLink);
+    const info = await app.inject({ method: 'GET', url: `/auth/einladung/${token}` });
+    expect(info.json()).toMatchObject({ project: 'Wohnanlage Lindenhof', company: 'Fliesen Fuchs GmbH', roleLabel: 'Nachunternehmer' });
+    expect((await app.inject({ method: 'POST', url: `/auth/einladung/${token}`, payload: { name: 'Max Monteur', password: 'kurz' } })).statusCode).toBe(422);
+    const ok = await app.inject({ method: 'POST', url: `/auth/einladung/${token}`, payload: { name: 'Max Monteur', password: 'Fliesen-sind-toll-1' } });
+    expect(ok.statusCode).toBe(200);
+    const m = await app.inject({ method: 'GET', url: `/projects/${ID.project}/maengel`, headers: { authorization: `Bearer ${ok.json().token}` } });
+    expect(m.json().map((x: any) => x.number)).toEqual([1]);
+    expect((await app.inject({ method: 'POST', url: `/auth/einladung/${token}`, payload: { name: 'Zweiter Versuch', password: 'Fliesen-sind-toll-1' } })).statusCode).toBe(410);
+  });
+  it('bestehender Zugang wird direkt hinzugefügt; zurückgezogene Einladung gilt nicht mehr', async () => {
+    const r = await call('uBauleitung', 'POST', '/einladungen', { project_id: ID.otherProject, email: 'polier@example.test', role: 'polier' });
+    expect(r.body.status).toBe('hinzugefuegt');
+    expect((await call('uPolier', 'GET', `/projects/${ID.otherProject}/maengel`)).status).toBe(200);
+    const inv = await einladen('uBauleitung', { email: 'spaeter@example.test', role: 'einkauf' });
+    expect((await call('uBauleitung', 'POST', `/einladungen/${inv.body.id}/zurueckziehen`)).status).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/auth/einladung/${tokenOf(inv.body.devLink)}` })).statusCode).toBe(410);
+  });
+  it('Zugang entziehen: danach kein Zugriff; eigenen Zugang und letzte Leitung nicht', async () => {
+    const z = (await call('uBauleitung', 'GET', `/projects/${ID.project}/zugaenge`)).body;
+    const del = (u: keyof typeof ID, id: string) => app.inject({ method: 'DELETE', url: `/mitglieder/${id}`, headers: { authorization: `Bearer ${tokens[u]}` } });
+    const polier = z.mitglieder.find((m: any) => m.user_id === ID.uPolier);
+    const ich = z.mitglieder.find((m: any) => m.ich);
+    expect((await del('uPolier', ich.id)).statusCode).toBe(403);
+    expect((await del('uBauleitung', ich.id)).statusCode).toBe(422);
+    expect((await del('uBauleitung', polier.id)).statusCode).toBe(200);
+    expect((await call('uPolier', 'GET', `/projects/${ID.project}/maengel`)).status).toBe(403);
+    expect((await call('uPolier', 'GET', `/projects/${ID.project}/zugaenge`)).status).toBe(403);
   });
 });

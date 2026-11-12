@@ -32,6 +32,12 @@
           "photosPermission": "Bau Akte Pro nutzt deine Fotos, um sie an Mängel anzuhängen.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Bau Akte Pro nutzt Face ID, um die App zu entsperren."
+        }
       ]
     ]
   }

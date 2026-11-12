@@ -1,8 +1,50 @@
 import type { AnzeigeStatus, LocationArea, MangelStatus, PlanRevisionStatus, Priority, ProjectRole, PunktStatus } from '@bap/domain';
 
 const TOKEN_KEY = 'bap.token';
+const REFRESH_KEY = 'bap.refresh';
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t: string | null) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
+
+/** Sign-in result: short access token (12 h) + refresh token (session, 30 days). */
+export function setSession(s: { token: string; refresh?: string } | null) {
+  setToken(s?.token ?? null);
+  if (s?.refresh) localStorage.setItem(REFRESH_KEY, s.refresh);
+  if (!s) localStorage.removeItem(REFRESH_KEY);
+}
+
+export async function signOut() {
+  const refresh = localStorage.getItem(REFRESH_KEY);
+  setSession(null);
+  if (refresh) await fetch('/api/auth/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh }) }).catch(() => {});
+}
+
+const secondsLeft = (t: string) => {
+  try {
+    return (JSON.parse(atob(t.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'))).exp as number) - Date.now() / 1000;
+  } catch {
+    return -1;
+  }
+};
+
+/** Renews the access token when less than an hour is left (or it has expired). Returns false if signed out. */
+let refreshing: Promise<boolean> | null = null;
+export function ensureFreshToken(): Promise<boolean> {
+  const t = getToken();
+  if (t && secondsLeft(t) > 3600) return Promise.resolve(true);
+  const refresh = localStorage.getItem(REFRESH_KEY);
+  if (!refresh) return Promise.resolve(!!t && secondsLeft(t) > 0);
+  refreshing ??= fetch('/api/auth/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh }) })
+    .then(async (r) => {
+      if (r.ok) setToken(((await r.json()) as { token: string }).token);
+      else if (r.status === 401 || r.status === 403) setSession(null);
+      return r.ok;
+    })
+    .catch(() => !!t && secondsLeft(t) > 0)
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
 
 export class ApiError extends Error {
   constructor(public status: number, public body: any) {
@@ -11,6 +53,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  if (!path.startsWith('/auth/')) await ensureFreshToken();
   const res = await fetch(`/api${path}`, {
     method: init.method ?? 'GET',
     // No content-type without a body (Fastify rejects an empty JSON body, e.g. on DELETE).
@@ -18,7 +61,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   const body = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-  if (res.status === 401) setToken(null);
+  if (res.status === 401 && !path.startsWith('/auth/')) setSession(null);
   if (!res.ok) throw new ApiError(res.status, body);
   return body as T;
 }

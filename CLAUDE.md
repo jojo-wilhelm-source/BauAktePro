@@ -49,7 +49,7 @@ Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Li
 | **3 Geld und Beschaffung** | 9. Verträge, Nachträge, Rechnungsprüfung, Abschläge, Freigabe an die Buchhaltung, Budget · 10. Lieferanmeldung, Einkauf, Wareneingang, Mengenabgleich |
 | **4 Ausbau** | 11. Sync-Ordner (Windows, iOS-Dateien-App) · 12. Anfragen und Angebotsvergleich, Bewertungen, KI-Funktionen, Planvergleich, weitere Schnittstellen |
 
-**Stand 10.11.2026 (spät):** Fertig sind Apple-Design, Mangelanzeige (mit Fotos, Mängelbericht-PDF), Raum aus Pin, Planregister mit Index/Freigabe/QR-Prüfung, Dateiablage (Ordner Pläne/Dokumente, einfacher Upload, Pläne erscheinen automatisch unter „Pläne“, Alt-Versionen), Projektleitung = Bauleitungsrechte, Bau- und NU-Besprechung (Anwesenheit, Bemerkungen, nächster Termin mit .ics, Web + offline iPad/iPhone), Gerät synchronisieren (alle Pläne/Fotos/Dokumente offline, automatisch oder per Klick, Abgleich-Zentrale), Mängel sortieren/Ordner-Ansicht/Bericht aus Auswahl, Projekte anlegen mit Struktur-Übernahme und Struktur bearbeiten (Orte, Gewerke, NU je Projekt, auch aus anderen Projekten), Stundenzettel, Nachträge & Rechnungen (getrennte Nummern, Entscheidung zurücknehmbar), Nachunternehmer-Verzeichnis mit Verträgen, Kostenübersicht je Gewerk, Baustellen-Einkäufe und Fahrtenbuch (Web + offline iPhone). Offene Punkte D1–D8.
+**Stand 10.11.2026 (spät):** Fertig sind Apple-Design, Mangelanzeige (mit Fotos, Mängelbericht-PDF), Raum aus Pin, Planregister mit Index/Freigabe/QR-Prüfung, Dateiablage (Ordner Pläne/Dokumente, einfacher Upload, Pläne erscheinen automatisch unter „Pläne“, Alt-Versionen), Projektleitung = Bauleitungsrechte, Bau- und NU-Besprechung (Anwesenheit, Bemerkungen, nächster Termin mit .ics, Web + offline iPad/iPhone), Gerät synchronisieren (alle Pläne/Fotos/Dokumente offline, automatisch oder per Klick, Abgleich-Zentrale), Mängel sortieren/Ordner-Ansicht/Bericht aus Auswahl, Projekte anlegen mit Struktur-Übernahme und Struktur bearbeiten (Orte, Gewerke, NU je Projekt, auch aus anderen Projekten), echte Anmeldung (Better Auth, Einladungen, Zugänge, Face ID in der App), Stundenzettel, Nachträge & Rechnungen (getrennte Nummern, Entscheidung zurücknehmbar), Nachunternehmer-Verzeichnis mit Verträgen, Kostenübersicht je Gewerk, Baustellen-Einkäufe und Fahrtenbuch (Web + offline iPhone). Offene Punkte D1–D9.
 
 **Fahrplan ab 12.11.2026 (vom Nutzer bestätigt, alles soll umgesetzt werden):**
 1. Echte Anmeldung (E-Mail + Passwort, Face ID in der App), Einladungen, Zugang entziehen
@@ -92,6 +92,7 @@ infra/           docker-compose (Postgres, PowerSync), Sync-Regeln
 |---|---|
 | Docker starten | `colima start` |
 | Datenbank + PowerSync starten | `pnpm db:up` |
+| Anmelden (lokal) | Testbenutzer per Klick (nur Entwicklung) oder E-Mail + `TEST_PASSWORD` aus `packages/db/src/seed-ids.ts` |
 | Migrationen / Testdaten | `pnpm db:migrate` · `pnpm db:seed` |
 | API / Web | `pnpm dev:api` · `pnpm dev:web` (http://localhost:5173) |
 | Tests | `pnpm test` (Rechte-Tests brauchen die laufende DB, setzen die Testdaten neu) |

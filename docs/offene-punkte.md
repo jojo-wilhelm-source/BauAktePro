@@ -66,3 +66,6 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
   **Entscheidung:**
 - [ ] **D8 – Projekte anlegen:** Wer darf neue Projekte anlegen (Annahme: Bau- und Projektleitung der eigenen Firma; später ggf. nur Geschäftsführung)? Gibt es Firmen-Vorlagen unabhängig von einem Projekt („Musterprojekt“)? → [01](fachkonzept/01-rollen-rechte.md)
   **Entscheidung:**
+- [ ] **D9 – Benutzerverwaltung der Firma:** Wer sperrt ein ganzes Konto (z. B. Mitarbeiter ausgeschieden) – Geschäftsführung, Bauleitung? Zwei-Faktor-Anmeldung (z. B. Code per App) für Bau-/Projektleitung gewünscht? „Mit Microsoft anmelden“ nötig? → [01](fachkonzept/01-rollen-rechte.md)
+  **Entscheidung:**
+

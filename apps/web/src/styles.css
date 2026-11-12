@@ -277,3 +277,8 @@ button.link { border: 0; background: none; color: var(--accent); padding: 0; fon
 .btn.small.destructive { color: var(--red); }
 .row .k .sub { color: var(--label-2); font-size: 12px; margin-top: 2px; font-weight: 400; }
 .sheet-body .search { flex: none; }
+/* Anmeldung */
+.btn.large { padding: 12px 18px; font-size: 16px; justify-content: center; }
+.login-box form .btn.plain { align-self: center; }
+.login-box .notice, .login-box .hint { color: var(--label-2); font-size: 13px; text-align: center; margin: 0; }
+.login-box .row input { text-align: left; max-width: none; flex: 1; color: var(--label); }

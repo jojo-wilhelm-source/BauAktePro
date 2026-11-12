@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { PUNKT_STATUS_LABELS as PUNKT_LABELS_WEB, PUNKT_TONE as PUNKT_TONE_WEB, anzeigeNo, canBePosition, formatDate, MANGEL_STATUS_LABELS, PRIORITIES, roomAt, ROLE_LABELS, MANGEL_GRUPPE_LABELS, MANGEL_SORT_LABELS, ordnerBaum, sortMaengel, type MangelGruppe, type MangelKey, type MangelOrdner, type MangelSort, type MangelStatus, type Priority } from '@bap/domain';
-import { api, ApiError, getToken, openPdf, setToken, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
+import { api, ApiError, ensureFreshToken, getToken, openPdf, signOut, type Conflict, type Mangel, type Me, type ProjectInfo, type Punkt } from './api';
 import { AnzeigenPage, type AnzeigeStart } from './Anzeigen';
 import { BesprechungenPage } from './Besprechungen';
 import { DokumentePage } from './Dokumente';
@@ -9,6 +9,8 @@ import { StundenPage } from './Stunden';
 import { NachunternehmerPage } from './Nachunternehmer';
 import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
 import { KostenPage } from './Kosten';
+import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
+import { ZugaengePage } from './Zugaenge';
 import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
@@ -18,18 +20,10 @@ import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
 import { PageHeader, type Run } from './ui/layout';
 
-const TEST_USERS = [
-  ['bauleitung@example.test', 'Bea Bauleitung', 'Bauleitung'],
-  ['polier@example.test', 'Paul Polier', 'Polier'],
-  ['elektro@example.test', 'Erik Elektro', 'NU Elektro Blitz'],
-  ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs'],
-  ['bauherr@example.test', 'Hanna Bauherr', 'Bauherr'],
-  ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
-] as const;
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'struktur' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
+type Module = 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -44,6 +38,7 @@ export function App() {
   const [checked, setChecked] = useState(false);
 
   const loadMe = useCallback(async () => {
+    await ensureFreshToken();
     if (!getToken()) {
       setMe(null);
       return setChecked(true);
@@ -59,14 +54,26 @@ export function App() {
     setChecked(true);
   }, []);
   useEffect(() => void loadMe(), [loadMe]);
+  // Keep the session alive in the background (access token 12 h, renewed via the refresh token).
+  useEffect(() => {
+    const t = setInterval(() => void ensureFreshToken().then((ok) => !ok && setMe(null)), 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   if (!checked) return null;
-  if (!me) return <Login onLogin={loadMe} />;
+  // Public pages: invitation link and password reset (work without being signed in).
+  const invite = window.location.pathname.match(/^\/einladung\/([A-Za-z0-9_-]{20,})$/);
+  if (invite) return <AcceptInvitationPage token={invite[1]!} onLogin={() => void loadMe()} />;
+  if (window.location.pathname === '/passwort-neu') {
+    const token = new URLSearchParams(window.location.search).get('token') ?? '';
+    return <ResetPasswordPage token={token} onDone={() => { window.history.replaceState(null, '', '/'); void loadMe(); }} />;
+  }
+  if (!me) return <LoginPage onLogin={loadMe} />;
   // QR code on a printed plan → /check/<revision id> (docs/fachkonzept/03). Login first, then the check.
   const check = window.location.pathname.match(/^\/check\/([0-9a-f-]{36})$/);
   if (check) return <CheckPage revisionId={check[1]!} />;
   const logout = () => {
-    setToken(null);
+    void signOut();
     setMe(null);
     setProjectId(null);
   };
@@ -74,44 +81,6 @@ export function App() {
     <ProjectShell key={`${projectId}-${me.user.id}`} me={me} projectId={projectId} onProject={setProjectId} onLogout={logout} onMeReload={() => void loadMe()} />
   ) : (
     <p className="loading">Kein Projekt zugeordnet.</p>
-  );
-}
-
-function Login({ onLogin }: { onLogin: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="login">
-      <div className="login-box">
-        <div className="app-icon">BA</div>
-        <h1>Bau Akte Pro</h1>
-        <p>Als Testbenutzer anmelden (nur lokal, ohne Passwort)</p>
-        <div className="group">
-          {TEST_USERS.map(([email, name, role]) => (
-            <button
-              key={email}
-              className="row action"
-              onClick={async () => {
-                try {
-                  const r = await api<{ token: string }>('/auth/dev-login', { method: 'POST', body: { email } });
-                  setToken(r.token);
-                  onLogin();
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e));
-                }
-              }}
-            >
-              <span className="avatar">{initials(name)}</span>
-              <span className="who">
-                {name}
-                <small>{role}</small>
-              </span>
-              <Icon name="chevron" size={16} />
-            </button>
-          ))}
-        </div>
-        {error && <p className="toast error">{error}</p>}
-      </div>
-    </div>
   );
 }
 
@@ -209,6 +178,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
           <>
             <div className="side-section">Projekt</div>
             {nav('struktur', 'firmen', 'Projekt & Struktur')}
+            {nav('zugaenge', 'zugang', 'Zugänge')}
           </>
         )}
         <div className="sidebar-footer">
@@ -302,6 +272,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}
             {module === 'fahrtenbuch' && <FahrtenbuchPage info={info} run={run} />}
             {module === 'kosten' && <KostenPage info={info} run={run} />}
+            {module === 'zugaenge' && <ZugaengePage info={info} run={run} />}
             {module === 'struktur' && <StrukturPage info={info} me={me} run={run} onReload={() => void reload()} onMeReload={onMeReload} />}
             {module === 'hinweise' && <HinweisePage info={info} conflicts={conflicts} run={run} />}
           </>

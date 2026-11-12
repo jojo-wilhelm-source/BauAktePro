@@ -35,3 +35,10 @@ Rollen gelten **pro Projekt**. Zusätzlich gibt es **Firmenrollen** für die pro
 - **Struktur ändern** (Projekt & Struktur): Orte als Baum (Gebäude › Geschoss › Abschnitt › Raum; Unterorte immer feiner), Gewerke anlegen, umbenennen, löschen. Was von Mängeln, Plänen oder Unterorten benutzt wird, lässt sich nicht löschen. Projekt umbenennen/Adresse.
 - **Nachunternehmer je Projekt** (Web, Nachunternehmer): neu anlegen oder „Aus anderem Projekt …“ übernehmen (eine Firma, mehrere Projekte; Gewerke über den Namen zugeordnet; ohne Verträge, Preise und Zugang).
 - Alles im Audit Log (Teamänderungen einzeln). Rechte-Tests in `apps/api/test/rechte.test.ts`.
+
+## Umsetzungsstand (12.11.2026): Anmeldung, Einladungen, Zugänge
+- **Anmeldung** mit E-Mail und Passwort (Web und App), „Passwort vergessen“ per E-Mail-Link. In der App danach offline nutzbar; Face ID sperrt die App beim Start und nach 5 Minuten im Hintergrund (abschaltbar unter „Mehr“).
+- **Einladen** (Web, Bereich „Zugänge“, nur Bau-/Projektleitung): E-Mail, optional Name, Rolle (Polier, Bauleitung, Projektleitung, Einkauf, Nachunternehmer, Bauherr); bei Nachunternehmer/Bauherr die Firma aus dem Projekt. Der Eingeladene bekommt einen Link (14 Tage, einmalig), wählt Name und Passwort und ist sofort angemeldet. Wer schon einen Zugang in der Firma hat, wird direkt hinzugefügt.
+- **Zugang entziehen** (Rechteänderung, im Audit Log): Danach kein Zugriff mehr, das Projekt verschwindet beim nächsten Abgleich vom Gerät. Den eigenen Zugang und die letzte Leitung eines Projekts kann man nicht entziehen. Offene Einladungen lassen sich zurückziehen.
+- **Gesperrte Konten** (z. B. Mitarbeiter ausgeschieden) können sich weder anmelden noch die Sitzung verlängern. ANNAHME: Sperren eines ganzen Kontos (über alle Projekte) macht vorerst der Administrator in der Datenbank; eine Oberfläche dafür kommt mit der Benutzerverwaltung der Firma (offene-punkte D9).
+

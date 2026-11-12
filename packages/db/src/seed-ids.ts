@@ -54,3 +54,6 @@ export const ID = {
   p4: '00000000-0000-4000-8000-000000000404',
   p5: '00000000-0000-4000-8000-000000000405',
 } as const;
+
+/** Password of all seeded test users – local development and tests only, never in production. */
+export const TEST_PASSWORD = 'Baustelle-Test-2026';

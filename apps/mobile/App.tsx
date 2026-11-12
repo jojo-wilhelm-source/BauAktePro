@@ -1,6 +1,6 @@
 import '@azure/core-asynciterator-polyfill';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, Image, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { BlurView } from 'expo-blur';
@@ -34,21 +34,14 @@ import { DokumenteScreen } from './src/DokumenteScreen';
 import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoUploader, type Picked } from './src/fotoStore';
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import type { MangelRow } from './src/schema';
-import { loadSession, login, logout, type Session } from './src/session';
+import { loadSession, lockEnabled, logout, onSessionExpired, setLockEnabled, type Session } from './src/session';
+import { LockGate, LoginScreen } from './src/AnmeldungScreens';
 import { AMPEL_TINT, C, STATUS_TINT, T, TINT, type Tint } from './src/theme';
 import { Pill, Row, SearchField, Section, Segmented, SheetBar } from './src/ui';
 
 // Being offline on site is the normal case, not an error: keep the dev overlay quiet about it.
 LogBox.ignoreLogs(['[PowerSync]: Sync error', '[PowerSync]: Could not POST streaming', 'Initial connect attempt']);
 
-const TEST_USERS = [
-  ['polier@example.test', 'Paul Polier', 'Polier'],
-  ['bauleitung@example.test', 'Bea Bauleitung', 'Bauleitung'],
-  ['elektro@example.test', 'Erik Elektro', 'NU Elektro Blitz'],
-  ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs'],
-  ['bauherr@example.test', 'Hanna Bauherr', 'Bauherr'],
-  ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
-] as const;
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
@@ -84,28 +77,51 @@ export default function App() {
     })();
   }, []);
 
+  // The server ended the session (password changed, access removed, 30 days unused): sign in again.
+  // Local data stays on the device as long as the same person signs in again.
+  const [expired, setExpired] = useState(false);
+  useEffect(() => onSessionExpired(() => setExpired(true)), []);
+
+  const wipeDevice = async () => {
+    if (!db) return;
+    await db.disconnectAndClear(); // device data belongs to the user: remove on logout / user change
+    clearOfflineFiles();
+    clearFotos();
+  };
+
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
       {!db || session === undefined ? (
         <ActivityIndicator style={{ flex: 1 }} />
       ) : !session ? (
-        <Login onLogin={setSession} />
+        <LoginScreen onLogin={setSession} />
       ) : (
-        <PowerSyncContext.Provider value={db}>
-          <SyncProvider key={session.userId} session={session}>
-            <Main
-              session={session}
-              onLogout={async () => {
-                await db.disconnectAndClear(); // device data belongs to the user: remove on logout
-                clearOfflineFiles();
-                clearFotos();
-                await logout();
-                setSession(null);
+        <LockGate name={session.name ?? session.email}>
+          <PowerSyncContext.Provider value={db}>
+            <SyncProvider key={session.userId} session={session}>
+              <Main
+                session={session}
+                onLogout={async () => {
+                  await wipeDevice();
+                  await logout(session);
+                  setSession(null);
+                }}
+              />
+            </SyncProvider>
+          </PowerSyncContext.Provider>
+          <Modal visible={expired} animationType="slide" presentationStyle="pageSheet">
+            <LoginScreen
+              email={session.email}
+              notice="Bitte erneut anmelden – Ihre Sitzung ist abgelaufen. Erfasste Daten bleiben erhalten."
+              onLogin={async (s) => {
+                if (s.userId !== session.userId) await wipeDevice();
+                setExpired(false);
+                setSession(s);
               }}
             />
-          </SyncProvider>
-        </PowerSyncContext.Provider>
+          </Modal>
+        </LockGate>
       )}
     </SafeAreaProvider>
   );
@@ -124,45 +140,6 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
     <View style={[st.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
       <Text style={{ color: '#fff', fontWeight: '600', fontSize: size * 0.38 }}>{initials(name)}</Text>
     </View>
-  );
-}
-
-function Login({ onLogin }: { onLogin: (s: Session) => void }) {
-  const insets = useSafeAreaInsets();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  return (
-    <ScrollView style={{ backgroundColor: C.bg }} contentContainerStyle={[st.login, { paddingTop: insets.top + 60 }]}>
-      <AppIcon />
-      <Text style={[T.largeTitle, { textAlign: 'center', marginTop: 18 }]}>Bau Akte Pro</Text>
-      <Text style={[T.subhead, { textAlign: 'center', marginTop: 6, marginBottom: 32 }]}>Als Testbenutzer anmelden</Text>
-      <Section footer="Nur für die lokale Entwicklung, ohne Passwort.">
-        {TEST_USERS.map(([email, name, role]) => (
-          <Row
-            key={email}
-            label={
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Avatar name={name} size={36} />
-                <View>
-                  <Text style={T.body}>{name}</Text>
-                  <Text style={T.footnote}>{role}</Text>
-                </View>
-              </View>
-            }
-            value={busy === email ? <ActivityIndicator /> : undefined}
-            chevron={busy !== email}
-            onPress={() => {
-              setBusy(email);
-              login(email).then(onLogin, (e) => {
-                setBusy(null);
-                setError(String(e.message ?? e));
-              });
-            }}
-          />
-        ))}
-      </Section>
-      {error && <Text style={[T.footnote, { color: C.red, textAlign: 'center' }]}>{error}</Text>}
-    </ScrollView>
   );
 }
 
@@ -508,6 +485,8 @@ function MehrTab(props: {
   const project = props.memberships.find((m) => m.project_id === props.projectId);
   const intern = !!role && role !== 'nu' && role !== 'bauherr';
   const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | null>(null);
+  const [lock, setLock] = useState(true);
+  useEffect(() => void lockEnabled().then(setLock), []);
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
       <LargeHeader title="Mehr" />
@@ -561,7 +540,10 @@ function MehrTab(props: {
         <Modal visible={open === 'fahrt'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <FahrtenbuchScreen projectId={props.projectId} projectName={project?.name ?? ''} userId={props.session.userId} onClose={() => setOpen(null)} />
         </Modal>
-        <Section>
+        <Section title="Sicherheit" footer="Sperrt die App beim Start und nach 5 Minuten im Hintergrund. Face ID bleibt auf dem Gerät.">
+          <Row icon="faceid" iconBg="green" label="Mit Face ID entsperren" value={<Switch value={lock} onValueChange={(v) => { setLock(v); void setLockEnabled(v); }} />} />
+        </Section>
+        <Section footer="Beim Abmelden werden alle Projektdaten von diesem Gerät gelöscht. Noch nicht übertragene Änderungen gehen dabei verloren.">
           <Row label="Abmelden" tone="destructive" onPress={props.onLogout} />
         </Section>
       </View>
