@@ -320,3 +320,21 @@ button.link { border: 0; background: none; color: var(--accent); padding: 0; fon
 .kpi.red strong { color: var(--red); }
 .kpi.orange strong { color: var(--orange); }
 .kpi.green strong { color: var(--green); }
+
+/* Bautagebuch */
+.tb .group-head h3 { margin: 0; }
+.tb-title { margin-top: 18px; }
+.tb-pair { display: inline-flex; align-items: center; gap: 6px; color: var(--label-2); }
+.tb-pair input { width: 64px; max-width: 64px; }
+.row .tb-n { width: 56px; text-align: right; }
+.row .tb-left { text-align: left; max-width: none; flex: 1; color: var(--label); }
+.tb-grow { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.tb-grow input { text-align: left; max-width: none; }
+.tb-grow input:first-child { color: var(--label); }
+.row input:disabled, .row textarea:disabled { -webkit-text-fill-color: currentColor; opacity: 1; }
+.tb-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.tb-list .row.sel { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sig-pad { width: 100%; aspect-ratio: 520 / 200; background: var(--bg-elevated); border: 0.5px solid var(--separator); border-radius: 12px; touch-action: none; color: var(--label); cursor: crosshair; }
+.tb-sig-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+.tb .group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 8px; }
+.tb .group-head h3 { font-size: 17px; }

@@ -909,3 +909,60 @@ describe('Firmen-Admin eines Nachunternehmers', () => {
     expect((await call('uElektro', 'GET', `/projects/${ID.project}/zugaenge`)).status).toBe(403);
   });
 });
+
+describe('Bautagebuch', () => {
+  const sig = { w: 300, h: 100, strokes: [[[0.1, 0.5], [0.4, 0.2], [0.7, 0.8], [0.9, 0.4]]] };
+  const draft = (id: string, extra: object = {}) => ({
+    id, project_id: ID.project, datum: '2026-11-10', bereich: 'Bauteil A', wetter: { text: 'bewölkt', temp_min: 4, temp_max: 9 },
+    personal: [{ firma: 'Eigene', anzahl: 3 }], geraete: [{ name: 'Kran', anzahl: 1 }], leistungen: [{ text: 'Estrich 1. OG' }], ...extra,
+  });
+  it('nur interne Rollen: NU und Bauherr sehen und schreiben nichts', async () => {
+    const id = randomUUID();
+    expect((await call('uPolier', 'PUT', '/tagesberichte', draft(id))).status).toBe(200);
+    for (const u of ['uElektro', 'uBauherr'] as const) {
+      expect((await call(u, 'GET', `/projects/${ID.project}/tagesberichte`)).status).toBe(403);
+      expect((await call(u, 'GET', `/tagesberichte/${id}`)).status).toBe(404);
+      expect((await call(u, 'PUT', '/tagesberichte', draft(randomUUID(), { datum: '2026-11-09' }))).status).toBe(403);
+    }
+    expect((await call('uProjektleitung', 'GET', `/projects/${ID.project}/tagesberichte`)).body).toHaveLength(1);
+  });
+  it('Polier unterschreibt → gesperrt; Änderung wird Konflikt, nur Nachtrag; Bauleitung zeichnet gegen; PDF', async () => {
+    const id = randomUUID();
+    await call('uPolier', 'PUT', '/tagesberichte', draft(id));
+    expect((await call('uPolier', 'POST', `/tagesberichte/${id}/unterschreiben`, { signature: { w: 10, h: 10, strokes: [[[0, 0], [0.01, 0.01]]] }, base_version: 1 })).status).toBe(422);
+    const s = await call('uPolier', 'POST', `/tagesberichte/${id}/unterschreiben`, { signature: sig, base_version: 1 });
+    expect(s.body.status).toBe('unterschrieben');
+    const ch = await call('uPolier', 'PUT', '/tagesberichte', draft(id, { version: 2, bereich: 'geändert' }));
+    expect(ch.status).toBe(409);
+    expect((await call('uPolier', 'POST', `/tagesberichte/${id}/gegenzeichnen`, { signature: sig, base_version: 2 })).status).toBe(403);
+    expect((await call('uPolier', 'POST', `/tagesberichte/${id}/nachtrag`, { text: 'Lieferung Fliesen kam 16 Uhr' })).status).toBe(200);
+    const c = await call('uBauleitung', 'POST', `/tagesberichte/${id}/gegenzeichnen`, { signature: sig, base_version: 2 });
+    expect(c.body.countersigned_by).toBe(ID.uBauleitung);
+    const g = await call('uBauleitung', 'GET', `/tagesberichte/${id}`);
+    expect(g.body.nachtraege).toHaveLength(1);
+    expect(g.body.bereich).toBe('Bauteil A');
+    const pdf = await app.inject({ method: 'GET', url: `/tagesberichte/${id}/pdf`, headers: { authorization: `Bearer ${tokens.uBauleitung}` } });
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    const audit = await adminSql`SELECT action FROM audit_log WHERE entity = 'tagesbericht' AND entity_id = ${id} ORDER BY id`;
+    expect(audit.map((a) => a.action)).toEqual(['angelegt', 'unterschrieben', 'nachtrag', 'gegengezeichnet']);
+  });
+  it('offline vom Gerät: Entwurf und Unterschrift über die Upload-Warteschlange, doppelt gesendet nur einmal; zweiter Bericht am selben Tag wird Konflikt', async () => {
+    const id = randomUUID();
+    const d = draft(id);
+    const save = (bid: string, base = 0) => ({ op: 'PUT', table: 'tagesbericht_action', id: randomUUID(), data: { bericht_id: bid, action: 'speichern', base_version: base, occurred_at: '2026-11-10T16:00:00Z', payload: JSON.stringify({ ...d, id: bid }) } });
+    expect((await call('uPolier', 'POST', '/sync/upload', { ops: [save(id)] })).status).toBe(200);
+    const act = { op: 'PUT', table: 'tagesbericht_action', id: randomUUID(), data: { bericht_id: id, action: 'unterschreiben', base_version: 1, payload: JSON.stringify({ signature: sig }) } };
+    await call('uPolier', 'POST', '/sync/upload', { ops: [act] });
+    await call('uPolier', 'POST', '/sync/upload', { ops: [act] });
+    const g = await call('uPolier', 'GET', `/tagesberichte/${id}`);
+    expect(g.body.status).toBe('unterschrieben');
+    expect(g.body.version).toBe(2);
+    const other = randomUUID();
+    await call('uPolier', 'POST', '/sync/upload', { ops: [save(other)] });
+    // stale draft edit from a second device (base 1, server is at 2 after signing) → conflict, not overwritten
+    await call('uBauleitung', 'POST', '/sync/upload', { ops: [save(id, 1)] });
+    expect((await adminSql`SELECT count(*)::int AS n FROM sync_conflict WHERE entity = 'tagesbericht' AND entity_id = ${id}`)[0]!.n).toBe(1);
+    const [k] = await adminSql`SELECT reason FROM sync_conflict WHERE entity = 'tagesbericht' AND entity_id = ${other}`;
+    expect(k?.reason).toMatch(/schon einen Tagesbericht/);
+  });
+});

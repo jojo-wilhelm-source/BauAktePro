@@ -2,6 +2,7 @@
 # packages/db/migrations (docs/fachkonzept/01-rollen-rechte.md). Changing one means changing both.
 # Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
 # Rev 2026-11-11b: Dokumente offline (folders, documents, released revisions only).
+# Rev 2026-11-12a: Bautagebuch (internal roles only, like RLS).
 config:
   edition: 3
 
@@ -52,6 +53,10 @@ streams:
       - SELECT * FROM folder WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM document WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM document_revision WHERE status = 'freigegeben' AND project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      # Bautagebuch: internal only (RLS app.is_internal). NU and Bauherr see nothing (ANNAHME, offene-punkte D10).
+      - SELECT * FROM tagesbericht WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM tagesbericht_nachtrag WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      - SELECT * FROM tagesbericht_foto WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
 
   # Nachunternehmer: confirmed assignments to the own company + own reports. Never notes.
   nachunternehmer:

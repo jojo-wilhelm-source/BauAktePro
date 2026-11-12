@@ -15,6 +15,7 @@ import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichun
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { adminOverview, adminUpdateUser } from './admin-service';
 import { startPage } from './start-service';
+import { addFoto as addTbFoto, addNachtrag, berichtPdf, fotoFile as tbFotoFile, getBericht, listBerichte, saveBericht, signBericht, vorschlag } from './bautagebuch-service';
 import { changeLink, linkInfo, listFreimeldungen, publicAnzeige, publicFoto, submitFreimeldung } from './freimeldung-service';
 import { acceptInvitation, createAuth, forgotPassword, invitationInfo, invite, login, logout, refresh, removeMember, resetPassword, revokeInvitation, zugaenge } from './anmeldung';
 import {
@@ -149,6 +150,37 @@ export function buildApp(sql: Sql) {
       return { user, projects, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
     }),
   );
+
+  // --- Bautagebuch (docs/fachkonzept/07) ---------------------------------------------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/tagesberichte', async (req) => asUser(sql, req.userId, (tx) => listBerichte(tx, req.userId, req.params.projectId)));
+  app.get<{ Params: { projectId: string }; Querystring: { datum: string } }>('/projects/:projectId/tagesberichte/vorschlag', async (req) =>
+    asUser(sql, req.userId, (tx) => vorschlag(tx, req.userId, req.params.projectId, z.string().date().parse(req.query.datum))));
+  app.get<{ Params: { id: string } }>('/tagesberichte/:id', async (req) => asUser(sql, req.userId, (tx) => getBericht(tx, req.userId, req.params.id)));
+  app.put('/tagesberichte', async (req, reply) => {
+    const r = await asUser(sql, req.userId, (tx) => saveBericht(tx, req.userId, req.body, meta(req)));
+    return r.ok ? r.bericht : reply.status(409).send({ error: r.reason });
+  });
+  for (const kind of ['unterschreiben', 'gegenzeichnen'] as const) {
+    app.post<{ Params: { id: string } }>(`/tagesberichte/:id/${kind}`, async (req, reply) => {
+      const r = await asUser(sql, req.userId, (tx) => signBericht(tx, req.userId, req.params.id, kind, req.body, meta(req)));
+      return r.ok ? r.bericht : reply.status(409).send({ error: r.reason });
+    });
+  }
+  app.post<{ Params: { id: string } }>('/tagesberichte/:id/nachtrag', async (req) => asUser(sql, req.userId, (tx) => addNachtrag(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.post<{ Params: { id: string } }>('/tagesberichte/:id/fotos', async (req) => {
+    const u = await readUpload(req);
+    return asUser(sql, req.userId, (tx) => addTbFoto(tx, req.userId, req.params.id, u, u.fields.caption ?? null));
+  });
+  app.get<{ Params: { id: string } }>('/tagesbericht-fotos/:id', async (req, reply) => {
+    const f = await asUser(sql, req.userId, (tx) => tbFotoFile(tx, req.params.id));
+    reply.header('content-type', f.type);
+    return reply.send(f.bytes);
+  });
+  app.get<{ Params: { id: string } }>('/tagesberichte/:id/pdf', async (req, reply) => {
+    const bytes = await asUser(sql, req.userId, (tx) => berichtPdf(tx, req.userId, req.params.id));
+    reply.header('content-type', 'application/pdf').header('content-disposition', 'inline; filename="Bautagebuch.pdf"');
+    return reply.send(Buffer.from(bytes));
+  });
 
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/start', async (req) => asUser(sql, req.userId, (tx) => startPage(tx, req.userId, req.params.projectId)));
 
@@ -551,6 +583,19 @@ export function buildApp(sql: Sql) {
           if (op.table === 'punkt_action' && op.op === 'PUT') {
             const a = z.object({ punkt_id: z.string().uuid(), payload: z.string(), base_version: z.coerce.number().int() }).parse(data);
             return patchPunkt(tx, req.userId, a.punkt_id, a.base_version, JSON.parse(a.payload), m);
+          }
+          // Bautagebuch from the device (offline): whole drafts, signing and Nachträge through one ordered queue,
+          // each applied only if the report is still at base_version (otherwise sync_conflict).
+          if (op.table === 'tagesbericht_action' && op.op === 'PUT') {
+            const a = z.object({ bericht_id: z.string().uuid(), action: z.enum(['speichern', 'unterschreiben', 'gegenzeichnen', 'nachtrag']), payload: z.string(), base_version: z.coerce.number().int() }).parse(data);
+            const payload = JSON.parse(a.payload) as Record<string, unknown>;
+            const when = meta(req, (data.occurred_at as string) ?? undefined);
+            const [fresh] = await tx`INSERT INTO tagesbericht_action (id, bericht_id, action, payload, base_version) VALUES (${op.id}, ${a.bericht_id}, ${a.action}, ${tx.json(payload as never)}, ${a.base_version})
+              ON CONFLICT (id) DO NOTHING RETURNING id`;
+            if (!fresh) return { ok: true, duplicate: true };
+            if (a.action === 'speichern') return saveBericht(tx, req.userId, { ...payload, id: a.bericht_id, version: a.base_version || undefined }, when);
+            if (a.action === 'nachtrag') return addNachtrag(tx, req.userId, a.bericht_id, { id: op.id, text: payload.text }, when);
+            return signBericht(tx, req.userId, a.bericht_id, a.action, { signature: payload.signature, base_version: a.base_version }, when);
           }
           throw new HttpError(422, `Nicht unterstützt: ${op.op} ${op.table}`);
         });

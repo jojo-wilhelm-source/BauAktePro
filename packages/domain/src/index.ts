@@ -7,3 +7,4 @@ export * from './mangelanzeige';
 export * from './besprechung';
 export * from './stunden';
 export * from './kosten';
+export * from './bautagebuch';

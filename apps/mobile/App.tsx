@@ -33,6 +33,7 @@ import { SyncCenter, useSyncLabel } from './src/SyncCenter';
 import { DokumenteScreen } from './src/DokumenteScreen';
 import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoUploader, type Picked } from './src/fotoStore';
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
+import { BautagebuchScreen } from './src/BautagebuchScreen';
 import type { MangelRow } from './src/schema';
 import { loadSession, lockEnabled, logout, onSessionExpired, setLockEnabled, type Session } from './src/session';
 import { LockGate, LoginScreen } from './src/AnmeldungScreens';
@@ -484,7 +485,7 @@ function MehrTab(props: {
   const role = props.memberships.find((m) => m.project_id === props.projectId)?.role;
   const project = props.memberships.find((m) => m.project_id === props.projectId);
   const intern = !!role && role !== 'nu' && role !== 'bauherr';
-  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | null>(null);
+  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | 'bautagebuch' | null>(null);
   const [lock, setLock] = useState(true);
   useEffect(() => void lockEnabled().then(setLock), []);
   return (
@@ -521,7 +522,8 @@ function MehrTab(props: {
           <Row icon="folder" iconBg="teal" label="Dokumente" subtitle="Freigegebene Stände, offline lesbar" chevron onPress={() => setOpen('dokumente')} />
         </Section>
         {intern && (
-          <Section title="Auf der Baustelle" footer="Funktioniert auch ohne Netz. Die Bauleitung gibt Einkäufe im Web frei.">
+          <Section title="Auf der Baustelle" footer="Funktioniert auch ohne Netz. Die Bauleitung zeichnet Tagesberichte gegen und gibt Einkäufe frei.">
+            <Row icon="book.closed" iconBg="blue" label="Bautagebuch" subtitle="Tagesbericht mit Unterschrift" chevron onPress={() => setOpen('bautagebuch')} />
             <Row icon="cart" iconBg="orange" label="Einkauf erfassen" chevron onPress={() => setOpen('einkauf')} />
             <Row icon="car" iconBg="purple" label="Fahrtenbuch und Tanken" chevron onPress={() => setOpen('fahrt')} />
           </Section>
@@ -533,6 +535,9 @@ function MehrTab(props: {
         </Section>
         <Modal visible={open === 'dokumente'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <DokumenteScreen projectId={props.projectId} onClose={() => setOpen(null)} />
+        </Modal>
+        <Modal visible={open === 'bautagebuch'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
+          <BautagebuchScreen projectId={props.projectId} role={role} onClose={() => setOpen(null)} />
         </Modal>
         <Modal visible={open === 'einkauf'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <EinkaufScreen projectId={props.projectId} userId={props.session.userId} userName={props.session.name ?? props.session.email} onClose={() => setOpen(null)} />

@@ -50,7 +50,7 @@ await sql.begin(async (tx) => {
   await tx`UPDATE plan SET current_revision_id = NULL, folder_id = NULL`;
   await tx`UPDATE document SET current_revision_id = NULL`;
   for (const t of [
-    'auth_session', 'auth_account', 'auth_verification', 'einladung', 'freimeldung', 'anzeige_link',
+    'auth_session', 'auth_account', 'auth_verification', 'einladung', 'freimeldung', 'anzeige_link', 'tagesbericht_action', 'tagesbericht_foto', 'tagesbericht_nachtrag', 'tagesbericht',
     'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
     'einreichung', 'stundenzettel_zeile', 'stundenzettel', 'document_revision', 'document', 'folder',
     'besprechung_eintrag', 'besprechung_punkt', 'besprechung_teilnehmer', 'besprechung', 'plan_revision',

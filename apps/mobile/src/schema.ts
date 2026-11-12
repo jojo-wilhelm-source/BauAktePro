@@ -103,7 +103,29 @@ const pending_action = new Table(
   { localOnly: true },
 );
 
+/**
+ * Bautagebuch (docs/fachkonzept/07). The synced report is read-only on the device; drafts, signatures and Nachträge
+ * go through tagesbericht_action (ordered, version-checked on the server). tagesbericht_lokal shows unsent work.
+ */
+const tagesbericht = new Table(
+  {
+    project_id: column.text, datum: column.text, bereich: column.text, wetter: column.text, personal: column.text, geraete: column.text, leistungen: column.text,
+    lieferungen: column.text, behinderungen: column.text, besonderheiten: column.text, status: column.text, signed_by: column.text, signed_at: column.text,
+    countersigned_by: column.text, countersigned_at: column.text, version: column.integer, created_by: column.text,
+  },
+  { indexes: { p: ['project_id', 'datum'] } },
+);
+const tagesbericht_nachtrag = new Table({ bericht_id: column.text, project_id: column.text, text: column.text, created_by: column.text, created_at: column.text }, { indexes: { b: ['bericht_id'] } });
+const tagesbericht_action = new Table({ bericht_id: column.text, action: column.text, payload: column.text, base_version: column.integer, occurred_at: column.text }, { insertOnly: true });
+const tagesbericht_lokal = new Table(
+  {
+    project_id: column.text, datum: column.text, payload: column.text, status: column.text, expected_version: column.integer, nachtraege: column.text, countersigned: column.integer, updated_at: column.text,
+  },
+  { localOnly: true },
+);
+
 export const AppSchema = new Schema({
+  tagesbericht, tagesbericht_nachtrag, tagesbericht_action, tagesbericht_lokal,
   project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, fahrzeug, fahrt, tankvorgang, beleg_upload, folder, document, document_revision, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
 });
 export type Database = (typeof AppSchema)['types'];

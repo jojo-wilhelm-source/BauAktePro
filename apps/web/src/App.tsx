@@ -8,6 +8,7 @@ import { EinreichungenPage } from './Einreichungen';
 import { StundenPage } from './Stunden';
 import { NachunternehmerPage } from './Nachunternehmer';
 import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
+import { BautagebuchPage } from './Bautagebuch';
 import { KostenPage } from './Kosten';
 import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
 import { FreimeldungPage } from './Freimeldung';
@@ -26,7 +27,7 @@ import { PageHeader, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -170,6 +171,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
         {nav('besprechungen', 'besprechung', 'Besprechungen')}
         {nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
         {nav('dokumente', 'ordner', 'Dokumente')}
@@ -289,6 +291,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'stunden' && <StundenPage info={info} run={run} />}
             {module === 'einreichungen' && <EinreichungenPage info={info} run={run} />}
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
+            {module === 'bautagebuch' && <BautagebuchPage info={info} run={run} />}
             {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}
             {module === 'fahrtenbuch' && <FahrtenbuchPage info={info} run={run} />}
             {module === 'kosten' && <KostenPage info={info} run={run} />}
