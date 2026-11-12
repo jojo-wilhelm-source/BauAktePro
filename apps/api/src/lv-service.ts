@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { Sql, TxSql } from '@bap/db';
-import { formatDate, LvPositionInput, ozNummerieren, PaketPosition, preisspiegel, titelSummen } from '@bap/domain';
+import { abweichungProzent, formatDate, LvPositionInput, ozNummerieren, PaketPosition, preisspiegel, titelSummen } from '@bap/domain';
 import { WEB_URL } from './anmeldung';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
@@ -153,7 +153,64 @@ export async function lvPreisspiegel(tx: TxSql, userId: string, id: string) {
   const spiegel = preisspiegel(posOnly, input);
   const gp = new Map(spiegel.zeilen.map((z) => [z.position_id, z.gp]));
   const summen = titelSummen(l.positionen as { id: string; art: 'titel' | 'untertitel' | 'position' | 'text' }[], gp, input.length);
-  return { lv: l, angebote, preise: input, spiegel: { ...spiegel, titelsummen: Object.fromEntries(summen) } };
+  // Own calculation (left column): computed like an offer without discount.
+  const [k] = await tx`SELECT preise, updated_at FROM lv_kalkulation WHERE lv_id = ${id}`;
+  const kPreise = (k?.preise ?? {}) as Record<string, number>;
+  const ks = preisspiegel(posOnly, [{ id: 'kalk', company: 'Kalkulation', nachlass_prozent: 0, summe_pdf: null, preise: kPreise }]);
+  const kSumme = ks.summen[0]!.summe;
+  const kalkulation = {
+    preise: kPreise, updated_at: k?.updated_at ?? null, summe: kSumme, fehlende_positionen: ks.summen[0]!.fehlende_positionen,
+    gp: Object.fromEntries(ks.zeilen.map((z) => [z.position_id, z.gp[0] ?? null])),
+    titelsummen: Object.fromEntries([...titelSummen(l.positionen as { id: string; art: 'titel' | 'untertitel' | 'position' | 'text' }[], new Map(ks.zeilen.map((z) => [z.position_id, z.gp])), 1)].map(([t, v]) => [t, v[0] ?? 0])),
+  };
+  const abweichung = Object.fromEntries(spiegel.summen.map((x) => [x.angebot_id, abweichungProzent(x.summe_nach_nachlass, kSumme)]));
+  return { lv: l, angebote, preise: input, kalkulation, spiegel: { ...spiegel, titelsummen: Object.fromEntries(summen), abweichung } };
+}
+
+/** Save the own calculation (unit prices per position); Einkauf and Leitung, also after sending. */
+export async function saveKalkulation(tx: TxSql, userId: string, id: string, input: unknown) {
+  const { preise } = z.object({ preise: z.record(z.string().uuid(), z.coerce.number().min(0).max(1e9)) }).parse(input);
+  const l = await getLv(tx, userId, id);
+  const ids = new Set(l.positionen.filter((p) => p.art === 'position').map((p) => p.id as string));
+  const clean = Object.fromEntries(Object.entries(preise).filter(([k]) => ids.has(k)));
+  await tx`INSERT INTO lv_kalkulation (lv_id, project_id, preise, updated_by) VALUES (${id}, ${l.project_id}, ${tx.json(clean as never)}, ${userId})
+           ON CONFLICT (lv_id) DO UPDATE SET preise = EXCLUDED.preise, updated_by = EXCLUDED.updated_by, updated_at = now()`;
+  return { ok: true };
+}
+
+const ErfassenInput = z.object({
+  company_id: z.string().uuid(),
+  preise: z.record(z.string().uuid(), z.coerce.number().min(0).max(1e9)).default({}),
+  nachlass_prozent: z.coerce.number().min(0).max(50).default(0),
+  summe_netto: z.coerce.number().min(0).max(1e10).nullish(),
+  bemerkung: z.string().max(4000).nullish(),
+});
+
+/**
+ * Enter an offer that came in by mail, fax or paper (Einkauf / Leitung). Creates the request record for the firm if
+ * it was not asked through the app. A draft LV is locked by this (all offers refer to the same positions).
+ */
+export async function erfasseAngebot(tx: TxSql, userId: string, id: string, input: unknown, meta: WriteMeta) {
+  const d = ErfassenInput.parse(input);
+  const l = await getLv(tx, userId, id);
+  if (l.status === 'vergeben') throw new HttpError(409, 'Bereits vergeben');
+  const ids = new Set(l.positionen.filter((p) => p.art === 'position').map((p) => p.id as string));
+  if (!ids.size) throw new HttpError(422, 'Das LV hat noch keine Positionen');
+  const preise = Object.entries(d.preise).filter(([k]) => ids.has(k));
+  if (!preise.length && d.summe_netto == null) throw new HttpError(422, 'Bitte Einheitspreise oder die Angebotssumme eintragen');
+  const [c] = await tx`SELECT id, name, email, kind FROM company WHERE id = ${d.company_id}`;
+  if (!c || c.kind !== 'nu') throw new HttpError(422, 'Angebote kommen von Nachunternehmern');
+  let [a] = await tx`SELECT id FROM lv_anfrage WHERE lv_id = ${id} AND company_id = ${d.company_id}`;
+  if (!a) [a] = await tx`INSERT INTO lv_anfrage (id, lv_id, project_id, company_id, email, token) VALUES (${randomUUID()}, ${id}, ${l.project_id}, ${d.company_id}, ${c.email}, ${randomBytes(24).toString('base64url')}) RETURNING id`;
+  const [me] = await tx`SELECT name FROM app_user WHERE id = ${userId}`;
+  const angebotId = randomUUID();
+  await tx`INSERT INTO angebot (id, anfrage_id, lv_id, project_id, company_id, summe_netto, nachlass_prozent, bemerkung, abgegeben_von, abgegeben_by)
+           VALUES (${angebotId}, ${a!.id}, ${id}, ${l.project_id}, ${d.company_id}, ${preise.length ? null : d.summe_netto ?? null}, ${d.nachlass_prozent}, ${d.bemerkung ?? null},
+                   ${`erfasst von ${(me?.name as string) ?? 'Einkauf'}`}, ${userId})`;
+  if (preise.length) await tx`INSERT INTO angebot_preis ${tx(preise.map(([position_id, einheitspreis]) => ({ angebot_id: angebotId, position_id, einheitspreis })) as never)}`;
+  await tx`UPDATE lv SET status = 'angefragt', version = version + 1 WHERE id = ${id} AND status = 'entwurf'`;
+  await audit(tx, userId, l.project_id as string, id, 'angebot_erfasst', meta, { angebot: angebotId, company: c.name, positionen: preise.length });
+  return { ok: true, id: angebotId };
 }
 
 export async function vergeben(tx: TxSql, userId: string, id: string, input: unknown, meta: WriteMeta) {

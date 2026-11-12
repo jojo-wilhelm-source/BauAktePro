@@ -110,3 +110,9 @@ export type PaketPosition = z.infer<typeof PaketPosition>;
 export function paketAusmultiplizieren(paket: PaketPosition[], menge: number) {
   return paket.map((p) => ({ kurztext: p.kurztext, langtext: p.langtext ?? null, einheit: p.einheit, menge: Math.round(p.faktor * menge * 1000) / 1000 }));
 }
+
+/** Deviation of an offer from the own calculation in percent (positive = more expensive), null without calculation. */
+export function abweichungProzent(summe: number, kalkulation: number | null | undefined) {
+  if (!kalkulation) return null;
+  return Math.round(((summe - kalkulation) / kalkulation) * 1000) / 10;
+}

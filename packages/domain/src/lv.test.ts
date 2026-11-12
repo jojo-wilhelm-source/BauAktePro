@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paketAusmultiplizieren, ozNummerieren, parsePositionen, preisspiegel, titelSummen } from './lv';
+import { abweichungProzent, paketAusmultiplizieren, ozNummerieren, parsePositionen, preisspiegel, titelSummen } from './lv';
 
 describe('Leistungsverzeichnis', () => {
   it('Positionen aus Excel einfügen (Tab oder Semikolon, deutsche Zahlen), Kopfzeile wird übersprungen', () => {
@@ -45,5 +45,13 @@ describe('Leistungspaket', () => {
       { kurztext: 'Randschalung', einheit: 'm', faktor: 0.2 }, { kurztext: 'Beton C30/37', einheit: 'm3', faktor: 0.25 },
     ], 120);
     expect(r.map((x) => x.menge)).toEqual([48, 3.6, 24, 30]);
+  });
+});
+
+describe('Abweichung zur Kalkulation', () => {
+  it('in Prozent, ohne Kalkulation null', () => {
+    expect(abweichungProzent(11000, 10000)).toBe(10);
+    expect(abweichungProzent(9250, 10000)).toBe(-7.5);
+    expect(abweichungProzent(5000, 0)).toBeNull();
   });
 });

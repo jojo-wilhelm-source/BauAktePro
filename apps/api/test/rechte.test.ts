@@ -1258,3 +1258,28 @@ describe('LV-Ordner, Gliederung, Stammleistungen', () => {
     expect((await call('uBauleitung', 'PUT', '/stammleistungen', { id: randomUUID(), kurztext: 'X', einheit: 'St', paket: [{ kurztext: '', einheit: 'm3', faktor: 1 }] })).status).toBe(422);
   });
 });
+
+describe('Preisspiegel mit Kalkulation und erfassten Angeboten', () => {
+  it('Kalkulation links, Angebot per Hand erfassen, Abweichung; NU/Polier ausgeschlossen', async () => {
+    const id = randomUUID(); const p1 = randomUUID(); const p2 = randomUUID();
+    await call('uBauleitung', 'PUT', '/lv', { id, project_id: ID.project, titel: 'Bodenplatte', auto_oz: true, positionen: [
+      { id: randomUUID(), art: 'titel', kurztext: 'Rohbau' },
+      { id: p1, art: 'position', kurztext: 'Aushub', menge: 48, einheit: 'm3' },
+      { id: p2, art: 'position', kurztext: 'Beton C30/37', menge: 30, einheit: 'm3' },
+    ] });
+    expect((await call('uPolier', 'PUT', `/lv/${id}/kalkulation`, { preise: { [p1]: 20 } })).status).toBeGreaterThanOrEqual(403);
+    expect((await call('uBauleitung', 'PUT', `/lv/${id}/kalkulation`, { preise: { [p1]: 20, [p2]: 150, [randomUUID()]: 5 } })).status).toBe(200);
+    // offer by mail, entered by the Bauleitung (locks the draft)
+    expect((await call('uElektro', 'POST', `/lv/${id}/angebote`, { company_id: ID.coElektro, preise: { [p1]: 1 } })).status).toBeGreaterThanOrEqual(403);
+    expect((await call('uBauleitung', 'POST', `/lv/${id}/angebote`, { company_id: ID.coFliesen, preise: { [p1]: 22, [p2]: 165 }, nachlass_prozent: 0 })).status).toBe(200);
+    const sp = (await call('uBauleitung', 'GET', `/lv/${id}/preisspiegel`)).body;
+    expect(sp.lv.status).toBe('angefragt');
+    expect(sp.kalkulation.summe).toBe(48 * 20 + 30 * 150);
+    expect(Object.keys(sp.kalkulation.preise)).toHaveLength(2);
+    expect(sp.angebote).toHaveLength(1);
+    expect(sp.spiegel.abweichung[sp.angebote[0].id]).toBe(10);
+    // after sending, the calculation stays editable; NU never sees it
+    expect((await call('uBauleitung', 'PUT', `/lv/${id}/kalkulation`, { preise: { [p1]: 21, [p2]: 150 } })).status).toBe(200);
+    expect((await call('uElektro', 'GET', `/lv/${id}/preisspiegel`)).status).toBeGreaterThanOrEqual(403);
+  });
+});

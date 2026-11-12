@@ -18,7 +18,8 @@ interface Spiegel {
   lv: Lv;
   angebote: { id: string; company_id: string; company: string; nachlass: number; summe: number | null; bemerkung: string | null; has_pdf: boolean; abgegeben_von: string; abgegeben_at: string }[];
   preise: { id: string; preise: Record<string, number> }[];
-  spiegel: { zeilen: { position_id: string; gp: (number | null)[]; guenstigster: string[] }[]; summen: { angebot_id: string; summe: number; nachlass_prozent: number; summe_nach_nachlass: number; fehlende_positionen: number }[]; rang: string[]; guenstigstes: string | null; titelsummen: Record<string, number[]> };
+  kalkulation: { preise: Record<string, number>; gp: Record<string, number | null>; summe: number; fehlende_positionen: number; titelsummen: Record<string, number>; updated_at: string | null };
+  spiegel: { zeilen: { position_id: string; gp: (number | null)[]; guenstigster: string[] }[]; summen: { angebot_id: string; summe: number; nachlass_prozent: number; summe_nach_nachlass: number; fehlende_positionen: number }[]; rang: string[]; guenstigstes: string | null; titelsummen: Record<string, number[]>; abweichung: Record<string, number | null> };
 }
 interface PaketPos { kurztext: string; langtext?: string | null; einheit: string; faktor: number }
 interface Stamm { id: string; kategorie: string; kurztext: string; langtext: string | null; einheit: string; paket: PaketPos[] }
@@ -143,7 +144,7 @@ function LvDetail({ id, info, run, ordner, onBack, onOpen }: { id: string; info:
     setLv(l);
     setRows(l.positionen);
     setDirty(false);
-    if (l.status !== 'entwurf') setSp(await api<Spiegel>(`/lv/${id}/preisspiegel`));
+    setSp(await api<Spiegel>(`/lv/${id}/preisspiegel`));
   }, [id]);
   useEffect(() => void load(), [load]);
   if (!lv) return <p className="loading">Wird geladen …</p>;
@@ -179,7 +180,7 @@ function LvDetail({ id, info, run, ordner, onBack, onOpen }: { id: string; info:
         </div>}>
         <div className="segmented">
           <button className={tab === 'lv' ? 'on' : ''} onClick={() => setTab('lv')}>Gliederung ({anzahl} Positionen)</button>
-          <button className={tab === 'spiegel' ? 'on' : ''} disabled={draft} onClick={() => setTab('spiegel')}>Preisspiegel{sp ? ` (${sp.angebote.length})` : ''}</button>
+          <button className={tab === 'spiegel' ? 'on' : ''} disabled={dirty} onClick={() => setTab('spiegel')}>Kalkulation & Preisspiegel{sp ? ` (${sp.angebote.length})` : ''}</button>
         </div>
         <span className={`pill ${STATUS[lv.status][1]}`}>{STATUS[lv.status][0]}</span>
       </PageHeader>
@@ -379,20 +380,69 @@ function PaketSheet({ stamm, paket, run, onClose }: { stamm: Stamm; paket: boole
   );
 }
 
+const parseNum = (t: string) => { const n = Number(t.trim().replace(/\s|€/g, '').replace(/\./g, '').replace(',', '.')); return t.trim() && Number.isFinite(n) ? n : null; };
+const epText = (n: number | undefined) => (n == null ? '' : n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+/**
+ * Preisspiegel: own calculation on the left, then the bidders side by side (cheapest first or in order of receipt).
+ * Offers received by mail or on paper are entered here by Einkauf / Leitung.
+ */
 function PreisspiegelView({ sp, info, run }: { sp: Spiegel; info: ProjectInfo; run: Run }) {
-  const { lv, angebote, preise, spiegel } = sp;
-  const order = spiegel.rang.map((id) => angebote.findIndex((a) => a.id === id));
+  const { lv, angebote, preise, spiegel, kalkulation: kalk } = sp;
+  const [reihe, setReihe] = useState<'rang' | 'eingang'>('rang');
+  const [kalkEdit, setKalkEdit] = useState<Record<string, string> | null>(null);
+  const [erfassen, setErfassen] = useState<{ company_id?: string } | null>(null);
+  const order = (reihe === 'rang' ? spiegel.rang : [...angebote].sort((x, y) => x.abgegeben_at.localeCompare(y.abgegeben_at)).map((a) => a.id)).map((id) => angebote.findIndex((a) => a.id === id));
   const ep = (aIdx: number, pid: string) => preise[aIdx]?.preise[pid];
   const zeile = new Map(spiegel.zeilen.map((z) => [z.position_id, z]));
-  if (!angebote.length) return <div className="card pad empty">Noch keine Angebote eingegangen.</div>;
+  const positionen = lv.positionen.filter((p) => p.art === 'position');
+  const kalkLive = (pid: string) => (kalkEdit ? parseNum(kalkEdit[pid] ?? '') : kalk.preise[pid] ?? null);
+  const kalkGp = (p: Pos) => { const e = kalkLive(p.id); return e == null ? null : Math.round(e * p.menge * 100) / 100; };
+  const kalkSumme = kalkEdit ? positionen.reduce((s, p) => s + (kalkGp(p) ?? 0), 0) : kalk.summe;
+  const hatKalk = kalkEdit != null || Object.keys(kalk.preise).length > 0;
+  const kalkTitel = (id: string) => {
+    if (!kalkEdit) return kalk.titelsummen[id] ?? 0;
+    let on = false, sum = 0; const start = lv.positionen.find((x) => x.id === id)!;
+    for (const x of lv.positionen) {
+      if (x.id === id) { on = true; continue; }
+      if (!on) continue;
+      if (x.art === 'titel' || (x.art === 'untertitel' && start.art === 'untertitel')) break;
+      if (x.art === 'position') sum += kalkGp(x) ?? 0;
+    }
+    return sum;
+  };
+  const vergeben = lv.status === 'vergeben';
+  const pctTone = (v: number | null) => (v == null ? '' : v > 10 ? 'var(--red)' : v > 0 ? 'var(--orange)' : 'var(--green)');
   return (
     <>
+      <div className="meta-row">
+        {!vergeben && (kalkEdit
+          ? <>
+              <button className="btn small plain" onClick={() => setKalkEdit(null)}>Abbrechen</button>
+              <button className="btn small filled" onClick={() => void run(async () => {
+                const body: Record<string, number> = {};
+                for (const [k, v] of Object.entries(kalkEdit)) { const n = parseNum(v); if (n != null) body[k] = n; }
+                await api(`/lv/${lv.id}/kalkulation`, { method: 'PUT', body: { preise: body } });
+                setKalkEdit(null);
+              }, 'Kalkulation gespeichert')}>Kalkulation speichern</button>
+            </>
+          : <button className="btn small" onClick={() => setKalkEdit(Object.fromEntries(positionen.map((p) => [p.id, epText(kalk.preise[p.id])])))}>{hatKalk ? 'Kalkulation bearbeiten' : 'Eigene Kalkulation eintragen'}</button>)}
+        {!vergeben && <button className="btn small" onClick={() => setErfassen({})}>Angebot erfassen …</button>}
+        <span className="spacer" />
+        {angebote.length > 1 && <div className="segmented small">
+          <button className={reihe === 'rang' ? 'on' : ''} onClick={() => setReihe('rang')}>Günstigstes zuerst</button>
+          <button className={reihe === 'eingang' ? 'on' : ''} onClick={() => setReihe('eingang')}>Nach Eingang</button>
+        </div>}
+      </div>
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="table spiegel">
           <thead>
-            <tr><th style={{ width: 90 }}>OZ</th><th>Leistung</th><th className="money">Menge</th>
-              {order.map((i, r) => <th key={angebote[i]!.id} className="money" colSpan={2}>{r === 0 && '★ '}{angebote[i]!.company}<div className="sub">{formatDate(angebote[i]!.abgegeben_at)}</div></th>)}</tr>
-            <tr><th /><th /><th />{order.map((i) => [<th key={`e${i}`} className="money sub">EP</th>, <th key={`g${i}`} className="money sub">GP</th>])}</tr>
+            <tr><th style={{ width: 90 }}>OZ</th><th style={{ minWidth: 220 }}>Leistung</th><th className="money">Menge</th>
+              <th className="money kalk" colSpan={2}>Kalkulation<div className="sub">{kalk.updated_at ? `Stand ${formatDate(kalk.updated_at)}` : 'eigene Preise'}</div></th>
+              {order.map((i, r) => <th key={angebote[i]!.id} className="money" colSpan={2}>
+                <span className="sub">Bieter {angebote.length > 1 ? (reihe === 'rang' ? r + 1 : [...angebote].sort((x, y) => x.abgegeben_at.localeCompare(y.abgegeben_at)).findIndex((a) => a.id === angebote[i]!.id) + 1) : 1}</span><br />
+                {reihe === 'rang' && r === 0 && angebote.length > 1 && '★ '}{angebote[i]!.company}<div className="sub">{formatDate(angebote[i]!.abgegeben_at)}{angebote[i]!.abgegeben_von.startsWith('erfasst') ? ' · erfasst' : ''}</div></th>)}</tr>
+            <tr><th /><th /><th /><th className="money sub kalk">EP</th><th className="money sub kalk">GP</th>{order.map((i) => [<th key={`e${i}`} className="money sub">EP</th>, <th key={`g${i}`} className="money sub">GP</th>])}</tr>
           </thead>
           <tbody>
             {lv.positionen.map((p) => {
@@ -401,51 +451,128 @@ function PreisspiegelView({ sp, info, run }: { sp: Spiegel; info: ProjectInfo; r
                 return (
                   <tr key={p.id} className={`lv-${p.art}`} style={{ cursor: 'default' }}>
                     <td className="num">{p.oz}</td><td colSpan={2}><strong>{p.kurztext}</strong></td>
+                    <td colSpan={2} className="money kalk"><strong>{hatKalk ? formatEuro(kalkTitel(p.id)) : ''}</strong></td>
                     {order.map((i) => <td key={i} colSpan={2} className="money"><strong>{formatEuro(ts[i] ?? 0)}</strong></td>)}
                   </tr>
                 );
               }
-              if (p.art === 'text') return <tr key={p.id} className="lv-text"><td /><td colSpan={2 + order.length * 2} className="sub">{p.kurztext}</td></tr>;
+              if (p.art === 'text') return <tr key={p.id} className="lv-text"><td /><td colSpan={4 + order.length * 2} className="sub">{p.kurztext}</td></tr>;
               const z = zeile.get(p.id);
+              const kg = kalkGp(p);
               return (
                 <tr key={p.id} style={{ cursor: 'default' }}>
                   <td className="num">{p.oz}</td><td>{p.kurztext}</td><td className="money">{num(p.menge)} {p.einheit}</td>
+                  <td className="money kalk">{kalkEdit
+                    ? <input className="lv-input num-in" inputMode="decimal" aria-label={`Kalkulation EP ${p.oz}`} value={kalkEdit[p.id] ?? ''} onChange={(e) => setKalkEdit({ ...kalkEdit, [p.id]: e.target.value })} />
+                    : <span className="sub">{kalk.preise[p.id] != null ? formatEuro(kalk.preise[p.id]!) : '–'}</span>}</td>
+                  <td className="money kalk">{kg != null ? formatEuro(kg) : '–'}</td>
                   {order.map((i) => {
                     const best = z?.guenstigster.includes(angebote[i]!.id);
                     const e = ep(i, p.id);
-                    return [<td key={`e${i}`} className="money sub">{e != null ? formatEuro(e) : '–'}</td>,
-                      <td key={`g${i}`} className={`money ${best ? 'best' : ''}`}>{z?.gp[i] != null ? formatEuro(z.gp[i]!) : '–'}</td>];
+                    const k = kalkLive(p.id);
+                    const ueber = e != null && k ? (e - k) / k : 0;
+                    return [<td key={`e${i}`} className="money sub" title={k && e != null ? `${ueber >= 0 ? '+' : ''}${(ueber * 100).toLocaleString('de-DE', { maximumFractionDigits: 1 })} % zur Kalkulation` : undefined}
+                        style={ueber > 0.2 ? { color: 'var(--red)' } : undefined}>{e != null ? formatEuro(e) : '–'}</td>,
+                      <td key={`g${i}`} className={`money ${best && angebote.length > 1 ? 'best' : ''}`}>{z?.gp[i] != null ? formatEuro(z.gp[i]!) : '–'}</td>];
                   })}
                 </tr>
               );
             })}
           </tbody>
           <tfoot>
-            {(['summe', 'nachlass', 'netto'] as const).map((k) => (
-              <tr key={k}><td /><td><strong>{{ summe: 'Summe netto', nachlass: 'Nachlass', netto: 'Angebotssumme nach Nachlass' }[k]}</strong></td><td />
+            {(['summe', 'nachlass', 'netto', 'abw'] as const).map((k) => (
+              <tr key={k}><td /><td><strong>{{ summe: 'Summe netto', nachlass: 'Nachlass', netto: 'Angebotssumme nach Nachlass', abw: 'Abweichung zur Kalkulation' }[k]}</strong></td><td />
+                <td colSpan={2} className="money kalk">{k === 'summe' || k === 'netto' ? (hatKalk ? <strong>{formatEuro(kalkSumme)}</strong> : '–') : ''}
+                  {k === 'netto' && hatKalk && !kalkEdit && kalk.fehlende_positionen > 0 && <div className="sub" style={{ color: 'var(--orange)' }}>{kalk.fehlende_positionen} Pos. ohne Preis</div>}</td>
                 {order.map((i, r) => {
                   const s = spiegel.summen.find((x) => x.angebot_id === angebote[i]!.id)!;
-                  return <td key={i} colSpan={2} className={`money ${k === 'netto' && r === 0 ? 'best' : ''}`}>
-                    {k === 'summe' ? formatEuro(s.summe) : k === 'nachlass' ? `${s.nachlass_prozent.toLocaleString('de-DE')} %` : <strong>{formatEuro(s.summe_nach_nachlass)}</strong>}
+                  const abw = spiegel.abweichung[angebote[i]!.id] ?? null;
+                  return <td key={i} colSpan={2} className={`money ${k === 'netto' && r === 0 && reihe === 'rang' && angebote.length > 1 ? 'best' : ''}`}>
+                    {k === 'summe' ? formatEuro(s.summe) : k === 'nachlass' ? `${s.nachlass_prozent.toLocaleString('de-DE')} %`
+                      : k === 'netto' ? <strong>{formatEuro(s.summe_nach_nachlass)}</strong>
+                      : <span style={{ color: pctTone(abw) }}>{abw == null ? '–' : `${abw > 0 ? '+' : ''}${abw.toLocaleString('de-DE')} %`}</span>}
                     {k === 'netto' && s.fehlende_positionen > 0 && <div className="sub" style={{ color: 'var(--orange)' }}>{s.fehlende_positionen} Pos. ohne Preis</div>}
                   </td>;
                 })}
               </tr>
             ))}
-            <tr><td /><td /><td />
+            <tr><td /><td /><td /><td colSpan={2} />
               {order.map((i) => (
                 <td key={i} colSpan={2} className="money">
                   {angebote[i]!.has_pdf && <button className="btn small" onClick={() => void openPdf(`/angebote/${angebote[i]!.id}/pdf`)}>PDF</button>}{' '}
-                  {info.role === 'bauleitung' && lv.status !== 'vergeben' && <button className="btn small filled" onClick={() => void run(() => api(`/lv/${lv.id}/vergeben`, { method: 'POST', body: { company_id: angebote[i]!.company_id } }), `Vergeben an ${angebote[i]!.company}`)}>Vergeben</button>}
+                  {!vergeben && <button className="btn small plain" onClick={() => setErfassen({ company_id: angebote[i]!.company_id })}>Korrigieren</button>}{' '}
+                  {info.role === 'bauleitung' && !vergeben && <button className="btn small filled" onClick={() => void run(() => api(`/lv/${lv.id}/vergeben`, { method: 'POST', body: { company_id: angebote[i]!.company_id } }), `Vergeben an ${angebote[i]!.company}`)}>Vergeben</button>}
                   {lv.vergeben_an === angebote[i]!.company_id && <span className="pill c-green">Vergeben</span>}
                 </td>
               ))}
             </tr>
           </tfoot>
         </table>
+        {!angebote.length && <div className="empty">Noch keine Angebote. Bieter antworten über ihren Link – Angebote per Mail oder Papier mit „Angebot erfassen“ eintragen.</div>}
       </div>
-      <div className="footnote">★ = günstigstes Angebot nach Nachlass. Grün = günstigster Preis je Position. Titelzeilen zeigen die Summe je Bieter. Bemerkungen der Bieter: {angebote.filter((a) => a.bemerkung).map((a) => `${a.company}: „${a.bemerkung}“`).join(' · ') || 'keine'}.</div>
+      <div className="footnote">Kalkulation = eigene Einheitspreise (sehen nur Einkauf und Leitung, nie die Bieter). ★ = günstigstes Angebot nach Nachlass. Grün = günstigster Preis je Position, rot = EP mehr als 20 % über der Kalkulation. Bemerkungen der Bieter: {angebote.filter((a) => a.bemerkung).map((a) => `${a.company}: „${a.bemerkung}“`).join(' · ') || 'keine'}.</div>
+      {erfassen && <ErfassenSheet sp={sp} info={info} companyId={erfassen.company_id} onClose={() => setErfassen(null)} run={run} />}
     </>
+  );
+}
+
+/** Enter an offer received by mail or on paper: unit prices per position (or paste an EP column from Excel), or only a total. */
+function ErfassenSheet({ sp, info, companyId, onClose, run }: { sp: Spiegel; info: ProjectInfo; companyId?: string; onClose: () => void; run: Run }) {
+  const { lv } = sp;
+  const positionen = lv.positionen.filter((p) => p.art === 'position');
+  const nus = info.companies.filter((c) => c.kind === 'nu');
+  const vorher = (cid?: string) => { const i = sp.angebote.findIndex((a) => a.company_id === cid); return i < 0 ? null : { a: sp.angebote[i]!, preise: sp.preise[i]?.preise ?? {} }; };
+  const [firma, setFirma] = useState(companyId ?? '');
+  const [ep, setEp] = useState<Record<string, string>>(() => Object.fromEntries(positionen.map((p) => [p.id, epText(vorher(companyId)?.preise[p.id])])));
+  const [nachlass, setNachlass] = useState(() => String(vorher(companyId)?.a.nachlass ?? '').replace('.', ','));
+  const [summe, setSumme] = useState('');
+  const [bemerkung, setBemerkung] = useState('');
+  const [paste, setPaste] = useState(false);
+  const preise = Object.fromEntries(Object.entries(ep).map(([k, v]) => [k, parseNum(v)]).filter(([, v]) => v != null)) as Record<string, number>;
+  const anzahl = Object.keys(preise).length;
+  const gesamt = positionen.reduce((s, p) => s + (preise[p.id] ?? 0) * p.menge, 0);
+  const ok = !!firma && (anzahl > 0 || parseNum(summe) != null);
+  return (
+    <Sheet title={companyId ? 'Angebot korrigieren' : 'Angebot erfassen'} primary="Erfassen" primaryDisabled={!ok} wide onCancel={onClose}
+      onPrimary={() => void run(async () => {
+        await api(`/lv/${lv.id}/angebote`, { method: 'POST', body: { company_id: firma, preise, nachlass_prozent: parseNum(nachlass) ?? 0, summe_netto: anzahl ? null : parseNum(summe), bemerkung: bemerkung || null } });
+        onClose();
+      }, 'Angebot erfasst')}>
+      <div className="group">
+        <div className="row"><span className="k">Bieter</span>
+          <select value={firma} onChange={(e) => { setFirma(e.target.value); const v = vorher(e.target.value); if (v) { setEp(Object.fromEntries(positionen.map((p) => [p.id, epText(v.preise[p.id])]))); setNachlass(String(v.a.nachlass).replace('.', ',')); } }}>
+            <option value="">bitte wählen</option>{nus.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></div>
+        <div className="row"><span className="k">Nachlass %</span><input inputMode="decimal" value={nachlass} onChange={(e) => setNachlass(e.target.value)} placeholder="0" /></div>
+        <div className="row"><span className="k">Bemerkung</span><input value={bemerkung} onChange={(e) => setBemerkung(e.target.value)} placeholder="z. B. Angebot per Mail vom …, gültig bis …" /></div>
+      </div>
+      <div className="meta-row" style={{ margin: '12px 0 6px' }}>
+        <div className="group-title" style={{ margin: 0 }}>Einheitspreise ({anzahl} von {positionen.length}) · Summe {formatEuro(Math.round(gesamt * 100) / 100)}</div>
+        <span className="spacer" />
+        <button className="btn small" onClick={() => setPaste(!paste)}>EP-Spalte aus Excel einfügen</button>
+      </div>
+      {paste && <textarea rows={5} style={{ width: '100%' }} placeholder={`Spalte mit ${positionen.length} Einheitspreisen kopieren und hier einfügen (eine Zeile je Position, in LV-Reihenfolge)`}
+        onChange={(e) => {
+          const z = e.target.value.split(/\r?\n/).map((x) => x.split('\t').pop() ?? '').filter((x, i, all) => x.trim() || i < all.length - 1);
+          setEp(Object.fromEntries(positionen.map((p, i) => [p.id, z[i] != null && parseNum(z[i]!) != null ? epText(parseNum(z[i]!)!) : ep[p.id] ?? ''])));
+        }} />}
+      <div className="card">
+        <table className="table lv-table">
+          <thead><tr><th style={{ width: 100 }}>OZ</th><th>Kurztext</th><th className="money">Menge</th><th className="money" style={{ width: 120 }}>EP €</th><th className="money" style={{ width: 120 }}>GP</th></tr></thead>
+          <tbody>
+            {positionen.map((p) => (
+              <tr key={p.id} style={{ cursor: 'default' }}>
+                <td className="num">{p.oz}</td><td>{p.kurztext}</td><td className="money">{num(p.menge)} {p.einheit}</td>
+                <td className="money"><input className="lv-input num-in" inputMode="decimal" aria-label={`EP ${p.oz}`} value={ep[p.id] ?? ''} onChange={(e) => setEp({ ...ep, [p.id]: e.target.value })} /></td>
+                <td className="money">{preise[p.id] != null ? formatEuro(Math.round(preise[p.id]! * p.menge * 100) / 100) : '–'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {anzahl === 0 && <div className="group" style={{ marginTop: 12 }}><div className="row"><span className="k">Nur Angebotssumme netto €</span><input inputMode="decimal" value={summe} onChange={(e) => setSumme(e.target.value)} placeholder="wenn keine Einzelpreise vorliegen" /></div></div>}
+      <div className="footnote">{lv.status === 'entwurf' ? 'Mit dem ersten erfassten Angebot wird das LV gesperrt (alle Angebote beziehen sich auf dieselben Positionen). ' : ''}Ein erneutes Erfassen ersetzt das bisherige Angebot dieser Firma im Preisspiegel; alle Stände bleiben gespeichert.</div>
+    </Sheet>
   );
 }
 

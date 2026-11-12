@@ -414,3 +414,7 @@ select.status-select { border: 0; appearance: none; -webkit-appearance: none; pa
 .lv-input.num-in { text-align: right; }
 .lv-lang { width: 100%; margin-top: 6px; border: 0.5px solid var(--separator); border-radius: 8px; padding: 8px; font: inherit; font-size: 13px; background: var(--bg-elevated); color: var(--label); }
 .lv-actions { white-space: nowrap; text-align: right; }
+/* Preisspiegel: own calculation column on the left */
+.spiegel .kalk { background: color-mix(in srgb, var(--fill) 50%, transparent); }
+.spiegel .kalk + .kalk { border-right: 1px solid var(--separator); }
+.segmented.small button { padding: 3px 10px; font-size: 12px; }

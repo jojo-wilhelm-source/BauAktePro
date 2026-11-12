@@ -14,7 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
-import { copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
+import { erfasseAngebot, saveKalkulation, copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser, ownCompany, ownLogo, updateOwnCompany } from './admin-service';
 import { startPage } from './start-service';
@@ -210,6 +210,8 @@ export function buildApp(sql: Sql) {
   app.put('/stammleistungen', async (req) => asUser(sql, req.userId, (tx) => saveStamm(tx, req.userId, req.body)));
   app.delete<{ Params: { id: string } }>('/stammleistungen/:id', async (req) => asUser(sql, req.userId, (tx) => removeStamm(tx, req.params.id)));
   app.get<{ Params: { id: string } }>('/lv/:id/preisspiegel', async (req) => asUser(sql, req.userId, (tx) => lvPreisspiegel(tx, req.userId, req.params.id)));
+  app.put<{ Params: { id: string } }>('/lv/:id/kalkulation', async (req) => asUser(sql, req.userId, (tx) => saveKalkulation(tx, req.userId, req.params.id, req.body)));
+  app.post<{ Params: { id: string } }>('/lv/:id/angebote', async (req) => asUser(sql, req.userId, (tx) => erfasseAngebot(tx, req.userId, req.params.id, req.body, meta(req))));
   app.post<{ Params: { id: string } }>('/lv/:id/vergeben', async (req) => asUser(sql, req.userId, (tx) => vergeben(tx, req.userId, req.params.id, req.body, meta(req))));
   app.get<{ Params: { id: string } }>('/angebote/:id/pdf', async (req, reply) => {
     const bytes = await asUser(sql, req.userId, (tx) => angebotPdf(tx, req.params.id));
