@@ -41,7 +41,7 @@
 | iOS-App | **React Native mit Expo** | Teilt Logik und Typen mit Web und Server. Native Module, wo nötig (PDF, später File Provider) |
 | Plan-Anzeige | iOS: natives **PDFKit** (über ein Expo-Modul); Web: **PDF.js** | Große Pläne flüssig mit Zoom; Pins als relative Koordinaten (Seite, x, y) pro Plan-Index |
 | Web-App + Portale | **React + Vite**, ein Projekt mit Rollen-Ansichten | Bauleitung, NU-Portal und Bauherren-Portal teilen Komponenten; Rechte kommen vom Server |
-| Anmeldung | **Better Auth** (Bibliothek, Daten in unserer Postgres) | Kein externer Dienst, Einladungen und Einmal-Links selbst umsetzbar. Face ID nur lokal als Gerätesperre |
+| Anmeldung | **Better Auth** (Bibliothek, Daten in unserer Postgres) | Kein externer Dienst, Einladungen und Einmal-Links selbst umsetzbar. keine Face-ID-Sperre (entfernt 12.11.2026) |
 | Dateien | **S3-kompatibler Objektspeicher** in Deutschland | Direkter Upload vom Gerät (vorsignierte URLs), Versionen und Indizes als eigene Objekte |
 | Hintergrundjobs | **pg-boss** (Warteschlange in Postgres) | Eskalation, Nachfristen, Erinnerungen, PDF-Erzeugung ohne zusätzlichen Redis |
 | PDF | **pdf-lib** (Stempel, Wasserzeichen, Aufdruck auf Pläne) + **Gotenberg** (HTML → PDF für Berichte und Protokolle) | Pläne bleiben maßstabsgetreu, Berichte als HTML-Vorlagen |

@@ -14,6 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
+import { anzahlUngelesen, banfZuLv, createBanf, editBanf, einkaufsportal, getBanf, listBanf, listNachrichten, nachrichtGelesen, statusBanf } from './bestellung-service';
 import { erfasseAngebot, lvPdfIntern, publicLvPdf, saveKalkulation, copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser, ownCompany, ownLogo, updateOwnCompany } from './admin-service';
@@ -215,6 +216,17 @@ export function buildApp(sql: Sql) {
   app.put('/stammleistungen', async (req) => asUser(sql, req.userId, (tx) => saveStamm(tx, req.userId, req.body)));
   app.delete<{ Params: { id: string } }>('/stammleistungen/:id', async (req) => asUser(sql, req.userId, (tx) => removeStamm(tx, req.params.id)));
   app.get<{ Params: { id: string } }>('/lv/:id/preisspiegel', async (req) => asUser(sql, req.userId, (tx) => lvPreisspiegel(tx, req.userId, req.params.id)));
+  // --- Bestellanforderungen, Einkaufsportal, Mitteilungen (docs/fachkonzept/12, 04) -------------------
+  app.get<{ Params: { id: string } }>('/projects/:id/bestellanforderungen', async (req) => asUser(sql, req.userId, (tx) => listBanf(tx, req.userId, req.params.id)));
+  app.post('/bestellanforderungen', async (req) => asUser(sql, req.userId, (tx) => createBanf(tx, req.userId, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/bestellanforderungen/:id', async (req) => asUser(sql, req.userId, (tx) => getBanf(tx, req.params.id)));
+  app.patch<{ Params: { id: string } }>('/bestellanforderungen/:id', async (req) => asUser(sql, req.userId, (tx) => editBanf(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.post<{ Params: { id: string } }>('/bestellanforderungen/:id/status', async (req) => asUser(sql, req.userId, (tx) => statusBanf(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.post<{ Params: { id: string } }>('/bestellanforderungen/:id/lv', async (req) => asUser(sql, req.userId, (tx) => banfZuLv(tx, req.userId, req.params.id, meta(req))));
+  app.get<{ Querystring: { status?: string } }>('/einkaufsportal', async (req) => asUser(sql, req.userId, (tx) => einkaufsportal(tx, req.query)));
+  app.get('/mitteilungen/anzahl', async (req) => asUser(sql, req.userId, (tx) => anzahlUngelesen(tx, req.userId)));
+  app.get('/mitteilungen', async (req) => asUser(sql, req.userId, (tx) => listNachrichten(tx, req.userId)));
+  app.post<{ Params: { id: string } }>('/mitteilungen/:id/gelesen', async (req) => asUser(sql, req.userId, (tx) => nachrichtGelesen(tx, req.userId, req.params.id === 'alle' ? 'alle' : z.string().uuid().parse(req.params.id))));
   app.put<{ Params: { id: string } }>('/lv/:id/kalkulation', async (req) => asUser(sql, req.userId, (tx) => saveKalkulation(tx, req.userId, req.params.id, req.body)));
   app.post<{ Params: { id: string } }>('/lv/:id/angebote', async (req) => asUser(sql, req.userId, (tx) => erfasseAngebot(tx, req.userId, req.params.id, req.body, meta(req))));
   app.post<{ Params: { id: string } }>('/lv/:id/vergeben', async (req) => asUser(sql, req.userId, (tx) => vergeben(tx, req.userId, req.params.id, req.body, meta(req))));
@@ -682,6 +694,13 @@ export function buildApp(sql: Sql) {
             rest.besprechung_id ??= rest.first_besprechung_id; // local column name on the device
             const created = meta(req, (data.occurred_at ?? data.created_at) as string | undefined);
             return addPunkt(tx, req.userId, { ...rest, id: op.id }, created);
+          }
+          // Bestellanforderung made on the phone (offline): created once, idempotent by id.
+          if (op.table === 'bestellanforderung' && op.op === 'PUT') {
+            const { id: _i, created_at, positionen, dringend, ...rest } = data as Record<string, unknown>;
+            const pos = typeof positionen === 'string' ? JSON.parse(positionen) : positionen ?? [];
+            return { ok: true, bestellanforderung: await createBanf(tx, req.userId, { ...rest, id: op.id, positionen: pos, dringend: dringend === 1 || dringend === true },
+              meta(req, (created_at as string) ?? undefined)) };
           }
           if (op.table === 'punkt_action' && op.op === 'PUT') {
             const a = z.object({ punkt_id: z.string().uuid(), payload: z.string(), base_version: z.coerce.number().int() }).parse(data);

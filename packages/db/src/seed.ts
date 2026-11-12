@@ -51,7 +51,7 @@ await sql.begin(async (tx) => {
   await tx`UPDATE document SET current_revision_id = NULL`;
   for (const t of [
     'auth_session', 'auth_account', 'auth_verification', 'einladung', 'freimeldung', 'anzeige_link', 'besprechung_teilaufgabe', 'besprechung_verteiler', 'besprechung_punkt_foto', 'tagesbericht_vorlage', 'tagesbericht_action', 'tagesbericht_foto', 'tagesbericht_nachtrag', 'tagesbericht',
-    'angebot_preis', 'lv_kalkulation', 'angebot', 'lv_anfrage', 'lv_position', 'lv', 'lv_ordner', 'lv_stammleistung', 'company_kontakt', 'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
+    'benachrichtigung', 'bestellanforderung', 'angebot_preis', 'lv_kalkulation', 'angebot', 'lv_anfrage', 'lv_position', 'lv', 'lv_ordner', 'lv_stammleistung', 'company_kontakt', 'tankvorgang', 'fahrt', 'fahrzeug', 'einkauf', 'vertrag', 'project_company',
     'einreichung', 'stundenzettel_zeile', 'stundenzettel', 'document_revision', 'document', 'folder',
     'besprechung_eintrag', 'besprechung_punkt', 'besprechung_teilnehmer', 'besprechung', 'plan_revision',
     'mangelanzeige_position', 'mangelanzeige', 'location_area', 'mangel_foto', 'mangel_note', 'mangel', 'sync_conflict', 'audit_log',
@@ -74,6 +74,7 @@ await sql.begin(async (tx) => {
     { id: ID.uBauherr, tenant_id: ID.tenant, company_id: ID.coBauherr, email: 'bauherr@example.test', name: 'Hanna Bauherr' },
     { id: ID.uProjektleitung, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'projektleitung@example.test', name: 'Petra Projektleitung' },
     { id: ID.uAdmin, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'admin@example.test', name: 'Anna Admin' },
+    { id: ID.uEinkauf, tenant_id: ID.tenant, company_id: ID.coOwn, email: 'einkauf@example.test', name: 'Erika Einkauf' },
   ])}`;
   // Administrator of the whole app (all projects, all users) and the two NU owners as firm admins.
   await tx`UPDATE app_user SET is_admin = true WHERE id = ${ID.uAdmin}`;
@@ -83,7 +84,7 @@ await sql.begin(async (tx) => {
   // Real sign-in for local testing: every test user has the same development password (never used in production).
   const pw = await hashPassword(TEST_PASSWORD);
   await tx`INSERT INTO auth_account ${tx(
-    [ID.uBauleitung, ID.uPolier, ID.uElektro, ID.uFliesen, ID.uBauherr, ID.uProjektleitung, ID.uAdmin].map((u) => ({
+    [ID.uBauleitung, ID.uPolier, ID.uElektro, ID.uFliesen, ID.uBauherr, ID.uProjektleitung, ID.uAdmin, ID.uEinkauf].map((u) => ({
       id: u, user_id: u, account_id: u, provider_id: 'credential', password: pw,
     })),
   )}`;
@@ -99,6 +100,9 @@ await sql.begin(async (tx) => {
     { project_id: ID.project, user_id: ID.uBauherr, company_id: ID.coBauherr, role: 'bauherr' },
     { project_id: ID.project, user_id: ID.uProjektleitung, company_id: ID.coOwn, role: 'projektleitung' },
     { project_id: ID.otherProject, user_id: ID.uBauleitung, company_id: ID.coOwn, role: 'bauleitung' },
+    // Einkauf: one user for all sites (Einkaufsportal over every project he is assigned to).
+    { project_id: ID.project, user_id: ID.uEinkauf, company_id: ID.coOwn, role: 'einkauf' },
+    { project_id: ID.otherProject, user_id: ID.uEinkauf, company_id: ID.coOwn, role: 'einkauf' },
   ])}`;
   await tx`INSERT INTO location ${tx([
     { id: ID.haus, project_id: ID.project, parent_id: null, kind: 'gebaeude', name: 'Haus A', sort: 1 },
@@ -201,7 +205,7 @@ await sql.begin(async (tx) => {
       assigned_company_id: ID.coElektro, assignment_confirmed: false, status: 'neu', pin_x: 0.6, pin_y: 0.5,
       created_by: ID.uBauherr, creator_role: 'bauherr', reporter_company_id: ID.coBauherr, due_date: null, created_at: '2026-11-09T15:10:00Z' }),
   ])}`;
-  await tx`INSERT INTO project_counter (project_id, mangel, besprechung, punkt, stundenzettel, nachtrag, rechnung, einkauf) VALUES (${ID.project}, 3, 1, 5, 1, 1, 1, 2)`;
+  await tx`INSERT INTO project_counter (project_id, mangel, besprechung, punkt, stundenzettel, nachtrag, rechnung, einkauf, bestellanforderung) VALUES (${ID.project}, 3, 1, 5, 1, 1, 1, 2, 1)`;
 
   // Contacts of the NU on site (callable from the app).
   await tx`INSERT INTO company_kontakt ${tx([
@@ -209,6 +213,13 @@ await sql.begin(async (tx) => {
     { id: '00000000-0000-4000-8000-000000000e52', tenant_id: ID.tenant, company_id: ID.coElektro, name: 'Murat Strom', funktion: 'Monteur', telefon: '+49 711 555 0102', created_by: ID.uElektro },
     { id: '00000000-0000-4000-8000-000000000e53', tenant_id: ID.tenant, company_id: ID.coFliesen, name: 'Lena Fuge', funktion: 'Vorarbeiterin', telefon: '+49 711 555 0201', created_by: ID.uFliesen },
   ] as never)}`;
+
+  // Bestellanforderung from the Polier, still open for the Einkauf (docs/fachkonzept/12).
+  await tx`INSERT INTO bestellanforderung ${tx({
+    id: ID.banf1, tenant_id: ID.tenant, project_id: ID.project, number: 1, titel: 'Bauzaun und Schuttmulde', beschreibung: 'Für den Abbruch im EG',
+    positionen: tx.json([{ text: 'Bauzaunelemente 3,5 m mit Füßen', menge: 20, einheit: 'St' }, { text: 'Schuttmulde 7 m³ inkl. Abfuhr', menge: 2, einheit: 'St' }] as never),
+    location_id: ID.eg, benoetigt_am: '2026-11-20', dringend: true, created_by: ID.uPolier,
+  } as never)}`;
 
   // Baustellen-Einkäufe and Fahrtenbuch (docs/fachkonzept/14).
   await tx`INSERT INTO einkauf ${tx([

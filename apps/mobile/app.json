@@ -34,12 +34,6 @@
         }
       ],
       [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "Bau Akte Pro nutzt Face ID, um die App zu entsperren."
-        }
-      ],
-      [
         "expo-camera",
         {
           "cameraPermission": "Bau Akte Pro nutzt die Kamera, um Mängel zu fotografieren und Raum-QR-Codes zu scannen.",

@@ -13,6 +13,7 @@ import { abweichungProzent, formatDate, LvPositionInput, ozNummerieren, PaketPos
 import { WEB_URL } from './anmeldung';
 import { LOGO_DIR } from './bautagebuch-service';
 import { renderLvPdf } from './lv-pdf';
+import { banfAngefragt } from './bestellung-service';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
@@ -171,6 +172,7 @@ export async function sendAnfragen(tx: TxSql, userId: string, id: string, input:
   }
   await tx`UPDATE lv SET status = 'angefragt', version = version + 1 WHERE id = ${id} AND status = 'entwurf'`;
   await audit(tx, userId, l.project_id as string, id, 'angefragt', meta, { firmen: sent.map((s) => s.company) });
+  await banfAngefragt(tx, id);
   return { sent };
 }
 

@@ -13,6 +13,7 @@ const TEST_USERS = [
   ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs'],
   ['bauherr@example.test', 'Hanna Bauherr', 'Bauherr'],
   ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
+  ['einkauf@example.test', 'Erika Einkauf', 'Einkauf (alle Baustellen)'],
   ['admin@example.test', 'Anna Admin', 'Administratorin'],
 ] as const;
 

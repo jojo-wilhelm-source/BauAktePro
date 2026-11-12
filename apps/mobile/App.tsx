@@ -35,11 +35,12 @@ import { DokumenteScreen } from './src/DokumenteScreen';
 import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoUploader, type Picked } from './src/fotoStore';
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import { BautagebuchScreen } from './src/BautagebuchScreen';
+import { BestellungScreen } from './src/BestellungScreen';
 import { KontakteScreen } from './src/KontakteScreen';
 import { RaumScanner } from './src/RaumScanner';
 import type { MangelRow } from './src/schema';
-import { loadSession, lockEnabled, logout, onSessionExpired, setLockEnabled, type Session } from './src/session';
-import { LockGate, LoginScreen } from './src/AnmeldungScreens';
+import { loadSession, logout, onSessionExpired, type Session } from './src/session';
+import { LoginScreen } from './src/AnmeldungScreens';
 import { AMPEL_TINT, C, STATUS_TINT, T, TINT, type Tint } from './src/theme';
 import { Pill, Row, SearchField, Section, Segmented, SheetBar } from './src/ui';
 
@@ -101,7 +102,7 @@ export default function App() {
       ) : !session ? (
         <LoginScreen onLogin={setSession} />
       ) : (
-        <LockGate name={session.name ?? session.email}>
+        <>
           <PowerSyncContext.Provider value={db}>
             <SyncProvider key={session.userId} session={session}>
               <Main
@@ -125,7 +126,7 @@ export default function App() {
               }}
             />
           </Modal>
-        </LockGate>
+        </>
       )}
     </SafeAreaProvider>
   );
@@ -506,12 +507,10 @@ function MehrTab(props: {
   const role = props.memberships.find((m) => m.project_id === props.projectId)?.role;
   const project = props.memberships.find((m) => m.project_id === props.projectId);
   const intern = !!role && role !== 'nu' && role !== 'bauherr';
-  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | 'bautagebuch' | 'kontakte' | null>(null);
+  const [open, setOpen] = useState<'einkauf' | 'fahrt' | 'dokumente' | 'bautagebuch' | 'kontakte' | 'bestellung' | null>(null);
   // Fahrtenbuch: vehicles only reach the device if the administrator granted it to this person.
   const { data: fz } = useQuery<{ n: number }>('SELECT count(*) AS n FROM fahrzeug');
   const fahrtenbuch = (fz[0]?.n ?? 0) > 0;
-  const [lock, setLock] = useState(true);
-  useEffect(() => void lockEnabled().then(setLock), []);
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
       <LargeHeader title="Mehr" />
@@ -549,7 +548,8 @@ function MehrTab(props: {
         {intern && (
           <Section title="Auf der Baustelle" footer="Funktioniert auch ohne Netz. Die Bauleitung zeichnet Tagesberichte gegen und gibt Einkäufe frei.">
             {project?.m_bautagebuch !== 0 && <Row icon="book.closed" iconBg="blue" label="Bautagebuch" subtitle="Tagesbericht mit Unterschrift" chevron onPress={() => setOpen('bautagebuch')} />}
-            <Row icon="cart" iconBg="orange" label="Einkauf erfassen" chevron onPress={() => setOpen('einkauf')} />
+            <Row icon="shippingbox" iconBg="orange" label="Material anfordern" subtitle="Bestellanforderung an den Einkauf" chevron onPress={() => setOpen('bestellung')} />
+            <Row icon="cart" iconBg="yellow" label="Einkauf erfassen" chevron onPress={() => setOpen('einkauf')} />
             {fahrtenbuch && <Row icon="car" iconBg="purple" label="Fahrtenbuch und Tanken" chevron onPress={() => setOpen('fahrt')} />}
           </Section>
         )}
@@ -567,15 +567,15 @@ function MehrTab(props: {
         <Modal visible={open === 'bautagebuch'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <BautagebuchScreen projectId={props.projectId} role={role} onClose={() => setOpen(null)} />
         </Modal>
+        <Modal visible={open === 'bestellung'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
+          <BestellungScreen projectId={props.projectId} userId={props.session.userId} onClose={() => setOpen(null)} />
+        </Modal>
         <Modal visible={open === 'einkauf'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <EinkaufScreen projectId={props.projectId} userId={props.session.userId} userName={props.session.name ?? props.session.email} onClose={() => setOpen(null)} />
         </Modal>
         <Modal visible={open === 'fahrt'} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(null)}>
           <FahrtenbuchScreen projectId={props.projectId} projectName={project?.name ?? ''} userId={props.session.userId} onClose={() => setOpen(null)} />
         </Modal>
-        <Section title="Sicherheit" footer="Sperrt die App beim Start und nach 5 Minuten im Hintergrund. Face ID bleibt auf dem Gerät.">
-          <Row icon="faceid" iconBg="green" label="Mit Face ID entsperren" value={<Switch value={lock} onValueChange={(v) => { setLock(v); void setLockEnabled(v); }} />} />
-        </Section>
         <Section footer="Beim Abmelden werden alle Projektdaten von diesem Gerät gelöscht. Noch nicht übertragene Änderungen gehen dabei verloren.">
           <Row label="Abmelden" tone="destructive" onPress={props.onLogout} />
         </Section>

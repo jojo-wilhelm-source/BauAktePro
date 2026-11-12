@@ -3,6 +3,7 @@
 # Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
 # Rev 2026-11-11b: Dokumente offline (folders, documents, released revisions only).
 # Rev 2026-11-12a: Bautagebuch (internal roles only, like RLS).
+# Rev 2026-11-12f: Bestellanforderungen (internal roles, like RLS; the Einkauf works in the web).
 # Rev 2026-11-12e: Teilaufgaben of Besprechungspunkte.
 # Rev 2026-11-12d: Bautagebuch templates.
 # Rev 2026-11-12c: photos on Besprechungspunkte.
@@ -67,6 +68,8 @@ streams:
       - SELECT * FROM tagesbericht WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_bautagebuch = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM tagesbericht_nachtrag WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_bautagebuch = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
       - SELECT * FROM tagesbericht_foto WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND m_bautagebuch = true AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
+      # Bestellanforderungen of the site (RLS: internal roles and Einkauf; devices only for internal roles).
+      - SELECT * FROM bestellanforderung WHERE project_id IN (SELECT project_id FROM project_member WHERE user_id = auth.user_id() AND (role = 'bauleitung' OR role = 'projektleitung' OR role = 'polier'))
 
   # Nachunternehmer: confirmed assignments to the own company + own reports. Never notes.
   nachunternehmer:

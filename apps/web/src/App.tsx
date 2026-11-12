@@ -22,6 +22,7 @@ import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
+import { BestellungenPage, EinkaufsportalPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -30,7 +31,7 @@ import { PageHeader, Sheet, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'portal' | 'mitteilungen';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -105,8 +106,25 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
   const [info, setInfo] = useState<ProjectInfo | null>(null);
   const [maengel, setMaengel] = useState<Mangel[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  // NU-Portal starts with "Was ist zu tun?"; internal roles with the Mängel list.
-  const [module, setModule] = useState<Module>(me.projects.find((p) => p.id === projectId)?.role === 'nu' ? 'start' : 'maengel');
+  // Where to go after switching the project (e.g. from the Einkaufsportal or a Mitteilung to another site).
+  const [ziel] = useState<{ module: Module; lv?: string; banf?: string } | null>(() => {
+    const raw = sessionStorage.getItem('bap.ziel');
+    sessionStorage.removeItem('bap.ziel');
+    return raw ? JSON.parse(raw) : null;
+  });
+  // NU-Portal starts with "Was ist zu tun?", the Einkauf with its portal, internal roles with the Mängel list.
+  const startRole = me.projects.find((p) => p.id === projectId)?.role;
+  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'einkauf' ? 'portal' : 'maengel'));
+  const [lvOpen, setLvOpen] = useState<string | null>(ziel?.lv ?? null);
+  const [banfOpen, setBanfOpen] = useState<string | null>(ziel?.banf ?? null);
+  const [ungelesen, setUngelesen] = useState(0);
+  const ladeUngelesen = useCallback(async () => { try { setUngelesen((await api<{ n: number }>('/mitteilungen/anzahl')).n); } catch { /* offline */ } }, []);
+  useEffect(() => { void ladeUngelesen(); const t = setInterval(() => void ladeUngelesen(), 60_000); return () => clearInterval(t); }, [ladeUngelesen]);
+  /** Open a module in another (or this) project. */
+  const gehe = (pid: string, z: { module: Module; lv?: string; banf?: string }) => {
+    if (pid !== projectId) { sessionStorage.setItem('bap.ziel', JSON.stringify(z)); onProject(pid); return; }
+    setLvOpen(z.lv ?? null); setBanfOpen(z.banf ?? null); setModule(z.module);
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number } | null>(null);
   const [toast, setToast] = useState<Toast>(null);
@@ -179,6 +197,8 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {me.canCreateProject && <option value="__neu">+ Neues Projekt …</option>}
           </select>
         </div>
+        {nav('mitteilungen', 'nachricht', 'Mitteilungen', ungelesen > 0 ? <span className="badge">{ungelesen}</span> : undefined)}
+        {(startRole === 'einkauf' || startRole === 'bauleitung' || me.isAdmin) && nav('portal', 'portal', 'Einkaufsportal')}
         <div className="side-section">Baustelle</div>
         {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
@@ -192,6 +212,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {info && (info.role === 'bauleitung' || info.role === 'nu') && has('nachtraege') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf' || me.fahrtenbuch) && <div className="side-section">Geld und Betrieb</div>}
         {info && info.role === 'bauleitung' && has('kosten') && nav('kosten', 'kosten', 'Kosten')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('bestellungen', 'paket', 'Bestellanforderungen')}
         {info && (info.role === 'bauleitung' || info.role === 'einkauf') && nav('ausschreibung', 'rechnung', 'LV & Angebote')}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
         {me.fahrtenbuch && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
@@ -309,7 +330,12 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'einreichungen' && <EinreichungenPage info={info} run={run} />}
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
-            {module === 'ausschreibung' && <AusschreibungPage info={info} run={run} />}
+            {module === 'ausschreibung' && <AusschreibungPage key={lvOpen ?? 'liste'} info={info} run={run} initialLv={lvOpen} />}
+            {module === 'bestellungen' && <BestellungenPage key={banfOpen ?? 'liste'} info={info} run={run} meId={me.user.id} openId={banfOpen} onOpenLv={(lv) => gehe(projectId, { module: 'ausschreibung', lv })} />}
+            {module === 'portal' && <EinkaufsportalPage meId={me.user.id} run={run} onOpenLv={(lv, pid) => gehe(pid, { module: 'ausschreibung', lv })} onOpenProject={(pid) => gehe(pid, { module: 'bestellungen' })} />}
+            {module === 'mitteilungen' && <MitteilungenPage onChange={() => void ladeUngelesen()} onOpen={(m: Mitteilung) => {
+              if (m.entity === 'bestellanforderung' && m.project_id && m.entity_id) gehe(m.project_id, { module: 'bestellungen', banf: m.entity_id });
+            }} />}
             {module === 'kontakte' && <KontaktePage info={info} run={run} />}
             {module === 'bautagebuch' && <BautagebuchPage info={info} run={run} />}
             {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}

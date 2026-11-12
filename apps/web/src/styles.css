@@ -418,3 +418,18 @@ select.status-select { border: 0; appearance: none; -webkit-appearance: none; pa
 .spiegel .kalk { background: color-mix(in srgb, var(--fill) 50%, transparent); }
 .spiegel .kalk + .kalk { border-right: 1px solid var(--separator); }
 .segmented.small button { padding: 3px 10px; font-size: 12px; }
+/* Einkaufsportal and Mitteilungen */
+.portal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.portal-card { text-align: left; padding: 14px 16px; border: 1px solid transparent; cursor: pointer; font: inherit; color: inherit; display: flex; flex-direction: column; gap: 6px; }
+.portal-card.on { border-color: var(--accent); }
+.portal-card .link { color: var(--accent); margin-top: 4px; }
+.row.mitteilung { width: 100%; text-align: left; background: none; border: 0; font: inherit; color: inherit; cursor: pointer; }
+.row.mitteilung.neu { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.row.mitteilung.neu strong::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: middle; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.kpi { padding: 14px 16px; }
+.kpi-n { font-size: 30px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.portal-card.hat-neu { border-color: color-mix(in srgb, var(--orange) 45%, transparent); }
+.portal-top { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.portal-top li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.portal-top li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

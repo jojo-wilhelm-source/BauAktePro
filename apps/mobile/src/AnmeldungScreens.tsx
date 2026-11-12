@@ -1,13 +1,11 @@
 /**
- * Sign-in and Face ID lock (docs/fachkonzept/01, 05).
+ * Sign-in (docs/fachkonzept/01, 05). The app stays signed in like a normal app; no Face ID lock (removed 12.11.2026 on request).
  * - First sign-in needs network (e-mail + password); afterwards the app works offline with the stored session.
- * - Face ID only locks the app on this device (biometrics never leave the phone); fallback is the device code.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, AppState, KeyboardAvoidingView, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import * as LocalAuthentication from 'expo-local-authentication';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { lockEnabled, login, type Session } from './session';
+import { login, type Session } from './session';
 import { C, T, TINT } from './theme';
 import { Row, Section } from './ui';
 
@@ -17,6 +15,7 @@ const TEST_USERS = [
   ['bauleitung@example.test', 'Bea Bauleitung', 'Bauleitung'],
   ['elektro@example.test', 'Erik Elektro', 'NU Elektro Blitz'],
   ['projektleitung@example.test', 'Petra Projektleitung', 'Projektleitung'],
+  ['einkauf@example.test', 'Erika Einkauf', 'Einkauf (alle Baustellen)'],
   ['fliesen@example.test', 'Fiona Fliesen', 'NU Fliesen Fuchs (Firmen-Admin)'],
 ] as const;
 const DEV_PASSWORD = 'Baustelle-Test-2026';
@@ -92,56 +91,5 @@ export function LoginScreen({ onLogin, email: presetEmail, notice }: { onLogin: 
         )}
       </ScrollView>
     </KeyboardAvoidingView>
-  );
-}
-
-/** Locks the app with Face ID / Touch ID / device code on start and after 5 minutes in the background. */
-export function LockGate({ children, name }: { children: ReactNode; name?: string }) {
-  const [state, setState] = useState<'checking' | 'locked' | 'open'>('checking');
-  const [error, setError] = useState<string | null>(null);
-  const background = useRef<number | null>(null);
-
-  const unlock = async () => {
-    setError(null);
-    const r = await LocalAuthentication.authenticateAsync({ promptMessage: 'Bau Akte Pro entsperren', cancelLabel: 'Abbrechen', disableDeviceFallback: false });
-    if (r.success) setState('open');
-    else if (r.error !== 'user_cancel' && r.error !== 'system_cancel' && r.error !== 'app_cancel') setError('Entsperren fehlgeschlagen. Bitte erneut versuchen.');
-  };
-
-  useEffect(() => {
-    void (async () => {
-      const usable = (await lockEnabled()) && (await LocalAuthentication.hasHardwareAsync()) && (await LocalAuthentication.isEnrolledAsync());
-      if (!usable) return setState('open');
-      setState('locked');
-      void unlock();
-    })();
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'background') background.current = Date.now();
-      if (s === 'active' && background.current && Date.now() - background.current > 5 * 60 * 1000) {
-        background.current = null;
-        void (async () => {
-          if ((await lockEnabled()) && (await LocalAuthentication.isEnrolledAsync())) {
-            setState('locked');
-            void unlock();
-          }
-        })();
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  if (state === 'open') return <>{children}</>;
-  return (
-    <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 }}>
-      <Logo />
-      <Text style={T.title2}>Bau Akte Pro ist gesperrt</Text>
-      {name && <Text style={T.subhead}>{name}</Text>}
-      {state === 'locked' && (
-        <Pressable onPress={() => void unlock()} style={({ pressed }) => ({ backgroundColor: TINT.blue, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 28, opacity: pressed ? 0.8 : 1 })}>
-          <Text style={[T.headline, { color: '#fff' }]}>Entsperren</Text>
-        </Pressable>
-      )}
-      {error && <Text style={[T.footnote, { color: C.red }]}>{error}</Text>}
-    </View>
   );
 }

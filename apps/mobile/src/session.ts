@@ -86,16 +86,6 @@ export async function logout(s?: Session | null) {
   await SecureStore.deleteItemAsync(KEY);
 }
 
-// --- Face ID ---------------------------------------------------------------------------------------
-const LOCK_KEY = 'bap.faceid';
-/** Face ID lock is on by default when the device has it set up; the user can switch it off under "Mehr". */
-export async function lockEnabled(): Promise<boolean> {
-  return (await SecureStore.getItemAsync(LOCK_KEY)) !== 'off';
-}
-export async function setLockEnabled(on: boolean) {
-  await SecureStore.setItemAsync(LOCK_KEY, on ? 'on' : 'off');
-}
-
 /** Key for the encrypted local database (SQLCipher), generated once per device and kept in the Keychain. */
 export async function dbKey(): Promise<string> {
   let k = await SecureStore.getItemAsync('bap.dbkey');

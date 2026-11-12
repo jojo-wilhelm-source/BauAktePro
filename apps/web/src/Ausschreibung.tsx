@@ -29,11 +29,11 @@ const STATUS: Record<LvListItem['status'], [string, string]> = { entwurf: ['Entw
 const ART_LABEL: Record<Art, string> = { titel: 'Titel', untertitel: 'Untertitel', position: 'Position', text: 'Hinweistext' };
 const num = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 });
 
-export function AusschreibungPage({ info, run }: { info: ProjectInfo; run: Run }) {
+export function AusschreibungPage({ info, run, initialLv }: { info: ProjectInfo; run: Run; initialLv?: string | null }) {
   const [list, setList] = useState<LvListItem[]>([]);
   const [ordner, setOrdner] = useState<Ordner[]>([]);
   const [sel, setSel] = useState<string | null>(null); // null = alle
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(initialLv ?? null);
   const [bib, setBib] = useState(false);
   const nu = info.role === 'nu';
   const load = useCallback(async () => {

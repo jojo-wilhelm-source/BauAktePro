@@ -40,7 +40,7 @@ const numbers = async (user: keyof typeof ID) => (await maengel(user)).map((m) =
 
 beforeAll(async () => {
   await initKeys();
-  for (const u of ['uBauleitung', 'uPolier', 'uElektro', 'uFliesen', 'uBauherr', 'uProjektleitung', 'uAdmin'] as const) tokens[u] = await issueToken(ID[u]);
+  for (const u of ['uBauleitung', 'uPolier', 'uElektro', 'uFliesen', 'uBauherr', 'uProjektleitung', 'uAdmin', 'uEinkauf'] as const) tokens[u] = await issueToken(ID[u]);
 });
 beforeEach(() => {
   execSync('pnpm --silent db:seed', { cwd: root, stdio: 'ignore' });
@@ -660,7 +660,7 @@ describe('Projekte anlegen und Struktur übernehmen', () => {
   });
   it('aus Vorlage: Orte, Gewerke, Ordner, NU und Team; zweimal übernehmen erzeugt keine Doppelten; NU-Zugänge nicht', async () => {
     const r = await neu('uBauleitung', { vorlage_id: ID.project, teile: ALLE });
-    expect(r.body.uebernommen).toEqual({ orte: 6, gewerke: 2, ordner: 6, nachunternehmer: 2, team: 2 });
+    expect(r.body.uebernommen).toEqual({ orte: 6, gewerke: 2, ordner: 6, nachunternehmer: 2, team: 3 });
     const again = await call('uBauleitung', 'POST', `/projects/${r.body.id}/struktur-uebernehmen`, { from: ID.project, teile: ALLE });
     expect(again.body).toEqual({ orte: 0, gewerke: 0, ordner: 0, nachunternehmer: 0, team: 0 });
     const s = (await call('uBauleitung', 'GET', `/projects/${r.body.id}/struktur`)).body;
@@ -886,7 +886,7 @@ describe('Administrator', () => {
   it('verwaltet Benutzer: sperren beendet Sitzungen; eigener Zugang bleibt; andere dürfen nicht', async () => {
     expect((await call('uBauleitung', 'GET', '/admin')).status).toBe(403);
     const o = (await call('uAdmin', 'GET', '/admin')).body;
-    expect(o.users.length).toBe(7);
+    expect(o.users.length).toBe(8);
     const login = (await app.inject({ method: 'POST', url: '/auth/login', payload: { email: 'polier@example.test', password: TEST_PASSWORD } })).json();
     expect((await call('uAdmin', 'PATCH', `/admin/users/${ID.uPolier}`, { active: false })).status).toBe(200);
     expect((await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refresh: login.refresh } })).statusCode).toBe(401);
@@ -1289,5 +1289,53 @@ describe('Preisspiegel mit Kalkulation und erfassten Angeboten', () => {
     // after sending, the calculation stays editable; NU never sees it
     expect((await call('uBauleitung', 'PUT', `/lv/${id}/kalkulation`, { preise: { [p1]: 21, [p2]: 150 } })).status).toBe(200);
     expect((await call('uElektro', 'GET', `/lv/${id}/preisspiegel`)).status).toBeGreaterThanOrEqual(403);
+  });
+});
+
+describe('Bestellanforderung, Einkaufsportal, Mitteilungen', () => {
+  it('Polier fordert an → Einkauf benachrichtigt → LV → angefragt → bestellt → Polier benachrichtigt; NU/Bauherr ausgeschlossen', async () => {
+    const id = randomUUID();
+    const body = { id, project_id: ID.project, titel: 'Schalungsplatten', positionen: [{ text: 'Schalungsplatte 3S 21 mm', menge: 40, einheit: 'St' }], dringend: true, benoetigt_am: '2026-11-25' };
+    expect((await call('uElektro', 'POST', '/bestellanforderungen', { ...body, id: randomUUID() })).status).toBe(403);
+    expect((await call('uBauherr', 'POST', '/bestellanforderungen', { ...body, id: randomUUID() })).status).toBe(403);
+    const r = await call('uPolier', 'POST', '/bestellanforderungen', body);
+    expect(r.status).toBe(200);
+    expect(r.body.number).toBe(2);
+    expect((await call('uPolier', 'POST', '/bestellanforderungen', body)).body.number).toBe(2); // idempotent (offline re-upload)
+    expect((await call('uElektro', 'GET', `/projects/${ID.project}/bestellanforderungen`)).status).toBe(403);
+    expect((await call('uElektro', 'GET', `/bestellanforderungen/${id}`)).status).toBe(404); // RLS hides it
+    // Einkauf: notification + portal over all sites
+    const m = (await call('uEinkauf', 'GET', '/mitteilungen')).body;
+    expect(m.ungelesen).toBeGreaterThanOrEqual(1);
+    expect(m.nachrichten[0].titel).toContain('DRINGEND');
+    expect((await call('uBauleitung', 'GET', '/mitteilungen')).body.ungelesen).toBeGreaterThanOrEqual(1); // Leitung informed in the app
+    expect((await call('uPolier', 'GET', '/mitteilungen')).body.ungelesen).toBe(0); // never the sender
+    const portal = (await call('uEinkauf', 'GET', '/einkaufsportal')).body;
+    expect(portal.baustellen.map((b: any) => b.id).sort()).toEqual([ID.project, ID.otherProject].sort());
+    expect(portal.baustellen.find((b: any) => b.id === ID.project).neu).toBe(2);
+    expect((await call('uPolier', 'GET', '/einkaufsportal')).status).toBe(403);
+    expect((await call('uElektro', 'GET', '/einkaufsportal')).status).toBe(403);
+    // Polier may not move it on, only withdraw
+    expect((await call('uPolier', 'POST', `/bestellanforderungen/${id}/status`, { status: 'bestellt', base_version: 1, lieferant: 'X' })).status).toBe(409);
+    // Einkauf: LV from the request, send → angefragt
+    const lv = await call('uEinkauf', 'POST', `/bestellanforderungen/${id}/lv`, {});
+    expect(lv.status).toBe(200);
+    expect((await call('uEinkauf', 'GET', `/lv/${lv.body.lv_id}`)).body.positionen[0].menge).toBe(40);
+    await call('uEinkauf', 'POST', `/lv/${lv.body.lv_id}/anfragen`, { company_ids: [ID.coFliesen] });
+    let b = (await call('uEinkauf', 'GET', `/bestellanforderungen/${id}`)).body;
+    expect(b.status).toBe('angefragt');
+    expect((await call('uEinkauf', 'POST', `/bestellanforderungen/${id}/status`, { status: 'bestellt', base_version: b.version })).status).toBe(422); // Lieferant fehlt
+    const best = await call('uEinkauf', 'POST', `/bestellanforderungen/${id}/status`, { status: 'bestellt', base_version: b.version, lieferant: 'Baustoff Huber', bestell_nr: 'B-4711', liefertermin: '2026-11-24' });
+    expect(best.status).toBe(200);
+    const pm = (await call('uPolier', 'GET', '/mitteilungen')).body;
+    expect(pm.ungelesen).toBe(1);
+    expect(pm.nachrichten[0].text).toContain('Baustoff Huber');
+    expect((await call('uPolier', 'POST', `/mitteilungen/alle/gelesen`, {})).status).toBe(200);
+    expect((await call('uPolier', 'GET', '/mitteilungen')).body.ungelesen).toBe(0);
+    // withdraw only while new
+    const seed = (await call('uPolier', 'GET', `/bestellanforderungen/${ID.banf1}`)).body;
+    expect((await call('uPolier', 'POST', `/bestellanforderungen/${ID.banf1}/status`, { status: 'zurueckgezogen', base_version: seed.version })).status).toBe(200);
+    const audit = await adminSql`SELECT action FROM audit_log WHERE entity = 'bestellanforderung' AND entity_id = ${id} ORDER BY occurred_at`;
+    expect(audit.map((a) => a.action)).toContain('status:bestellt');
   });
 });

@@ -42,7 +42,7 @@ Plan-Freigaben und -Ablehnungen, Abnahmen und Rechnungsfreigaben lassen sich **o
 Nie still überschreiben: Beide Änderungen bleiben erhalten und werden zur Klärung angezeigt.
 
 ## Sicherheit
-- Verschlüsselter lokaler Speicher, Geräte-Code bzw. Face ID.
+- Verschlüsselter lokaler Speicher (Schlüssel im Schlüsselbund); Schutz über die Gerätesperre. Keine eigene Face-ID-Sperre in der App (auf Wunsch entfernt 12.11.2026).
 - Geräte lassen sich per Admin sperren und löschen.
 - Rechte werden beim nächsten Sync geprüft: Werden Rechte entzogen, verschwinden die Daten vom Gerät.
 
