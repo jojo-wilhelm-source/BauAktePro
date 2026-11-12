@@ -41,3 +41,19 @@ describe('besprechungIcs', () => {
     expect(ics.split('\r\n')[0]).toBe('BEGIN:VCALENDAR');
   });
 });
+
+import { tankenPflicht, verbrauchProStunde } from './kosten';
+describe('Maschinen und mobile Tankstelle', () => {
+  const base = { liter: 80, fahrzeug_id: 'a', quelle_id: null };
+  it('Pflichtangaben je Art', () => {
+    expect(tankenPflicht('fahrzeug', { ...base, km_stand: null, betriebsstunden: null })).toMatch(/km-Stand/);
+    expect(tankenPflicht('maschine', { ...base, km_stand: null, betriebsstunden: null })).toMatch(/Betriebsstunden/);
+    expect(tankenPflicht('maschine', { ...base, km_stand: null, betriebsstunden: 1234.5, quelle_id: 't' })).toBeNull();
+    expect(tankenPflicht('tankstelle', { ...base, liter: 1000, km_stand: null, betriebsstunden: null })).toBeNull();
+    expect(tankenPflicht('tankstelle', { ...base, km_stand: null, betriebsstunden: null, quelle_id: 'x' })).toMatch(/Tankstelle/);
+  });
+  it('Verbrauch l/h', () => {
+    expect(verbrauchProStunde(1200, { betriebsstunden: 1210, liter: 95 })).toBe(9.5);
+    expect(verbrauchProStunde(null, { betriebsstunden: 1210, liter: 95 })).toBeNull();
+  });
+});

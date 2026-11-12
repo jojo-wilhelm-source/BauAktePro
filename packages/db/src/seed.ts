@@ -219,8 +219,10 @@ await sql.begin(async (tx) => {
       decided_by: ID.uBauleitung, decided_at: '2026-11-04T08:00:00Z' },
   ] as never)}`;
   await tx`INSERT INTO fahrzeug ${tx([
-    { id: ID.fzSprinter, tenant_id: ID.tenant, kennzeichen: 'S-MB 2041', bezeichnung: 'Mercedes Sprinter', kraftstoff: 'diesel', fahrer_id: ID.uPolier },
-    { id: ID.fzGolf, tenant_id: ID.tenant, kennzeichen: 'S-MB 118', bezeichnung: 'VW Golf Variant', kraftstoff: 'benzin', fahrer_id: ID.uBauleitung },
+    { id: ID.fzSprinter, tenant_id: ID.tenant, kennzeichen: 'S-MB 2041', bezeichnung: 'Mercedes Sprinter', kraftstoff: 'diesel', fahrer_id: ID.uPolier, art: 'fahrzeug', kapazitaet_l: null },
+    { id: ID.fzGolf, tenant_id: ID.tenant, kennzeichen: 'S-MB 118', bezeichnung: 'VW Golf Variant', kraftstoff: 'benzin', fahrer_id: ID.uBauleitung, art: 'fahrzeug', kapazitaet_l: null },
+    { id: ID.fzRadlader, tenant_id: ID.tenant, kennzeichen: 'RL-07', bezeichnung: 'Radlader Liebherr L 506', kraftstoff: 'diesel', fahrer_id: ID.uPolier, art: 'maschine', kapazitaet_l: null },
+    { id: ID.fzTankstelle, tenant_id: ID.tenant, kennzeichen: 'TS-1', bezeichnung: 'Mobile Tankstelle 1.000 l', kraftstoff: 'diesel', fahrer_id: null, art: 'tankstelle', kapazitaet_l: 1000 },
   ] as never)}`;
   await tx`INSERT INTO fahrt ${tx([
     { id: '00000000-0000-4000-8000-000000000c01', tenant_id: ID.tenant, fahrzeug_id: ID.fzSprinter, fahrer_id: ID.uPolier, datum: '2026-11-09', km_start: 48210, km_ende: 48262, project_id: ID.project, zweck: 'Baustelle Lindenhof, Material' },
@@ -229,6 +231,11 @@ await sql.begin(async (tx) => {
   await tx`INSERT INTO tankvorgang ${tx([
     { id: '00000000-0000-4000-8000-000000000d01', tenant_id: ID.tenant, fahrzeug_id: ID.fzSprinter, fahrer_id: ID.uPolier, datum: '2026-11-02', liter: 68.4, betrag_brutto: 112.86, km_stand: 47740, tankstelle: 'Aral Vaihingen', project_id: null },
     { id: '00000000-0000-4000-8000-000000000d02', tenant_id: ID.tenant, fahrzeug_id: ID.fzSprinter, fahrer_id: ID.uPolier, datum: '2026-11-09', liter: 61.2, betrag_brutto: 101.6, km_stand: 48262, tankstelle: 'Shell Möhringen', project_id: ID.project },
+  ] as never)}`;
+  // Mobile station filled with 800 l, the Radlader got 95 l from it.
+  await tx`INSERT INTO tankvorgang ${tx([
+    { id: '00000000-0000-4000-8000-000000000d03', tenant_id: ID.tenant, fahrzeug_id: ID.fzTankstelle, fahrer_id: ID.uPolier, datum: '2026-11-04', liter: 800, betrag_brutto: 1240, km_stand: null, betriebsstunden: null, tankstelle: 'Lieferung Diesel Müller', quelle_id: null, project_id: ID.project },
+    { id: '00000000-0000-4000-8000-000000000d04', tenant_id: ID.tenant, fahrzeug_id: ID.fzRadlader, fahrer_id: ID.uPolier, datum: '2026-11-06', liter: 95, betrag_brutto: null, km_stand: null, betriebsstunden: 1210, tankstelle: null, quelle_id: ID.fzTankstelle, project_id: ID.project },
   ] as never)}`;
 
   // NU-Besprechung Nr. 1 (last week), already sent. Points in the structure of the user's template.

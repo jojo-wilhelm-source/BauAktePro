@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { TxSql } from '@bap/db';
-import { EinkaufInput, FahrtInput, kmWarnung, kostenPrognose, nettoAusBrutto, TankenInput, verbrauch } from '@bap/domain';
+import { EinkaufInput, FahrtInput, kmWarnung, kostenPrognose, nettoAusBrutto, TankenInput, tankenPflicht, verbrauch, verbrauchProStunde, type FahrzeugArt } from '@bap/domain';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
 const BELEG_DIR = fileURLToPath(new URL('../../../storage/belege/', import.meta.url));
@@ -190,27 +190,35 @@ export async function fahrtenbuch(tx: TxSql, userId: string) {
   if (!(await tx`SELECT app.has_fahrtenbuch() AS ok`)[0]?.ok) throw new HttpError(403, 'Das Fahrtenbuch ist für Sie nicht freigeschaltet (Administrator)');
   const [{ leitung }] = (await tx`SELECT app.is_leitung_any() AS leitung`) as unknown as [{ leitung: boolean }];
   const fahrzeuge = await tx`
-    SELECT f.*, u.name AS fahrer_name, app.fahrzeug_last_km(f.id) AS last_km FROM fahrzeug f LEFT JOIN app_user u ON u.id = f.fahrer_id
-    WHERE f.aktiv ORDER BY f.bezeichnung`;
+    SELECT f.*, u.name AS fahrer_name, app.fahrzeug_last_km(f.id) AS last_km, app.maschine_last_bh(f.id)::float AS last_bh,
+      CASE WHEN f.art = 'tankstelle' THEN app.tankstelle_bestand(f.id)::float END AS bestand
+    FROM fahrzeug f LEFT JOIN app_user u ON u.id = f.fahrer_id
+    WHERE f.aktiv ORDER BY f.art, f.bezeichnung`;
   const fahrten = await tx`
     SELECT t.*, u.name AS fahrer_name, p.name AS project_name, (t.km_ende - t.km_start) AS km
     FROM fahrt t JOIN app_user u ON u.id = t.fahrer_id LEFT JOIN project p ON p.id = t.project_id ORDER BY t.datum DESC, t.km_start DESC LIMIT 500`;
   const tanken = await tx`
-    SELECT t.*, t.liter::float AS liter_f, t.betrag_brutto::float AS betrag_f, u.name AS fahrer_name, p.name AS project_name, t.beleg_key IS NOT NULL AS has_beleg
-    FROM tankvorgang t JOIN app_user u ON u.id = t.fahrer_id LEFT JOIN project p ON p.id = t.project_id ORDER BY t.fahrzeug_id, t.km_stand`;
-  // Consumption per fill-up (needs the previous fill-up of the same vehicle).
+    SELECT t.*, t.liter::float AS liter_f, t.betrag_brutto::float AS betrag_f, t.betriebsstunden::float AS bh, u.name AS fahrer_name, p.name AS project_name,
+      t.beleg_key IS NOT NULL AS has_beleg, q.bezeichnung AS quelle_name
+    FROM tankvorgang t JOIN app_user u ON u.id = t.fahrer_id LEFT JOIN project p ON p.id = t.project_id LEFT JOIN fahrzeug q ON q.id = t.quelle_id
+    ORDER BY t.fahrzeug_id, coalesce(t.km_stand, 0), coalesce(t.betriebsstunden, 0), t.datum`;
+  // Consumption per fill-up (needs the previous fill-up of the same vehicle): l/100 km or l/h for machines.
   const withVerbrauch = tanken.map((t, i) => {
-    const prev = i > 0 && tanken[i - 1]!.fahrzeug_id === t.fahrzeug_id ? { km_stand: tanken[i - 1]!.km_stand as number } : undefined;
-    return { ...t, verbrauch: verbrauch(prev, { km_stand: t.km_stand as number, liter: num(t.liter_f) }) };
+    const prevRow = i > 0 && tanken[i - 1]!.fahrzeug_id === t.fahrzeug_id ? tanken[i - 1]! : undefined;
+    if (t.betriebsstunden != null) return { ...t, verbrauch: null, verbrauch_h: verbrauchProStunde(prevRow?.bh as number | undefined, { betriebsstunden: t.bh as number, liter: num(t.liter_f) }) };
+    const prev = prevRow?.km_stand != null ? { km_stand: prevRow.km_stand as number } : undefined;
+    return { ...t, verbrauch: t.km_stand != null ? verbrauch(prev, { km_stand: t.km_stand as number, liter: num(t.liter_f) }) : null, verbrauch_h: null };
   });
   return { leitung, me: userId, fahrzeuge, fahrten, tanken: withVerbrauch.reverse() };
 }
 
 export async function addFahrzeug(tx: TxSql, userId: string, input: unknown) {
-  const d = z.object({ kennzeichen: z.string().trim().min(1).max(20), bezeichnung: z.string().trim().min(1).max(100), kraftstoff: z.enum(['diesel', 'benzin', 'elektro', 'hybrid']).default('diesel'), fahrer_id: z.string().uuid().nullish() }).parse(input);
+  const d = z.object({ kennzeichen: z.string().trim().min(1).max(20), bezeichnung: z.string().trim().min(1).max(100), kraftstoff: z.enum(['diesel', 'benzin', 'elektro', 'hybrid']).default('diesel'),
+    fahrer_id: z.string().uuid().nullish(), art: z.enum(['fahrzeug', 'maschine', 'tankstelle']).default('fahrzeug'), kapazitaet_l: z.coerce.number().int().positive().max(100000).nullish() }).parse(input);
   const [{ ok }] = (await tx`SELECT app.is_leitung_any() AS ok`) as unknown as [{ ok: boolean }];
   if (!ok) throw new HttpError(403, 'Fahrzeuge legen Bau- und Projektleitung an');
-  const [row] = await tx`INSERT INTO fahrzeug (tenant_id, kennzeichen, bezeichnung, kraftstoff, fahrer_id) VALUES (app.user_tenant(), ${d.kennzeichen.toUpperCase()}, ${d.bezeichnung}, ${d.kraftstoff}, ${d.fahrer_id ?? null}) RETURNING *`;
+  const [row] = await tx`INSERT INTO fahrzeug (tenant_id, kennzeichen, bezeichnung, kraftstoff, fahrer_id, art, kapazitaet_l)
+    VALUES (app.user_tenant(), ${d.kennzeichen.toUpperCase()}, ${d.bezeichnung}, ${d.kraftstoff}, ${d.fahrer_id ?? null}, ${d.art}, ${d.kapazitaet_l ?? null}) RETURNING *`;
   return row;
 }
 
@@ -230,10 +238,22 @@ export async function addTanken(tx: TxSql, userId: string, input: unknown) {
   const d = TankenInput.parse(input);
   const [existing] = await tx`SELECT * FROM tankvorgang WHERE id = ${d.id}`;
   if (existing) return existing;
+  const [fz] = await tx`SELECT art FROM fahrzeug WHERE id = ${d.fahrzeug_id}`;
+  if (!fz) throw new HttpError(404, 'Fahrzeug nicht gefunden');
+  const fehler = tankenPflicht(fz.art as FahrzeugArt, d);
+  if (fehler) throw new HttpError(422, fehler);
+  let warnung: string | null = null;
+  if (d.quelle_id) {
+    const [q] = await tx`SELECT art, app.tankstelle_bestand(id)::float AS bestand FROM fahrzeug WHERE id = ${d.quelle_id}`;
+    if (q?.art !== 'tankstelle') throw new HttpError(422, 'Als Quelle bitte eine mobile Tankstelle wählen');
+    // Offline entries arrive late: a negative stock is a warning, never a block.
+    if ((q.bestand as number) < d.liter) warnung = `Laut Buchungen sind nur ${Math.max(0, q.bestand as number)} l in der Tankstelle`;
+  }
   const [row] = await tx`
-    INSERT INTO tankvorgang (id, tenant_id, fahrzeug_id, fahrer_id, datum, liter, betrag_brutto, km_stand, tankstelle, project_id)
-    VALUES (${d.id}, app.user_tenant(), ${d.fahrzeug_id}, ${userId}, ${d.datum}, ${d.liter}, ${d.betrag_brutto}, ${d.km_stand}, ${d.tankstelle ?? null}, ${d.project_id ?? null}) RETURNING *`;
-  return row;
+    INSERT INTO tankvorgang (id, tenant_id, fahrzeug_id, fahrer_id, datum, liter, betrag_brutto, km_stand, betriebsstunden, tankstelle, quelle_id, project_id)
+    VALUES (${d.id}, app.user_tenant(), ${d.fahrzeug_id}, ${userId}, ${d.datum}, ${d.liter}, ${d.betrag_brutto ?? null}, ${d.km_stand ?? null},
+            ${d.betriebsstunden ?? null}, ${d.tankstelle ?? null}, ${d.quelle_id ?? null}, ${d.project_id ?? null}) RETURNING *`;
+  return { ...row, warnung };
 }
 
 // --- Kostenübersicht -----------------------------------------------------------------------

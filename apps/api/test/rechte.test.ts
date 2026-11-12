@@ -590,7 +590,7 @@ describe('Fahrtenbuch', () => {
   it('Fahrer sieht eigene Fahrten, Leitung alle; NU hat kein Fahrtenbuch', async () => {
     const polier = (await call('uPolier', 'GET', '/fahrtenbuch')).body;
     expect(polier.fahrten.map((f: any) => f.fahrer_id)).toEqual([ID.uPolier]);
-    expect(polier.fahrzeuge.length).toBe(2);
+    expect(polier.fahrzeuge.length).toBe(4); // 2 vehicles, Radlader, mobile Tankstelle
     const bl = (await call('uBauleitung', 'GET', '/fahrtenbuch')).body;
     expect(bl.fahrten.length).toBe(2);
     expect((await call('uElektro', 'GET', '/fahrtenbuch')).status).toBe(403);
@@ -1080,5 +1080,21 @@ describe('Bautagebuch: Vorlagen, Bauherr, Ablage', () => {
     expect((await call('uPolier', 'PUT', '/tagesbericht-vorlagen', { ...v, id: randomUUID(), project_id: null })).status).toBe(403);
     expect((await call('uPolier', 'GET', `/projects/${ID.project}/tagesberichte/vorschlag?datum=2026-11-13`)).body.vorlagen).toHaveLength(1);
     expect((await call('uElektro', 'PUT', '/tagesbericht-vorlagen', { ...v, id: randomUUID() })).status).toBe(403);
+  });
+});
+
+describe('Maschinen und mobile Tankstelle', () => {
+  it('Radlader: Betriebsstunden Pflicht, Diesel aus mobiler Tankstelle; Bestand und l/h', async () => {
+    const t = (body: object) => call('uPolier', 'POST', '/tankvorgaenge', { id: randomUUID(), datum: '2026-11-12', ...body });
+    expect((await t({ fahrzeug_id: ID.fzRadlader, liter: 90 })).status).toBe(422);
+    const ok = await t({ fahrzeug_id: ID.fzRadlader, liter: 90, betriebsstunden: 1220, quelle_id: ID.fzTankstelle });
+    expect(ok.body.error ?? ok.status).toBe(200);
+    expect(ok.body.warnung).toBeNull();
+    expect((await t({ fahrzeug_id: ID.fzRadlader, liter: 90, betriebsstunden: 1230, quelle_id: ID.fzSprinter })).status).toBe(422);
+    const fb = (await call('uPolier', 'GET', '/fahrtenbuch')).body;
+    expect(fb.fahrzeuge.find((f: any) => f.id === ID.fzTankstelle).bestand).toBe(615);
+    expect(fb.tanken.find((x: any) => x.bh === 1220).verbrauch_h).toBe(9);
+    const zuviel = await t({ fahrzeug_id: ID.fzRadlader, liter: 700, betriebsstunden: 1300, quelle_id: ID.fzTankstelle });
+    expect(zuviel.body.warnung).toMatch(/nur 615 l/);
   });
 });

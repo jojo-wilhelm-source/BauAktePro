@@ -83,9 +83,9 @@ const einkauf = new Table({
   project_id: column.text, number: column.integer, gekauft_von: column.text, datum: column.text, haendler: column.text, betrag_brutto: column.real,
   mwst_satz: column.real, gewerk_id: column.text, zweck: column.text, zahlungsart: column.text, status: column.text, created_by: column.text, created_at: column.text,
 });
-const fahrzeug = new Table({ tenant_id: column.text, kennzeichen: column.text, bezeichnung: column.text, kraftstoff: column.text, fahrer_id: column.text });
+const fahrzeug = new Table({ tenant_id: column.text, kennzeichen: column.text, bezeichnung: column.text, kraftstoff: column.text, fahrer_id: column.text, art: column.text, kapazitaet_l: column.real });
 const fahrt = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datum: column.text, km_start: column.integer, km_ende: column.integer, project_id: column.text, zweck: column.text });
-const tankvorgang = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datum: column.text, liter: column.real, betrag_brutto: column.real, km_stand: column.integer, tankstelle: column.text, project_id: column.text });
+const tankvorgang = new Table({ fahrzeug_id: column.text, fahrer_id: column.text, datum: column.text, liter: column.real, betrag_brutto: column.real, km_stand: column.integer, betriebsstunden: column.real, quelle_id: column.text, tankstelle: column.text, project_id: column.text });
 /** Receipt photos waiting for upload (einkauf / tankvorgang). Never synced. */
 const beleg_upload = new Table({ kind: column.text, entity_id: column.text, uri: column.text }, { localOnly: true });
 /** Dateiablage (docs/fachkonzept/03, 05): folders, documents and their released revisions; files are downloaded by offline.ts. */

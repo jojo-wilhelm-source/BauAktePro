@@ -32,16 +32,43 @@ export const FahrtInput = z.object({
   project_id: z.string().uuid().nullish(),
   zweck: z.string().trim().min(1, 'Zweck fehlt').max(300),
 }).refine((f) => f.km_ende >= f.km_start, { message: 'km-Stand Ende liegt vor dem Start', path: ['km_ende'] });
+export const FAHRZEUG_ARTEN = { fahrzeug: 'Fahrzeug', maschine: 'Maschine / Gerät', tankstelle: 'Mobile Tankstelle' } as const;
+export type FahrzeugArt = keyof typeof FAHRZEUG_ARTEN;
+
+/**
+ * Fill-up. Vehicles need the km reading, machines the Betriebsstunden; refills of a mobile station need neither.
+ * quelle_id = mobile station the diesel came from (then usually without price). Which reading is required depends
+ * on the kind of the target, checked by the server (tankenPflicht).
+ */
 export const TankenInput = z.object({
   id: z.string().uuid(),
   fahrzeug_id: z.string().uuid(),
   datum: z.string().date(),
-  liter: z.coerce.number().positive().max(500),
-  betrag_brutto: z.coerce.number().min(0).max(5000),
-  km_stand: z.coerce.number().int().min(0),
+  liter: z.coerce.number().positive().max(10000),
+  betrag_brutto: z.coerce.number().min(0).max(50000).nullish(),
+  km_stand: z.coerce.number().int().min(0).nullish(),
+  betriebsstunden: z.coerce.number().min(0).max(1_000_000).nullish(),
   tankstelle: z.string().max(200).nullish(),
+  quelle_id: z.string().uuid().nullish(),
   project_id: z.string().uuid().nullish(),
 });
+export type Tanken = z.infer<typeof TankenInput>;
+
+/** Missing required reading for the kind of target, or null if complete. */
+export function tankenPflicht(art: FahrzeugArt, t: Pick<Tanken, 'km_stand' | 'betriebsstunden' | 'liter' | 'quelle_id' | 'fahrzeug_id'>): string | null {
+  if (t.quelle_id && t.quelle_id === t.fahrzeug_id) return 'Die Tankstelle kann sich nicht selbst betanken';
+  if (art === 'fahrzeug' && t.km_stand == null) return 'Bitte den km-Stand angeben';
+  if (art === 'maschine' && t.betriebsstunden == null) return 'Bitte die Betriebsstunden angeben';
+  if (art === 'tankstelle' && t.quelle_id) return 'Eine Tankstelle wird nicht aus einer anderen befüllt';
+  if (art !== 'tankstelle' && t.liter > 1500) return 'Mehr als 1.500 Liter – bitte prüfen';
+  return null;
+}
+
+/** Consumption of a machine in l/h between two fill-ups (Betriebsstunden). */
+export function verbrauchProStunde(prevBh: number | null | undefined, cur: { betriebsstunden: number | null | undefined; liter: number }): number | null {
+  if (prevBh == null || cur.betriebsstunden == null || cur.betriebsstunden <= prevBh) return null;
+  return Math.round((cur.liter / (cur.betriebsstunden - prevBh)) * 10) / 10;
+}
 
 /** Consumption between two fill-ups (l/100 km): litres of the later one over the distance. Null if not computable. */
 export function verbrauch(prev: { km_stand: number } | undefined, cur: { km_stand: number; liter: number }): number | null {

@@ -1,6 +1,6 @@
 /** Baustellen-Einkäufe and Fahrtenbuch (docs/fachkonzept/14). On site both are recorded on the phone, also offline. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EINKAUF_STATUS_LABELS, formatDate, formatEuro, kmWarnung, nettoAusBrutto, ZAHLUNGSART_LABELS, type EinkaufStatus, type Zahlungsart } from '@bap/domain';
+import { EINKAUF_STATUS_LABELS, FAHRZEUG_ARTEN, formatDate, formatEuro, kmWarnung, nettoAusBrutto, ZAHLUNGSART_LABELS, type EinkaufStatus, type FahrzeugArt, type Zahlungsart } from '@bap/domain';
 import { api, ApiError, getToken, openPdf, type ProjectInfo } from './api';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
@@ -141,9 +141,9 @@ function EinkaufSheet({ info, me, run, onClose }: { info: ProjectInfo; me: { nam
 
 // --- Fahrtenbuch --------------------------------------------------------------------------
 
-interface Fahrzeug { id: string; kennzeichen: string; bezeichnung: string; kraftstoff: string; fahrer_name: string | null; last_km: number | null }
+interface Fahrzeug { id: string; kennzeichen: string; bezeichnung: string; kraftstoff: string; fahrer_name: string | null; last_km: number | null; art: FahrzeugArt; last_bh: number | null; bestand: number | null; kapazitaet_l: number | null }
 interface Fahrt { id: string; fahrzeug_id: string; datum: string; km_start: number; km_ende: number; km: number; zweck: string; fahrer_name: string; project_name: string | null }
-interface Tanken { id: string; fahrzeug_id: string; datum: string; liter_f: number; betrag_f: number; km_stand: number; tankstelle: string | null; fahrer_name: string; verbrauch: number | null; has_beleg: boolean }
+interface Tanken { id: string; fahrzeug_id: string; datum: string; liter_f: number; betrag_f: number | null; km_stand: number | null; bh: number | null; tankstelle: string | null; quelle_name: string | null; fahrer_name: string; verbrauch: number | null; verbrauch_h: number | null; has_beleg: boolean }
 
 export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) {
   const [d, setD] = useState<{ leitung: boolean; fahrzeuge: Fahrzeug[]; fahrten: Fahrt[]; tanken: Tanken[] } | null>(null);
@@ -188,6 +188,18 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
       </PageHeader>
       <div className="list-pad" style={{ maxWidth: 1180, display: 'flex', flexDirection: 'column', gap: 22 }}>
         <div>
+          <div className="group-title">Fahrzeuge, Maschinen, Tankstellen</div>
+          <div className="group">
+            {d.fahrzeuge.map((x) => (
+              <div key={x.id} className="row">
+                <span className="k">{x.bezeichnung}<div className="sub">{FAHRZEUG_ARTEN[x.art]} · {x.kennzeichen}{x.fahrer_name ? ` · ${x.fahrer_name}` : ''}</div></span>
+                <span className="v">{x.art === 'tankstelle' ? `Bestand ${Math.round(x.bestand ?? 0).toLocaleString('de-DE')} l${x.kapazitaet_l ? ` von ${Number(x.kapazitaet_l).toLocaleString('de-DE')} l` : ''}`
+                  : x.art === 'maschine' ? (x.last_bh != null ? `${x.last_bh.toLocaleString('de-DE')} Bh` : '–') : (x.last_km != null ? `${x.last_km.toLocaleString('de-DE')} km` : '–')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
           <div className="group-title">Fahrten {d.leitung ? '(alle Fahrer)' : '(meine)'}</div>
           <div className="card">
             <table className="table">
@@ -206,12 +218,13 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
           <div className="group-title">Tanken</div>
           <div className="card">
             <table className="table">
-              <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer</th><th className="money">Liter</th><th className="money">Betrag</th><th className="money">km-Stand</th><th className="money">Verbrauch</th><th /></tr></thead>
+              <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer</th><th className="money">Liter</th><th className="money">Betrag</th><th className="money">km / Bh</th><th className="money">Verbrauch</th><th /></tr></thead>
               <tbody>{tanken.map((t) => (
                 <tr key={t.id} style={{ cursor: 'default' }}>
-                  <td className="tabular">{formatDate(t.datum)}</td><td>{name(t.fahrzeug_id)?.kennzeichen}<div className="sub">{t.tankstelle ?? ''}</div></td><td>{t.fahrer_name}</td>
-                  <td className="money">{t.liter_f.toLocaleString('de-DE', { minimumFractionDigits: 2 })} l</td><td className="money">{formatEuro(t.betrag_f)}</td>
-                  <td className="money sub">{t.km_stand.toLocaleString('de-DE')}</td><td className="money">{t.verbrauch != null ? `${t.verbrauch.toLocaleString('de-DE')} l/100 km` : '–'}</td>
+                  <td className="tabular">{formatDate(t.datum)}</td><td>{name(t.fahrzeug_id)?.bezeichnung ?? name(t.fahrzeug_id)?.kennzeichen}<div className="sub">{t.quelle_name ? `aus ${t.quelle_name}` : (t.tankstelle ?? '')}</div></td><td>{t.fahrer_name}</td>
+                  <td className="money">{t.liter_f.toLocaleString('de-DE', { minimumFractionDigits: 2 })} l</td><td className="money">{t.betrag_f != null ? formatEuro(t.betrag_f) : '–'}</td>
+                  <td className="money sub">{t.km_stand != null ? `${t.km_stand.toLocaleString('de-DE')} km` : t.bh != null ? `${t.bh.toLocaleString('de-DE')} Bh` : '–'}</td>
+                  <td className="money">{t.verbrauch != null ? `${t.verbrauch.toLocaleString('de-DE')} l/100 km` : t.verbrauch_h != null ? `${t.verbrauch_h.toLocaleString('de-DE')} l/h` : '–'}</td>
                   <td>{t.has_beleg ? <button className="btn small" onClick={() => run(() => openPdf(`/tankvorgaenge/${t.id}/beleg`), 'Beleg geöffnet')}>Beleg</button> : (
                     <label className="btn small plain" style={{ cursor: 'pointer' }}>Beleg<input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(ev) => { const f = ev.target.files?.[0]; if (f) void runAndReload(() => uploadBeleg(`/tankvorgaenge/${t.id}/beleg`, f), 'Beleg gespeichert'); }} /></label>)}</td>
                 </tr>))}</tbody>
@@ -228,9 +241,10 @@ export function FahrtenbuchPage({ info, run }: { info: ProjectInfo; run: Run }) 
   );
 }
 
-function FahrtSheet({ info, fz, preset, run, onClose }: { info: ProjectInfo; fz: Fahrzeug[]; preset: string; run: Run; onClose: () => void }) {
+function FahrtSheet({ info, fz: alle, preset, run, onClose }: { info: ProjectInfo; fz: Fahrzeug[]; preset: string; run: Run; onClose: () => void }) {
+  const fz = alle.filter((x) => x.art === 'fahrzeug');
   const start = (id: string) => String(fz.find((f) => f.id === id)?.last_km ?? '');
-  const first = preset !== 'alle' ? preset : fz[0]?.id ?? '';
+  const first = preset !== 'alle' && fz.some((x) => x.id === preset) ? preset : fz[0]?.id ?? '';
   const [f, setF] = useState({ fahrzeug_id: first, datum: today(), km_start: start(first), km_ende: '', project_id: info.project.id, zweck: '' });
   const last = fz.find((x) => x.id === f.fahrzeug_id)?.last_km ?? null;
   const warn = f.km_start ? kmWarnung(last, Number(f.km_start)) : null;
@@ -254,38 +268,51 @@ function FahrtSheet({ info, fz, preset, run, onClose }: { info: ProjectInfo; fz:
 
 function TankenSheet({ info, fz, preset, run, onClose }: { info: ProjectInfo; fz: Fahrzeug[]; preset: string; run: Run; onClose: () => void }) {
   const first = preset !== 'alle' ? preset : fz[0]?.id ?? '';
-  const [f, setF] = useState({ fahrzeug_id: first, datum: today(), liter: '', betrag: '', km_stand: String(fz.find((x) => x.id === first)?.last_km ?? ''), tankstelle: '', project_id: '' });
+  const stationen = fz.filter((x) => x.art === 'tankstelle');
+  const [f, setF] = useState({ fahrzeug_id: first, datum: today(), liter: '', betrag: '', km_stand: String(fz.find((x) => x.id === first)?.last_km ?? ''), bh: '', tankstelle: '', quelle_id: '', project_id: info.project.id });
   const [beleg, setBeleg] = useState<File | null>(null);
-  const valid = f.fahrzeug_id && parseNum(f.liter) > 0 && f.betrag !== '' && f.km_stand !== '';
+  const art = fz.find((x) => x.id === f.fahrzeug_id)?.art ?? 'fahrzeug';
+  const ausStation = !!f.quelle_id;
+  const valid = f.fahrzeug_id && parseNum(f.liter) > 0 && (art !== 'fahrzeug' || f.km_stand !== '') && (art !== 'maschine' || f.bh !== '') && (ausStation || art === 'maschine' || f.betrag !== '');
   return (
-    <Sheet title="Tanken eintragen" primary="Sichern" primaryDisabled={!valid} onCancel={onClose}
+    <Sheet title={art === 'tankstelle' ? 'Tankstelle befüllen' : 'Tanken eintragen'} primary="Sichern" primaryDisabled={!valid} onCancel={onClose}
       onPrimary={() => run(async () => {
         const id = crypto.randomUUID();
-        await api('/tankvorgaenge', { method: 'POST', body: { id, fahrzeug_id: f.fahrzeug_id, datum: f.datum, liter: parseNum(f.liter), betrag_brutto: parseNum(f.betrag), km_stand: Number(f.km_stand), tankstelle: f.tankstelle || null, project_id: f.project_id || null } });
+        const r = await api<{ warnung: string | null }>('/tankvorgaenge', { method: 'POST', body: { id, fahrzeug_id: f.fahrzeug_id, datum: f.datum, liter: parseNum(f.liter),
+          betrag_brutto: f.betrag !== '' ? parseNum(f.betrag) : null, km_stand: art === 'fahrzeug' ? Number(f.km_stand) : null, betriebsstunden: art === 'maschine' ? parseNum(f.bh) : null,
+          tankstelle: f.tankstelle || null, quelle_id: art !== 'tankstelle' ? f.quelle_id || null : null, project_id: f.project_id || null } });
         if (beleg) await uploadBeleg(`/tankvorgaenge/${id}/beleg`, beleg);
         onClose();
+        if (r.warnung) throw new Error(`Gesichert. Hinweis: ${r.warnung}`);
       }, 'Tankvorgang gesichert')}>
       <div className="group">
-        <div className="row"><span className="k">Fahrzeug</span><select value={f.fahrzeug_id} onChange={(e) => setF({ ...f, fahrzeug_id: e.target.value })}>{fz.map((x) => <option key={x.id} value={x.id}>{x.kennzeichen} · {x.bezeichnung}</option>)}</select></div>
+        <div className="row"><span className="k">Fahrzeug / Gerät</span><select value={f.fahrzeug_id} onChange={(e) => setF({ ...f, fahrzeug_id: e.target.value })}>{fz.map((x) => <option key={x.id} value={x.id}>{x.bezeichnung} ({FAHRZEUG_ARTEN[x.art]})</option>)}</select></div>
+        {art !== 'tankstelle' && stationen.length > 0 && (
+          <div className="row"><span className="k">Getankt an</span><select value={f.quelle_id} onChange={(e) => setF({ ...f, quelle_id: e.target.value })}>
+            <option value="">Öffentliche Tankstelle</option>{stationen.map((x) => <option key={x.id} value={x.id}>{x.bezeichnung} (Bestand {Math.round(x.bestand ?? 0)} l)</option>)}</select></div>
+        )}
         <div className="row"><span className="k">Datum</span><input type="date" value={f.datum} onChange={(e) => setF({ ...f, datum: e.target.value })} /></div>
         <div className="row"><span className="k">Liter</span><input inputMode="decimal" autoFocus placeholder="0,00" value={f.liter} onChange={(e) => setF({ ...f, liter: e.target.value })} /></div>
-        <div className="row"><span className="k">Betrag brutto (€)</span><input inputMode="decimal" placeholder="0,00" value={f.betrag} onChange={(e) => setF({ ...f, betrag: e.target.value })} /></div>
-        <div className="row"><span className="k">km-Stand</span><input inputMode="numeric" value={f.km_stand} onChange={(e) => setF({ ...f, km_stand: e.target.value })} /></div>
-        <div className="row"><span className="k">Tankstelle</span><input value={f.tankstelle} onChange={(e) => setF({ ...f, tankstelle: e.target.value })} /></div>
+        {art === 'maschine' && <div className="row"><span className="k">Betriebsstunden</span><input inputMode="decimal" placeholder={String(fz.find((x) => x.id === f.fahrzeug_id)?.last_bh ?? '')} value={f.bh} onChange={(e) => setF({ ...f, bh: e.target.value })} /></div>}
+        {art === 'fahrzeug' && <div className="row"><span className="k">km-Stand</span><input inputMode="numeric" value={f.km_stand} onChange={(e) => setF({ ...f, km_stand: e.target.value })} /></div>}
+        {!ausStation && <div className="row"><span className="k">Betrag brutto (€)</span><input inputMode="decimal" placeholder={art === 'maschine' ? 'optional' : '0,00'} value={f.betrag} onChange={(e) => setF({ ...f, betrag: e.target.value })} /></div>}
+        {!ausStation && <div className="row"><span className="k">{art === 'tankstelle' ? 'Lieferant' : 'Tankstelle'}</span><input value={f.tankstelle} onChange={(e) => setF({ ...f, tankstelle: e.target.value })} /></div>}
         <div className="row"><span className="k">Projekt</span><select value={f.project_id} onChange={(e) => setF({ ...f, project_id: e.target.value })}><option value="">ohne Projekt</option><option value={info.project.id}>{info.project.name}</option></select></div>
       </div>
-      <label className="drop"><input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(e) => setBeleg(e.target.files?.[0] ?? null)} />{beleg ? <strong>{beleg.name}</strong> : <>Tankbeleg <span style={{ color: 'var(--accent)' }}>anhängen</span></>}</label>
+      {!ausStation && <label className="drop"><input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(e) => setBeleg(e.target.files?.[0] ?? null)} />{beleg ? <strong>{beleg.name}</strong> : <>Beleg <span style={{ color: 'var(--accent)' }}>anhängen</span></>}</label>}
     </Sheet>
   );
 }
 
 function FahrzeugSheet({ run, onClose }: { run: Run; onClose: () => void }) {
-  const [f, setF] = useState({ kennzeichen: '', bezeichnung: '', kraftstoff: 'diesel' });
+  const [f, setF] = useState({ kennzeichen: '', bezeichnung: '', kraftstoff: 'diesel', art: 'fahrzeug' as FahrzeugArt, kapazitaet_l: '' });
   return (
-    <Sheet title="Fahrzeug anlegen" primary="Sichern" primaryDisabled={!f.kennzeichen.trim() || !f.bezeichnung.trim()} onCancel={onClose}
-      onPrimary={() => run(async () => { await api('/fahrzeuge', { method: 'POST', body: f }); onClose(); }, 'Fahrzeug angelegt')}>
+    <Sheet title="Fahrzeug / Gerät anlegen" primary="Sichern" primaryDisabled={!f.kennzeichen.trim() || !f.bezeichnung.trim()} onCancel={onClose}
+      onPrimary={() => run(async () => { await api('/fahrzeuge', { method: 'POST', body: { ...f, kapazitaet_l: f.kapazitaet_l ? Number(f.kapazitaet_l) : null } }); onClose(); }, 'Angelegt')}>
       <div className="group">
-        <div className="row"><span className="k">Kennzeichen</span><input autoFocus placeholder="S-MB 123" value={f.kennzeichen} onChange={(e) => setF({ ...f, kennzeichen: e.target.value })} /></div>
+        <div className="row"><span className="k">Art</span><select value={f.art} onChange={(e) => setF({ ...f, art: e.target.value as FahrzeugArt })}>{Object.entries(FAHRZEUG_ARTEN).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+        {f.art === 'tankstelle' && <div className="row"><span className="k">Fassungsvermögen (l)</span><input inputMode="numeric" value={f.kapazitaet_l} onChange={(e) => setF({ ...f, kapazitaet_l: e.target.value })} /></div>}
+        <div className="row"><span className="k">{f.art === 'fahrzeug' ? 'Kennzeichen' : 'Inventar-Nr.'}</span><input autoFocus placeholder={f.art === 'fahrzeug' ? 'S-MB 123' : 'RL-07'} value={f.kennzeichen} onChange={(e) => setF({ ...f, kennzeichen: e.target.value })} /></div>
         <div className="row"><span className="k">Bezeichnung</span><input placeholder="z. B. VW Crafter" value={f.bezeichnung} onChange={(e) => setF({ ...f, bezeichnung: e.target.value })} /></div>
         <div className="row"><span className="k">Kraftstoff</span><select value={f.kraftstoff} onChange={(e) => setF({ ...f, kraftstoff: e.target.value })}><option value="diesel">Diesel</option><option value="benzin">Benzin</option><option value="elektro">Elektro</option><option value="hybrid">Hybrid</option></select></div>
       </div>

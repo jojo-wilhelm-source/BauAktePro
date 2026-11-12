@@ -87,29 +87,44 @@ export function EinkaufScreen({ projectId, userId, userName, onClose }: { projec
   );
 }
 
+type Fz = { id: string; kennzeichen: string; bezeichnung: string; fahrer_id: string | null; art: 'fahrzeug' | 'maschine' | 'tankstelle' | null };
+const ART_LABEL = { fahrzeug: 'Fahrzeug', maschine: 'Maschine', tankstelle: 'Mobile Tankstelle' } as const;
+
+/**
+ * Fahrtenbuch on the phone (offline): trips and fill-ups of vehicles, fill-ups of machines with Betriebsstunden,
+ * diesel from the mobile station, refilling the station. Only reaches the device if the administrator granted it.
+ */
 export function FahrtenbuchScreen({ projectId, projectName, userId, onClose }: { projectId: string; projectName: string; userId: string; onClose: () => void }) {
   const db = usePowerSync();
-  const { data: fahrzeuge } = useQuery<{ id: string; kennzeichen: string; bezeichnung: string; fahrer_id: string | null }>('SELECT id, kennzeichen, bezeichnung, fahrer_id FROM fahrzeug ORDER BY bezeichnung');
+  const { data: fahrzeuge } = useQuery<Fz>('SELECT id, kennzeichen, bezeichnung, fahrer_id, art FROM fahrzeug ORDER BY art, bezeichnung');
   const mineFirst = useMemo(() => [...fahrzeuge].sort((a, b) => Number(b.fahrer_id === userId) - Number(a.fahrer_id === userId)), [fahrzeuge, userId]);
-  const [idx, setIdx] = useState(0);
-  const fz = mineFirst[idx];
-  const { data: last } = useQuery<{ km: number | null }>(
-    'SELECT max(km) AS km FROM (SELECT km_ende AS km FROM fahrt WHERE fahrzeug_id = ? UNION ALL SELECT km_stand FROM tankvorgang WHERE fahrzeug_id = ?)',
-    [fz?.id ?? '', fz?.id ?? ''],
+  const [fzId, setFzId] = useState<string | null>(null);
+  const [pick, setPick] = useState(false);
+  const fz = mineFirst.find((x) => x.id === fzId) ?? mineFirst[0];
+  const art = fz?.art ?? 'fahrzeug';
+  const stationen = fahrzeuge.filter((x) => x.art === 'tankstelle');
+  const { data: last } = useQuery<{ km: number | null; bh: number | null }>(
+    `SELECT (SELECT max(km) FROM (SELECT km_ende AS km FROM fahrt WHERE fahrzeug_id = ? UNION ALL SELECT km_stand FROM tankvorgang WHERE fahrzeug_id = ?)) AS km,
+            (SELECT max(betriebsstunden) FROM tankvorgang WHERE fahrzeug_id = ?) AS bh`,
+    [fz?.id ?? '', fz?.id ?? '', fz?.id ?? ''],
   );
-  const { data: liste } = useQuery<{ id: string; art: string; datum: string; km: number | null; zweck: string | null; liter: number | null; betrag: number | null }>(
-    `SELECT id, 'fahrt' AS art, datum, (km_ende - km_start) AS km, zweck, NULL AS liter, NULL AS betrag FROM fahrt WHERE fahrzeug_id = ?
-     UNION ALL SELECT id, 'tanken', datum, NULL, NULL, liter, betrag_brutto FROM tankvorgang WHERE fahrzeug_id = ?
+  const { data: liste } = useQuery<{ id: string; art: string; datum: string; km: number | null; zweck: string | null; liter: number | null; betrag: number | null; bh: number | null }>(
+    `SELECT id, 'fahrt' AS art, datum, (km_ende - km_start) AS km, zweck, NULL AS liter, NULL AS betrag, NULL AS bh FROM fahrt WHERE fahrzeug_id = ?
+     UNION ALL SELECT id, 'tanken', datum, NULL, NULL, liter, betrag_brutto, betriebsstunden FROM tankvorgang WHERE fahrzeug_id = ? OR quelle_id = ?
      ORDER BY datum DESC LIMIT 20`,
-    [fz?.id ?? '', fz?.id ?? ''],
+    [fz?.id ?? '', fz?.id ?? '', fz?.id ?? ''],
   );
   const lastKm = last[0]?.km ?? null;
-  const [mode, setMode] = useState(0); // 0 Fahrt, 1 Tanken
-  const [f, setF] = useState({ km_start: '', km_ende: '', zweck: '', mitProjekt: true, liter: '', betrag: '', km_stand: '', tankstelle: '' });
+  const [modeRaw, setMode] = useState(0); // 0 Fahrt, 1 Tanken
+  const mode = art === 'fahrzeug' ? modeRaw : 1;
+  const [f, setF] = useState({ km_start: '', km_ende: '', zweck: '', mitProjekt: true, liter: '', betrag: '', km_stand: '', bh: '', tankstelle: '', quelle: '' });
   const [foto, setFoto] = useState<Picked | null>(null);
   const start = f.km_start || (lastKm != null ? String(lastKm) : '');
   const warn = mode === 0 && start ? kmWarnung(lastKm, Number(start)) : null;
-  const valid = fz && (mode === 0 ? start !== '' && f.km_ende !== '' && Number(f.km_ende) >= Number(start) && f.zweck.trim() : num(f.liter) > 0 && f.betrag !== '' && (f.km_stand || start) !== '');
+  const ausStation = !!f.quelle && art !== 'tankstelle';
+  const valid = fz && (mode === 0
+    ? start !== '' && f.km_ende !== '' && Number(f.km_ende) >= Number(start) && f.zweck.trim()
+    : num(f.liter) > 0 && (art !== 'fahrzeug' || (f.km_stand || start) !== '') && (art !== 'maschine' || f.bh !== '') && (ausStation || art === 'maschine' || f.betrag !== ''));
   const save = async () => {
     if (!valid || !fz) return;
     const id = Crypto.randomUUID();
@@ -117,21 +132,28 @@ export function FahrtenbuchScreen({ projectId, projectName, userId, onClose }: {
       await db.execute('INSERT INTO fahrt (id, fahrzeug_id, fahrer_id, datum, km_start, km_ende, project_id, zweck) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [id, fz.id, userId, today(), Number(start), Number(f.km_ende), f.mitProjekt ? projectId : null, f.zweck.trim()]);
     } else {
-      await db.execute('INSERT INTO tankvorgang (id, fahrzeug_id, fahrer_id, datum, liter, betrag_brutto, km_stand, tankstelle, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, fz.id, userId, today(), num(f.liter), num(f.betrag), Number(f.km_stand || start), f.tankstelle || null, f.mitProjekt ? projectId : null]);
-      if (foto) await queueBeleg(db, 'tankvorgang', id, foto);
+      await db.execute('INSERT INTO tankvorgang (id, fahrzeug_id, fahrer_id, datum, liter, betrag_brutto, km_stand, betriebsstunden, quelle_id, tankstelle, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, fz.id, userId, today(), num(f.liter), f.betrag !== '' ? num(f.betrag) : null, art === 'fahrzeug' ? Number(f.km_stand || start) : null,
+          art === 'maschine' ? num(f.bh) : null, ausStation ? f.quelle : null, ausStation ? null : f.tankstelle || null, f.mitProjekt ? projectId : null]);
+      if (foto && !ausStation) await queueBeleg(db, 'tankvorgang', id, foto);
     }
-    setF({ km_start: '', km_ende: '', zweck: '', mitProjekt: f.mitProjekt, liter: '', betrag: '', km_stand: '', tankstelle: '' });
+    setF({ km_start: '', km_ende: '', zweck: '', mitProjekt: f.mitProjekt, liter: '', betrag: '', km_stand: '', bh: '', tankstelle: '', quelle: f.quelle });
     setFoto(null);
   };
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SheetBar title="Fahrtenbuch" left="Fertig" onLeft={onClose} right="Sichern" rightDisabled={!valid} onRight={() => void save()} />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
-        {mineFirst.length > 1 && <View style={{ marginBottom: 14 }}><Segmented values={mineFirst.map((x) => x.kennzeichen)} index={idx} onChange={setIdx} /></View>}
-        <View style={{ marginBottom: 14 }}><Segmented values={['Fahrt', 'Tanken']} index={mode} onChange={setMode} /></View>
-        {!fz ? <Text style={T.subhead}>Kein Fahrzeug verfügbar.</Text> : mode === 0 ? (
-          <Section title={`${fz.bezeichnung} · letzter km-Stand ${lastKm ?? '–'}`} footer={warn ?? 'km-Stand Start ist mit dem letzten bekannten Stand vorbelegt.'}>
+        <Section>
+          <Row icon={art === 'maschine' ? 'gearshape.2' : art === 'tankstelle' ? 'fuelpump' : 'car'} iconBg={art === 'tankstelle' ? 'orange' : art === 'maschine' ? 'indigo' : 'blue'}
+            label={fz ? fz.bezeichnung : 'Kein Fahrzeug verfügbar'} subtitle={fz ? `${ART_LABEL[art]} · ${fz.kennzeichen}` : undefined} chevron onPress={() => setPick(!pick)} />
+          {pick && mineFirst.map((x) => (
+            <Row key={x.id} label={x.bezeichnung} subtitle={ART_LABEL[x.art ?? 'fahrzeug']} checked={x.id === fz?.id} onPress={() => { setFzId(x.id); setPick(false); }} />
+          ))}
+        </Section>
+        {art === 'fahrzeug' && <View style={{ marginBottom: 14 }}><Segmented values={['Fahrt', 'Tanken']} index={mode} onChange={setMode} /></View>}
+        {!fz ? null : mode === 0 ? (
+          <Section title={`letzter km-Stand ${lastKm ?? '–'}`} footer={warn ?? 'km-Stand Start ist mit dem letzten bekannten Stand vorbelegt.'}>
             <Field label="km Start" value={start} onChange={(v) => setF({ ...f, km_start: v })} numeric />
             <Field label="km Ende" value={f.km_ende} onChange={(v) => setF({ ...f, km_ende: v })} placeholder="km-Stand" numeric />
             {f.km_ende !== '' && <Row label="Strecke" value={`${Number(f.km_ende) - Number(start)} km`} />}
@@ -140,17 +162,26 @@ export function FahrtenbuchScreen({ projectId, projectName, userId, onClose }: {
           </Section>
         ) : (
           <>
-            <Section title={fz.bezeichnung}>
+            {art !== 'tankstelle' && stationen.length > 0 && (
+              <Section title="Getankt an">
+                <Row label="Öffentliche Tankstelle" checked={!f.quelle} onPress={() => setF({ ...f, quelle: '' })} />
+                {stationen.map((x) => <Row key={x.id} label={x.bezeichnung} checked={f.quelle === x.id} onPress={() => setF({ ...f, quelle: x.id })} />)}
+              </Section>
+            )}
+            <Section title={art === 'tankstelle' ? 'Tankstelle befüllen' : 'Tanken'} footer={art === 'maschine' && last[0]?.bh != null ? `Letzte Betriebsstunden: ${last[0].bh}` : undefined}>
               <Field label="Liter" value={f.liter} onChange={(v) => setF({ ...f, liter: v })} placeholder="0,00" numeric />
-              <Field label="Betrag brutto" value={f.betrag} onChange={(v) => setF({ ...f, betrag: v })} placeholder="0,00 €" numeric />
-              <Field label="km-Stand" value={f.km_stand || start} onChange={(v) => setF({ ...f, km_stand: v })} numeric />
-              <Field label="Tankstelle" value={f.tankstelle} onChange={(v) => setF({ ...f, tankstelle: v })} />
+              {art === 'maschine' && <Field label="Betriebsstunden" value={f.bh} onChange={(v) => setF({ ...f, bh: v })} placeholder="Bh" numeric />}
+              {art === 'fahrzeug' && <Field label="km-Stand" value={f.km_stand || start} onChange={(v) => setF({ ...f, km_stand: v })} numeric />}
+              {!ausStation && <Field label="Betrag brutto" value={f.betrag} onChange={(v) => setF({ ...f, betrag: v })} placeholder={art === 'maschine' ? 'optional' : '0,00 €'} numeric />}
+              {!ausStation && <Field label={art === 'tankstelle' ? 'Lieferant' : 'Tankstelle'} value={f.tankstelle} onChange={(v) => setF({ ...f, tankstelle: v })} />}
+              <Row label={projectName} checked={f.mitProjekt} onPress={() => setF({ ...f, mitProjekt: !f.mitProjekt })} />
             </Section>
-            <FotoRows foto={foto} setFoto={setFoto} label="Tankbeleg" />
+            {!ausStation && <FotoRows foto={foto} setFoto={setFoto} label="Beleg" />}
           </>
         )}
         <Section title="Zuletzt (meine Einträge)">
-          {liste.map((l) => <Row key={l.id} icon={l.art === 'fahrt' ? 'car' : 'fuelpump'} iconBg={l.art === 'fahrt' ? 'blue' : 'orange'} label={l.art === 'fahrt' ? `${(l.km ?? 0).toLocaleString('de-DE')} km · ${l.zweck ?? ''}` : `${(l.liter ?? 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} l · ${euro(l.betrag ?? 0)}`} subtitle={formatDate(l.datum)} />)}
+          {liste.map((l) => <Row key={l.id} icon={l.art === 'fahrt' ? 'car' : 'fuelpump'} iconBg={l.art === 'fahrt' ? 'blue' : 'orange'}
+            label={l.art === 'fahrt' ? `${(l.km ?? 0).toLocaleString('de-DE')} km · ${l.zweck ?? ''}` : `${(l.liter ?? 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} l${l.bh != null ? ` · ${l.bh} Bh` : ''}${l.betrag != null ? ` · ${euro(l.betrag)}` : ''}`} subtitle={formatDate(l.datum)} />)}
           {liste.length === 0 && <Row label={<Text style={T.subhead}>Noch keine Einträge</Text>} />}
         </Section>
       </ScrollView>

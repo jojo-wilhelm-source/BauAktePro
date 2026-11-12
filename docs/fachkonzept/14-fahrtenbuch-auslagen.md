@@ -27,3 +27,10 @@ Stufe 3 (Geld). Beides ist **neu** und stand nicht im ursprünglichen Fachkonzep
 - **Rechte** (RLS + Sync-Regeln, Tests in `apps/api/test/rechte.test.ts`): Einkäufe sieht der Erfasser selbst, Bau-/Projektleitung und Einkauf sehen alle des Projekts, NU und Bauherr nichts. Fahrten und Tanken sieht der Fahrer selbst, Bau-/Projektleitung alle; Fahrzeuge legt die Leitung an.
 - ANNAHME (D2): „Geschäftsführung“ ist noch keine eigene Rolle; bis dahin sieht die Bau-/Projektleitung alle Fahrten.
 - Noch offen: Einkäufe/Fahrten nachträglich ändern (mit Audit Log), Auswertung je Monat als PDF, DATEV-Übergabe der Erstattungen.
+
+## Maschinen und mobile Tankstelle (entschieden 12.11.2026)
+- **Freischaltung:** Der Administrator schaltet das Fahrtenbuch pro Person frei.
+- **Arten:** Fahrzeug (km), Maschine/Gerät, z. B. Radlader (nur Liter und Betriebsstunden, Preis optional), mobile Tankstelle (mit Fassungsvermögen).
+- **Mobile Tankstelle:** Befüllen = Tankvorgang auf die Tankstelle (Liter, Betrag, Lieferant). Abgabe = Tankvorgang einer Maschine/eines Fahrzeugs „Getankt an: Tankstelle“. Bestand = Befüllungen − Abgaben. Ein rechnerisch negativer Bestand wird gemeldet, aber nicht gesperrt (offline nachgereichte Einträge).
+- **Verbrauch:** Fahrzeuge in l/100 km, Maschinen in l/h zwischen zwei Tankvorgängen.
+- Am Handy für den Polier vollständig offline.
