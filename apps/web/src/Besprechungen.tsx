@@ -45,6 +45,16 @@ export function StatusSelect({ status, onChange }: { status: PunktStatus; onChan
   );
 }
 
+/** Number of Punkte per firm (or per Gewerk), most first – shown in the head of a collapsible area. */
+function zaehle(punkte: Punkt[], nach: 'firma' | 'gewerk'): [string, number][] {
+  const m = new Map<string, number>();
+  for (const p of punkte) {
+    const k = nach === 'firma' ? (p.responsible_name ?? 'Allgemein') : (p.gewerk_name ?? 'ohne Gewerk');
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+}
+
 const KIND_LABEL = { bau: 'Baubesprechung', nu: 'NU-Besprechung' } as const;
 /** ISO → value of <input type="datetime-local"> (local time). */
 const toLocalInput = (iso: string | null) => {
@@ -164,9 +174,18 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
   const [confirm, setConfirm] = useState(false);
   const [listFor, setListFor] = useState('');
   const [own, setOwn] = useState('Eigen');
+  // Collapsed areas (concept: sections can be folded; the head shows the number of Punkte per firm / Gewerk).
+  const [zu, setZu] = useState<Set<string>>(new Set());
   const [verteiler, setVerteiler] = useState(false);
   useEffect(() => void api<{ kurzname: string | null; name: string } | null>('/firma').then((f) => f && setOwn(f.kurzname ?? f.name)).catch(() => undefined), []);
-  const load = useCallback(async () => setD(await api<BesprechungDetail>(`/besprechungen/${id}`)), [id]);
+  // A meeting that no longer exists (deleted, or no access any more) leads back to the list instead of an empty page.
+  const load = useCallback(async () => {
+    try {
+      setD(await api<BesprechungDetail>(`/besprechungen/${id}`));
+    } catch {
+      props.onBack();
+    }
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => void load(), [load]);
   const runAndLoad: Run = async (fn, ok) => {
     await run(fn, ok);
@@ -314,13 +333,23 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
         <ProtokollKopf d={d} id={id} run={runAndLoad} />
         <KopfCard d={d} id={id} run={runAndLoad} />
         <AllgemeinCard d={d} id={id} run={runAndLoad} />
+        {groups.length > 1 && (
+          <div className="meta-row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn small plain" onClick={() => setZu(new Set(groups.map(([n]) => n)))}>Alle einklappen</button>
+            <button className="btn small plain" onClick={() => setZu(new Set())}>Alle aufklappen</button>
+          </div>
+        )}
         {groups.map(([name, punkte]) => (
           <div key={name}>
-            <div className="group-head">
+            <button className="group-head collapsible" onClick={() => setZu((z) => { const n = new Set(z); if (n.has(name)) n.delete(name); else n.add(name); return n; })}>
+              <span className={`arrow ${zu.has(name) ? '' : 'open'}`}>▶</span>
               <h3>{name}</h3>
-              <span className="sub">{punkte.length} Punkte</span>
-            </div>
-            <div className="card">
+              <span className="sub">{punkte.length} {punkte.length === 1 ? 'Punkt' : 'Punkte'}</span>
+              <span className="zaehler">
+                {zaehle(punkte, group === 'firma' ? 'gewerk' : 'firma').map(([k, n]) => <span key={k} className="token small">{k} {n}</span>)}
+              </span>
+            </button>
+            {!zu.has(name) && <div className="card">
               <table className="table">
                 {punkte.length > 0 && (
                   <thead>
@@ -336,10 +365,20 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                   </thead>
                 )}
                 <tbody>
-                  {punkte.map((p) => {
+                  {punkte.map((p, idx) => {
                     const st = shown(p);
                     const overdue = punktUeberfaellig({ status: st, due_date: p.due_date });
-                    return (
+                    // Sub-heading per firm inside the area (group "Nach Ort"): Allgemeine Punkte first, then each firm; foldable.
+                    const firm = p.responsible_name ?? 'Allgemeine Punkte';
+                    const firmKey = `${name}|${firm}`;
+                    const firstOfFirm = group === 'ort' && (idx === 0 || (punkte[idx - 1]!.responsible_name ?? 'Allgemeine Punkte') !== firm);
+                    const head = firstOfFirm ? (
+                      <tr key={`h-${firmKey}`} className="firm-head" onClick={() => setZu((z) => { const n = new Set(z); if (n.has(firmKey)) n.delete(firmKey); else n.add(firmKey); return n; })}>
+                        <td colSpan={7}><span className={`arrow ${zu.has(firmKey) ? '' : 'open'}`}>▶</span> {firm}{p.kontakt ? ` | ${p.kontakt}` : ''} <span className="sub">· {punkte.filter((x) => (x.responsible_name ?? 'Allgemeine Punkte') === firm).length}</span></td>
+                      </tr>
+                    ) : null;
+                    if (group === 'ort' && zu.has(firmKey)) return head;
+                    return [head, (
                       <tr key={p.id} className={p.mine ? 'mine' : ''} style={{ cursor: 'default' }}>
                         <td className="num">
                           {punktNo(p.number)}
@@ -399,7 +438,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                           )}
                         </td>
                       </tr>
-                    );
+                    )];
                   })}
                 </tbody>
               </table>
@@ -409,7 +448,7 @@ function Detail(props: Parameters<typeof BesprechungenPage>[0] & { id: string; o
                 </div>
               )}
               {punkte.length === 0 && !d.can_edit && <div className="empty">Keine Punkte</div>}
-            </div>
+            </div>}
           </div>
         ))}
 
