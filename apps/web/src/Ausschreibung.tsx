@@ -175,6 +175,7 @@ function LvDetail({ id, info, run, ordner, onBack, onOpen }: { id: string; info:
       <PageHeader eyebrow={`${info.project.name} · LV ${lv.nummer}`} title={lv.titel}
         action={<div className="meta-row">
           <button className="btn" onClick={onBack}>Alle LVs</button>
+          <button className="btn" onClick={() => void openPdf(`/lv/${lv.id}/pdf`)}>LV als PDF</button>
           <button className="btn" onClick={kopie}>Kopieren / als Vorlage</button>
           {lv.status !== 'vergeben' && <button className="btn filled" disabled={!anzahl || dirty} onClick={() => setAnfragen(true)}>An Nachunternehmer anfragen …</button>}
         </div>}>
@@ -694,7 +695,10 @@ export function AngebotPage({ token }: { token: string }) {
             <div className="row stack"><textarea rows={2} placeholder="Bemerkung (optional)" value={bemerkung} onChange={(e) => setBemerkung(e.target.value)} /></div>
           </div>
           <details className="group" style={{ padding: '10px 16px' }}>
-            <summary>Notfall: Angebot als PDF hochladen</summary>
+            <summary>Auf Papier ausfüllen oder Angebot als PDF hochladen</summary>
+            <div className="sub" style={{ marginTop: 8 }}>
+              <a href={`/api/public/angebot/${encodeURIComponent(token)}/pdf`} target="_blank" rel="noreferrer">LV als PDF zum Ausfüllen herunterladen</a> – ausgefüllt und unterschrieben einscannen und hier hochladen (mit Angebotssumme).
+            </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
               <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} />
               {!filled && <input inputMode="decimal" placeholder="Angebotssumme netto €" value={summe} onChange={(e) => setSumme(e.target.value)} />}

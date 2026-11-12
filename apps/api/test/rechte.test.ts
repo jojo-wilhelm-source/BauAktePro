@@ -1114,11 +1114,19 @@ describe('Einkauf: LV, Anfrage per Link, Preisspiegel', () => {
     await call('uBauleitung', 'PUT', '/lv', b);
     expect((await call('uBauleitung', 'POST', `/lv/${b.id}/anfragen`, { company_ids: [ID.coElektro, ID.coFliesen] })).status).toBe(200);
     expect((await call('uBauleitung', 'PUT', '/lv', { ...b, positionen: [] })).status).toBe(409); // positions locked after sending
-    const tokens = await adminSql`SELECT company_id, token FROM lv_anfrage WHERE lv_id = ${b.id}`;
-    const tEl = tokens.find((t) => t.company_id === ID.coElektro)!.token as string;
-    const tFl = tokens.find((t) => t.company_id === ID.coFliesen)!.token as string;
+    const links = await adminSql`SELECT company_id, token FROM lv_anfrage WHERE lv_id = ${b.id}`;
+    const tEl = links.find((t) => t.company_id === ID.coElektro)!.token as string;
+    const tFl = links.find((t) => t.company_id === ID.coFliesen)!.token as string;
     const view = await pub(tEl, 'GET');
     expect(view.body.positionen).toHaveLength(2);
+    // LV as PDF to fill in by hand: bidder copy via link, neutral copy for the Leitung only
+    const pdfPub = await app.inject({ method: 'GET', url: `/public/angebot/${tEl}/pdf` });
+    expect(pdfPub.statusCode).toBe(200);
+    expect(pdfPub.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+    expect((await app.inject({ method: 'GET', url: '/public/angebot/falsch/pdf' })).statusCode).toBe(404);
+    const pdfIntern = await app.inject({ method: 'GET', url: `/lv/${b.id}/pdf`, headers: { authorization: `Bearer ${tokens.uBauleitung}` } });
+    expect(pdfIntern.rawPayload.subarray(0, 4).toString(), pdfIntern.body).toBe('%PDF');
+    expect((await app.inject({ method: 'GET', url: `/lv/${b.id}/pdf`, headers: { authorization: `Bearer ${tokens.uPolier}` } })).statusCode).toBeGreaterThanOrEqual(403);
     expect((await pub(tEl, 'POST', { name: 'Erik', preise: {} })).status).toBe(422);
     expect((await pub(tEl, 'POST', { name: 'Erik', preise: { [b.positionen[0]!.id]: 30, [b.positionen[1]!.id]: 5 } })).status).toBe(200); // 3050
     expect((await pub(tFl, 'POST', { name: 'Fiona', preise: { [b.positionen[0]!.id]: 28, [b.positionen[1]!.id]: 6 }, nachlass_prozent: 3 })).status).toBe(200); // 2860 → 2774.2

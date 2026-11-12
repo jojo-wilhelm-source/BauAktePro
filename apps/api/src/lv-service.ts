@@ -11,12 +11,47 @@ import { z } from 'zod';
 import type { Sql, TxSql } from '@bap/db';
 import { abweichungProzent, formatDate, LvPositionInput, ozNummerieren, PaketPosition, preisspiegel, titelSummen } from '@bap/domain';
 import { WEB_URL } from './anmeldung';
+import { LOGO_DIR } from './bautagebuch-service';
+import { renderLvPdf } from './lv-pdf';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
 const DIR = fileURLToPath(new URL('../../../storage/angebote/', import.meta.url));
 const FROM = () => process.env.MAIL_FROM ?? 'Bau Akte Pro <noreply@bauaktepro.example.test>';
 export const angebotUrl = (token: string) => `${WEB_URL}/angebot/${token}`;
+
+/** LV as PDF to fill in by hand; personal copy (bidder + link/QR) or neutral. Works with the user's or the admin connection. */
+async function lvPdf(db: TxSql, lvId: string, bieter: string | null, url: string | null) {
+  const [l] = await db`
+    SELECT l.nummer, l.titel, l.beschreibung, l.angebotsfrist::text AS angebotsfrist, p.name AS project, o.name AS own, o.logo_key
+    FROM lv l JOIN project p ON p.id = l.project_id LEFT JOIN company o ON o.tenant_id = l.tenant_id AND o.kind = 'own' WHERE l.id = ${lvId} LIMIT 1`;
+  if (!l) throw new HttpError(404, 'Leistungsverzeichnis nicht gefunden');
+  const positionen = await db`SELECT art, oz, kurztext, langtext, menge::float AS menge, einheit FROM lv_position WHERE lv_id = ${lvId} ORDER BY sort, oz`;
+  let logo: { bytes: Uint8Array; png: boolean } | null = null;
+  if (l.logo_key) {
+    try { logo = { bytes: await readFile(LOGO_DIR + (l.logo_key as string).replace(/[^a-z0-9._-]/gi, '')), png: (l.logo_key as string).endsWith('.png') }; } catch { /* no file */ }
+  }
+  const bytes = await renderLvPdf({
+    titel: l.titel as string, nummer: l.nummer as number, project: l.project as string, ownCompany: (l.own as string) ?? '', logo, bieter,
+    angebotsfrist: l.angebotsfrist as string | null, beschreibung: l.beschreibung as string | null, url,
+    positionen: positionen as unknown as { art: string; oz: string; kurztext: string; langtext: string | null; menge: number; einheit: string | null }[],
+  });
+  const name = `LV-${l.nummer as number}-${(l.titel as string).replace(/[^A-Za-z0-9ÄÖÜäöüß_-]+/g, '-').slice(0, 40)}.pdf`;
+  return { bytes, name };
+}
+
+/** Neutral LV PDF for Einkauf / Leitung (e.g. to print or send by hand). */
+export async function lvPdfIntern(tx: TxSql, userId: string, id: string) {
+  await getLv(tx, userId, id); // rights
+  return lvPdf(tx, id, null, null);
+}
+
+/** Bidder's copy via the link: with firm name and QR code. */
+export async function publicLvPdf(admin: Sql, token: string) {
+  const a = await byToken(admin, token);
+  const [c] = await admin`SELECT name FROM company WHERE id = ${a.company_id}`;
+  return lvPdf(admin as unknown as TxSql, a.lv_id, (c?.name as string) ?? null, angebotUrl(token));
+}
 
 async function requireEinkauf(tx: TxSql, userId: string, projectId: string) {
   const a = await actorFor(tx, userId, projectId);
@@ -119,14 +154,16 @@ export async function sendAnfragen(tx: TxSql, userId: string, id: string, input:
     let devFile: string | undefined;
     if (c.email) {
       const qr = await QRCode.toBuffer(url, { margin: 1, width: 320 });
+      const pdf = await lvPdf(tx, id, c.name as string, url);
       const r = await sendMail({
         from: FROM(), to: c.email as string,
         subject: `Anfrage: ${l.titel as string}${l.angebotsfrist ? ` – Angebot bis ${formatDate(l.angebotsfrist as string)}` : ''}`,
         text: `Sehr geehrte Damen und Herren,\n\nwir bitten um Ihr Angebot für „${l.titel as string}“ (${l.positionen.length} Positionen).\n` +
           `${l.angebotsfrist ? `Angebotsfrist: ${formatDate(l.angebotsfrist as string)}\n` : ''}\n` +
-          `Sie können die Einheitspreise direkt online eintragen oder Ihr Angebot als PDF hochladen – ohne Anmeldung:\n${url}\n` +
-          `(oder den QR-Code im Anhang scannen). Mit Zugang zum Portal finden Sie die Anfrage auch dort.\n\nMit freundlichen Grüßen\n${me?.name ?? ''}`,
-        attachments: [{ filename: 'Anfrage-QR.png', content: qr }],
+          `Sie können die Einheitspreise direkt online eintragen und abschicken – ohne Anmeldung:\n${url}\n` +
+          `(oder den QR-Code im Anhang scannen). Mit Zugang zum Portal finden Sie die Anfrage auch dort.\n\n` +
+          `Lieber auf Papier? Das LV liegt als PDF zum Ausfüllen bei. Bitte ausgefüllt und unterschrieben zurücksenden oder online als PDF hochladen.\n\nMit freundlichen Grüßen\n${me?.name ?? ''}`,
+        attachments: [{ filename: 'Anfrage-QR.png', content: qr }, { filename: pdf.name, content: Buffer.from(pdf.bytes) }],
       });
       devFile = r.devFile;
     }

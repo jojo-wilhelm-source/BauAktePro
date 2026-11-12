@@ -45,3 +45,10 @@ Anfrage und Angebotsvergleich (im Datenmodell schon vorbereiten).
 - **Stammleistungen:** firmenweite Bibliothek (Kategorie, Kurztext, Langtext, Einheit) für Einkauf und Leitung; im LV „Aus Stammleistungen …“ (Suche, Mehrfachauswahl), mit ★ eine Position übernehmen.
 - **Kopieren / als Vorlage:** LV als neuen Entwurf kopieren (gleiche Gliederung, ohne Preise).
 - **Preisspiegel und Bieterseite** gegliedert nach Titeln, mit Titelsummen je Bieter. GAEB-Import (X83) folgt.
+
+## Leistungspakete, Kalkulation, Angebote per Hand, LV auf Papier (entschieden 12.11.2026)
+- **Leistungspakete** in den Stammleistungen: ein Paket (z. B. „Bodenplatte“ je m²) enthält mehrere Positionen mit Menge je Bezugseinheit (Aushub 0,40 m³, Bewehrung 0,03 t, Schalung 0,20 m, Beton 0,25 m³). Beim Einfügen ins LV gibt man die Gesamtmenge an (z. B. 120 m²); das Paket wird als Untertitel mit ausmultiplizierten Mengen eingefügt. Mit ★ an einem Titel/Untertitel wird dessen Inhalt als Paket übernommen (je 1 St, Bezugseinheit danach anpassen).
+- **Kalkulation:** eigene Einheitspreise je Position, im Preisspiegel ganz links (EP, GP, Titelsummen, Summe). Sehen nur Einkauf und Leitung, nie die Bieter (eigene Tabelle `lv_kalkulation`). Auch nach dem Versand änderbar.
+- **Bieter nebeneinander:** Bieter 1, 2, 3 … rechts daneben, wahlweise „Günstigstes zuerst“ oder „Nach Eingang“; Abweichung jeder Angebotssumme zur Kalkulation in %, EP mehr als 20 % über Kalkulation rot.
+- **Angebot erfassen:** Angebote per Mail/Papier tragen Einkauf oder Leitung selbst ein (EP je Position, EP-Spalte aus Excel einfügen, oder nur Summe). Erneutes Erfassen ersetzt das Angebot der Firma im Preisspiegel, alle Stände bleiben gespeichert. Das erste erfasste Angebot sperrt das LV wie ein Versand.
+- **LV als PDF zum Ausfüllen:** liegt jeder Anfrage-Mail bei (mit Bietername, QR-Code und Link), ist auf der Bieterseite herunterladbar und im LV als neutrales PDF. Spalten EP/GP leer, Summen je Titel, Nachlass, Angebotssumme, Ort/Datum, Unterschrift und Stempel. Ausgefüllt kann der Bieter es einscannen und online hochladen oder zurückschicken (dann „Angebot erfassen“).

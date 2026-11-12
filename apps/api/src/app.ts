@@ -14,7 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
-import { erfasseAngebot, saveKalkulation, copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
+import { erfasseAngebot, lvPdfIntern, publicLvPdf, saveKalkulation, copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser, ownCompany, ownLogo, updateOwnCompany } from './admin-service';
 import { startPage } from './start-service';
@@ -109,6 +109,11 @@ export function buildApp(sql: Sql) {
   // --- QR-Freimeldung (public, bound to the link token; docs/fachkonzept/04) ----------
   // Offer via link (no account, token-bound; also used from the NU portal).
   app.get<{ Params: { token: string } }>('/public/angebot/:token', async (req) => publicAnfrage(admin, req.params.token));
+  app.get<{ Params: { token: string } }>('/public/angebot/:token/pdf', async (req, reply) => {
+    const pdf = await publicLvPdf(admin, req.params.token);
+    reply.header('content-type', 'application/pdf').header('content-disposition', `inline; filename="${pdf.name}"`);
+    return reply.send(Buffer.from(pdf.bytes));
+  });
   app.post<{ Params: { token: string } }>('/public/angebot/:token', async (req) => {
     if (req.isMultipart()) {
       const u = await readUpload(req);
@@ -213,6 +218,11 @@ export function buildApp(sql: Sql) {
   app.put<{ Params: { id: string } }>('/lv/:id/kalkulation', async (req) => asUser(sql, req.userId, (tx) => saveKalkulation(tx, req.userId, req.params.id, req.body)));
   app.post<{ Params: { id: string } }>('/lv/:id/angebote', async (req) => asUser(sql, req.userId, (tx) => erfasseAngebot(tx, req.userId, req.params.id, req.body, meta(req))));
   app.post<{ Params: { id: string } }>('/lv/:id/vergeben', async (req) => asUser(sql, req.userId, (tx) => vergeben(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/lv/:id/pdf', async (req, reply) => {
+    const pdf = await asUser(sql, req.userId, (tx) => lvPdfIntern(tx, req.userId, req.params.id));
+    reply.header('content-type', 'application/pdf').header('content-disposition', `inline; filename="${pdf.name}"`);
+    return reply.send(Buffer.from(pdf.bytes));
+  });
   app.get<{ Params: { id: string } }>('/angebote/:id/pdf', async (req, reply) => {
     const bytes = await asUser(sql, req.userId, (tx) => angebotPdf(tx, req.params.id));
     reply.header('content-type', 'application/pdf');

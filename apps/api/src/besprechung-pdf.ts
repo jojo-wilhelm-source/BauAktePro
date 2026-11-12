@@ -88,7 +88,7 @@ export async function renderProtokoll(d: ProtokollData): Promise<Uint8Array> {
   doc.setCreator('Bau Akte Pro');
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const logo = d.logo ? await (d.logo.png ? doc.embedPng(d.logo.bytes) : doc.embedJpg(d.logo.bytes)).catch(() => null) : null;
+  const logo = d.logo ? await (d.logo.png ? doc.embedPng(new Uint8Array(d.logo.bytes)) : doc.embedJpg(new Uint8Array(d.logo.bytes))).catch(() => null) : null;
   let page: PDFPage = doc.addPage(A4);
   let y = A4[1] - M;
   const own = d.ownShort ?? d.ownCompany;
@@ -207,7 +207,7 @@ export async function renderProtokoll(d: ProtokollData): Promise<Uint8Array> {
           const fy = y - body.length * 11.5 - 50;
           for (const f of p.fotos.slice(0, 5)) {
             try {
-              const img = f.png ? await doc.embedPng(f.bytes) : await doc.embedJpg(f.bytes);
+              const img = f.png ? await doc.embedPng(new Uint8Array(f.bytes)) : await doc.embedJpg(new Uint8Array(f.bytes));
               const sc = Math.min(70 / img.width, 48 / img.height);
               page.drawImage(img, { x: fx, y: fy, width: img.width * sc, height: img.height * sc });
               fx += img.width * sc + 6;

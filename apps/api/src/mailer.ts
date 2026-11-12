@@ -18,7 +18,7 @@ export interface Mail {
 }
 
 export async function sendMail(mail: Mail): Promise<{ messageId: string; devFile?: string }> {
-  const msg = { ...mail, attachments: mail.attachments.map((a) => ({ filename: a.filename, content: Buffer.from(a.content), contentType: 'application/pdf' })) };
+  const msg = { ...mail, attachments: mail.attachments.map((a) => ({ filename: a.filename, content: Buffer.from(a.content), contentType: a.filename.toLowerCase().endsWith('.png') ? 'image/png' : a.filename.toLowerCase().match(/\.jpe?g$/) ? 'image/jpeg' : a.filename.toLowerCase().endsWith('.ics') ? 'text/calendar' : 'application/pdf' })) };
   if (process.env.SMTP_URL) {
     const info = await nodemailer.createTransport(process.env.SMTP_URL).sendMail(msg);
     return { messageId: info.messageId };

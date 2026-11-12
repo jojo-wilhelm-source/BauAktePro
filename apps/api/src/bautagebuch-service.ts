@@ -223,7 +223,7 @@ export async function berichtPdf(tx: TxSql, userId: string, id: string) {
   if (ctx!.logo_key) {
     try {
       const bytes = await readFile(LOGO_DIR + (ctx!.logo_key as string).replace(/[^a-z0-9._-]/gi, ''));
-      logo = (ctx!.logo_key as string).endsWith('.png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      logo = (ctx!.logo_key as string).endsWith('.png') ? await doc.embedPng(new Uint8Array(bytes)) : await doc.embedJpg(new Uint8Array(bytes));
     } catch { /* no logo file */ }
   }
   let page = doc.addPage(A4);

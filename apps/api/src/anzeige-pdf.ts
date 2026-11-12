@@ -97,7 +97,7 @@ async function drawMangelBlock(c: BlockCtx, p: Block, label: string) {
   if (p.photo) {
     try {
       const b = p.photo.bytes;
-      const img = b[0] === 0x89 && b[1] === 0x50 ? await doc.embedPng(b) : await doc.embedJpg(b);
+      const img = b[0] === 0x89 && b[1] === 0x50 ? await doc.embedPng(new Uint8Array(b)) : await doc.embedJpg(new Uint8Array(b));
       const sc = Math.min(IMG_W / img.width, IMG_H / img.height);
       const w = img.width * sc;
       const h = img.height * sc;
