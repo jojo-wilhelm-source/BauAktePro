@@ -4,7 +4,7 @@
  * NU portal list.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { formatDate, formatEuro, parsePositionen } from '@bap/domain';
+import { formatDate, formatEuro, paketAusmultiplizieren, parsePositionen } from '@bap/domain';
 import { api, getToken, openPdf, type ProjectInfo } from './api';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
@@ -20,7 +20,10 @@ interface Spiegel {
   preise: { id: string; preise: Record<string, number> }[];
   spiegel: { zeilen: { position_id: string; gp: (number | null)[]; guenstigster: string[] }[]; summen: { angebot_id: string; summe: number; nachlass_prozent: number; summe_nach_nachlass: number; fehlende_positionen: number }[]; rang: string[]; guenstigstes: string | null; titelsummen: Record<string, number[]> };
 }
-interface Stamm { id: string; kategorie: string; kurztext: string; langtext: string | null; einheit: string }
+interface PaketPos { kurztext: string; langtext?: string | null; einheit: string; faktor: number }
+interface Stamm { id: string; kategorie: string; kurztext: string; langtext: string | null; einheit: string; paket: PaketPos[] }
+/** A picked library entry: packages carry the total quantity they are multiplied out with. */
+type StammPick = Stamm & { menge: number };
 const STATUS: Record<LvListItem['status'], [string, string]> = { entwurf: ['Entwurf', 'c-orange'], angefragt: ['Angefragt', 'c-blue'], vergeben: ['Vergeben', 'c-green'] };
 const ART_LABEL: Record<Art, string> = { titel: 'Titel', untertitel: 'Untertitel', position: 'Position', text: 'Hinweistext' };
 const num = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 });
@@ -223,6 +226,15 @@ function LvDetail({ id, info, run, ordner, onBack, onOpen }: { id: string; info:
                             <button className="btn small plain" title="nach oben" onClick={() => move(i, -1)}>↑</button>
                             <button className="btn small plain" title="nach unten" onClick={() => move(i, 1)}>↓</button>
                             <button className="btn small plain" title="Position darunter" onClick={() => add('position', i)}>+</button>
+                            {(p.art === 'titel' || p.art === 'untertitel') && <button className="btn small plain" title="Als Leistungspaket in die Stammleistungen" onClick={() => {
+                              const unter: PaketPos[] = [];
+                              for (const r of rows.slice(i + 1)) {
+                                if (r.art === 'titel' || (r.art === 'untertitel' && p.art === 'untertitel')) break;
+                                if (r.art === 'position') unter.push({ kurztext: r.kurztext, langtext: r.langtext ?? null, einheit: r.einheit ?? 'St', faktor: r.menge });
+                              }
+                              if (!unter.length) return;
+                              void run(() => api('/stammleistungen', { method: 'PUT', body: { id: crypto.randomUUID(), kategorie: info.gewerke.find((g) => g.id === lv.gewerk_id)?.name ?? 'Allgemein', kurztext: p.kurztext || 'Leistungspaket', einheit: 'St', paket: unter } }), `Paket mit ${unter.length} Positionen übernommen (je 1 St – Bezugseinheit in den Stammleistungen anpassen)`);
+                            }}>★</button>}
                             {p.art === 'position' && <button className="btn small plain" title="In Stammleistungen übernehmen" onClick={() => void run(() => api('/stammleistungen', { method: 'PUT', body: { id: crypto.randomUUID(), kategorie: info.gewerke.find((g) => g.id === lv.gewerk_id)?.name ?? 'Allgemein', kurztext: p.kurztext, langtext: p.langtext ?? null, einheit: p.einheit } }), 'In Stammleistungen übernommen')}>★</button>}
                             <button className="btn small plain destructive" aria-label="Entfernen" onClick={() => edit(rows.filter((_, j) => j !== i))}>✕</button>
                           </td>
@@ -250,56 +262,119 @@ function LvDetail({ id, info, run, ordner, onBack, onOpen }: { id: string; info:
       </div>
       {paste && <PasteSheet onClose={() => setPaste(false)} onOk={(neu) => { setPaste(false); edit([...rows, ...neu]); }} />}
       {bib && <StammSheet pick onClose={() => setBib(false)} run={run}
-        onPick={(sel) => { setBib(false); edit([...rows, ...sel.map((x) => ({ id: crypto.randomUUID(), art: 'position' as const, oz: '', kurztext: x.kurztext, langtext: x.langtext, menge: 1, einheit: x.einheit }))]); }} />}
+        onPick={(sel) => { setBib(false); edit([...rows, ...sel.flatMap((x): Pos[] => x.paket.length
+          ? [{ id: crypto.randomUUID(), art: 'untertitel', oz: '', kurztext: `${x.kurztext} (${num(x.menge)} ${x.einheit})`, langtext: null, menge: 0, einheit: null },
+            ...paketAusmultiplizieren(x.paket, x.menge).map((q) => ({ id: crypto.randomUUID(), art: 'position' as const, oz: '', ...q }))]
+          : [{ id: crypto.randomUUID(), art: 'position', oz: '', kurztext: x.kurztext, langtext: x.langtext, menge: x.menge, einheit: x.einheit }])]); }} />}
       {anfragen && <AnfrageSheet lv={lv} info={info} onClose={() => setAnfragen(false)} run={async (fn, ok) => { await run(fn, ok); await load(); }} />}
     </>
   );
 }
 
-/** Company library of standard items: search, pick several for an LV, maintain. */
-function StammSheet({ onClose, run, pick, onPick }: { onClose: () => void; run: Run; pick?: boolean; onPick?: (s: Stamm[]) => void }) {
+/** Company library of standard items and service packages: search, pick several for an LV (packages with a total quantity), maintain. */
+function StammSheet({ onClose, run, pick, onPick }: { onClose: () => void; run: Run; pick?: boolean; onPick?: (s: StammPick[]) => void }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Stamm[]>([]);
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [neu, setNeu] = useState({ kategorie: '', kurztext: '', einheit: '' });
+  const [chosen, setChosen] = useState<Map<string, number>>(new Map());
+  const [offen, setOffen] = useState<{ s: Stamm; paket: boolean } | null>(null);
+  const [neu, setNeu] = useState({ kategorie: '', kurztext: '', einheit: '', paket: false });
   const load = useCallback(async () => setRows(await api<Stamm[]>(`/stammleistungen${q ? `?q=${encodeURIComponent(q)}` : ''}`)), [q]);
   useEffect(() => { const t = setTimeout(() => void load(), 250); return () => clearTimeout(t); }, [load]);
   const kats = [...new Set(rows.map((r) => r.kategorie))];
+  const toggle = (id: string, on: boolean) => { const n = new Map(chosen); if (on) n.set(id, n.get(id) ?? 1); else n.delete(id); setChosen(n); };
+  if (offen) return <PaketSheet stamm={offen.s} paket={offen.paket} run={run} onClose={() => { setOffen(null); void load(); }} />;
   return (
     <Sheet title="Stammleistungen" primary={pick ? `${chosen.size} einfügen` : 'Fertig'} primaryDisabled={pick && !chosen.size} wide onCancel={onClose}
-      onPrimary={() => (pick ? onPick?.(rows.filter((r) => chosen.has(r.id))) : onClose())}>
+      onPrimary={() => (pick ? onPick?.(rows.filter((r) => chosen.has(r.id)).map((r) => ({ ...r, menge: chosen.get(r.id) ?? 1 }))) : onClose())}>
       <label className="search" style={{ marginBottom: 10 }}><Icon name="suche" size={16} /><input autoFocus placeholder="Suchen (Text oder Kategorie)" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       {kats.map((k) => (
         <div key={k}>
           <div className="group-title">{k}</div>
           <div className="group">
             {rows.filter((r) => r.kategorie === k).map((r) => (
-              <label key={r.id} className="row" style={{ cursor: pick ? 'pointer' : 'default' }}>
-                <span className="k">{r.kurztext}{r.langtext && <div className="sub">{r.langtext.slice(0, 140)}{r.langtext.length > 140 ? '…' : ''}</div>}</span>
-                <span className="actions">
-                  <span className="v">{r.einheit}</span>
-                  {pick ? <input type="checkbox" className="switch" checked={chosen.has(r.id)} onChange={(e) => { const n = new Set(chosen); if (e.target.checked) n.add(r.id); else n.delete(r.id); setChosen(n); }} />
-                    : <button className="btn small plain destructive" onClick={() => void run(async () => { await api(`/stammleistungen/${r.id}`, { method: 'DELETE' }); await load(); }, 'Entfernt')}>✕</button>}
+              <div key={r.id} className="row">
+                <span className="k">
+                  {r.paket.length > 0 && <span className="pill c-blue" style={{ marginRight: 6 }}>Paket</span>}{r.kurztext}
+                  {r.paket.length > 0
+                    ? <div className="sub">je {r.einheit}: {r.paket.map((x) => `${x.kurztext} ${num(x.faktor)} ${x.einheit}`).join(' · ')}</div>
+                    : r.langtext && <div className="sub">{r.langtext.slice(0, 140)}{r.langtext.length > 140 ? '…' : ''}</div>}
                 </span>
-              </label>
+                <span className="actions">
+                  {pick && chosen.has(r.id)
+                    ? <><input className="lv-input num-in" style={{ width: 80 }} inputMode="decimal" aria-label="Menge" value={String(chosen.get(r.id)).replace('.', ',')}
+                        onChange={(e) => setChosen(new Map(chosen).set(r.id, Number(e.target.value.replace(/\./g, '').replace(',', '.')) || 0))} /><span className="v">{r.einheit}</span></>
+                    : <span className="v">{r.einheit}</span>}
+                  {pick ? <input type="checkbox" className="switch" checked={chosen.has(r.id)} onChange={(e) => toggle(r.id, e.target.checked)} />
+                    : <>
+                        <button className="btn small plain" onClick={() => setOffen({ s: r, paket: r.paket.length > 0 })}>{r.paket.length ? `${r.paket.length} Positionen` : 'Bearbeiten'}</button>
+                        <button className="btn small plain destructive" aria-label="Entfernen" onClick={() => void run(async () => { await api(`/stammleistungen/${r.id}`, { method: 'DELETE' }); await load(); }, 'Entfernt')}>✕</button>
+                      </>}
+                </span>
+              </div>
             ))}
           </div>
         </div>
       ))}
       {rows.length === 0 && <div className="empty">Keine Stammleistungen{q ? ' zu dieser Suche' : ' – unten anlegen oder im LV mit ★ übernehmen'}.</div>}
-      <div className="group-title" style={{ marginTop: 14 }}>Neue Stammleistung</div>
+      {pick && chosen.size > 0 && <div className="footnote">Pakete werden als Untertitel mit ihren Positionen eingefügt; die Mengen ergeben sich aus der eingegebenen Gesamtmenge.</div>}
+      <div className="group-title" style={{ marginTop: 14 }}>Neue Stammleistung oder Leistungspaket</div>
       <div className="group">
         <div className="row teil-row">
-          <input placeholder="Kategorie, z. B. Estrich" value={neu.kategorie} onChange={(e) => setNeu({ ...neu, kategorie: e.target.value })} />
-          <input className="tb-left" placeholder="Kurztext" value={neu.kurztext} onChange={(e) => setNeu({ ...neu, kurztext: e.target.value })} />
-          <input placeholder="Einheit" style={{ width: 70 }} value={neu.einheit} onChange={(e) => setNeu({ ...neu, einheit: e.target.value })} />
+          <input placeholder="Kategorie, z. B. Rohbau" value={neu.kategorie} onChange={(e) => setNeu({ ...neu, kategorie: e.target.value })} />
+          <input className="tb-left" placeholder={neu.paket ? 'Paket, z. B. Bodenplatte' : 'Kurztext'} value={neu.kurztext} onChange={(e) => setNeu({ ...neu, kurztext: e.target.value })} />
+          <input placeholder={neu.paket ? 'je, z. B. m2' : 'Einheit'} style={{ width: 90 }} value={neu.einheit} onChange={(e) => setNeu({ ...neu, einheit: e.target.value })} />
+          <label className="sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={neu.paket} onChange={(e) => setNeu({ ...neu, paket: e.target.checked })} />Paket</label>
           <button className="btn small" disabled={!neu.kurztext.trim() || !neu.einheit.trim()} onClick={() => void run(async () => {
-            await api('/stammleistungen', { method: 'PUT', body: { id: crypto.randomUUID(), kategorie: neu.kategorie.trim() || 'Allgemein', kurztext: neu.kurztext.trim(), einheit: neu.einheit.trim() } });
+            const body: Stamm = { id: crypto.randomUUID(), kategorie: neu.kategorie.trim() || 'Allgemein', kurztext: neu.kurztext.trim(), langtext: null, einheit: neu.einheit.trim(), paket: [] };
+            if (!neu.paket) await api('/stammleistungen', { method: 'PUT', body });
             setNeu({ ...neu, kurztext: '', einheit: '' });
-            await load();
-          }, 'Stammleistung angelegt')}>Anlegen</button>
+            if (neu.paket) setOffen({ s: body, paket: true }); else await load();
+          }, neu.paket ? 'Positionen jetzt festlegen' : 'Stammleistung angelegt')}>{neu.paket ? 'Positionen festlegen …' : 'Anlegen'}</button>
         </div>
       </div>
+    </Sheet>
+  );
+}
+
+/** Edit a library entry; a package holds several positions with their quantity per package unit. */
+function PaketSheet({ stamm, paket, run, onClose }: { stamm: Stamm; paket: boolean; run: Run; onClose: () => void }) {
+  const [d, setD] = useState<Stamm>(stamm);
+  const [faktorText, setFaktorText] = useState<string[]>(stamm.paket.map((x) => String(x.faktor).replace('.', ',')));
+  const setPos = (i: number, patch: Partial<PaketPos>) => setD({ ...d, paket: d.paket.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  const add = () => { setD({ ...d, paket: [...d.paket, { kurztext: '', einheit: '', faktor: 0 }] }); setFaktorText([...faktorText, '']); };
+  const valid = d.kurztext.trim() && d.einheit.trim() && d.paket.every((x) => x.kurztext.trim() && x.einheit.trim());
+  const istPaket = d.paket.length > 0;
+  return (
+    <Sheet title={paket || istPaket ? 'Leistungspaket' : 'Stammleistung'} primary="Sichern" primaryDisabled={!valid} wide onCancel={onClose}
+      onPrimary={() => void run(async () => { await api('/stammleistungen', { method: 'PUT', body: { ...d, paket: d.paket.map((x) => ({ ...x, kurztext: x.kurztext.trim(), einheit: x.einheit.trim() })) } }); onClose(); }, 'Gesichert')}>
+      <div className="group">
+        <div className="row"><span className="k">Kategorie</span><input value={d.kategorie} onChange={(e) => setD({ ...d, kategorie: e.target.value })} /></div>
+        <div className="row"><span className="k">Bezeichnung</span><input value={d.kurztext} onChange={(e) => setD({ ...d, kurztext: e.target.value })} /></div>
+        <div className="row"><span className="k">{istPaket ? 'Bezugseinheit (je …)' : 'Einheit'}</span><input value={d.einheit} onChange={(e) => setD({ ...d, einheit: e.target.value })} /></div>
+        {!istPaket && <div className="row"><span className="k">Langtext</span><textarea rows={3} value={d.langtext ?? ''} onChange={(e) => setD({ ...d, langtext: e.target.value || null })} /></div>}
+      </div>
+      <div className="group-title" style={{ marginTop: 14 }}>Positionen im Paket{d.einheit ? ` – Menge je 1 ${d.einheit}` : ''}</div>
+      <div className="card">
+        <table className="table lv-table">
+          <thead><tr><th>Kurztext</th><th className="money" style={{ width: 120 }}>Menge je {d.einheit || 'Einheit'}</th><th style={{ width: 90 }}>Einheit</th><th style={{ width: 40 }} /></tr></thead>
+          <tbody>
+            {d.paket.map((x, i) => (
+              <tr key={i} style={{ cursor: 'default' }}>
+                <td><input className="lv-input" placeholder="z. B. Beton C30/37 liefern und einbauen" value={x.kurztext} onChange={(e) => setPos(i, { kurztext: e.target.value })} /></td>
+                <td className="money"><input className="lv-input num-in" inputMode="decimal" value={faktorText[i] ?? ''} onChange={(e) => {
+                  const t = [...faktorText]; t[i] = e.target.value; setFaktorText(t);
+                  setPos(i, { faktor: Number(e.target.value.replace(/\./g, '').replace(',', '.')) || 0 });
+                }} /></td>
+                <td><input className="lv-input" placeholder="m3" value={x.einheit} onChange={(e) => setPos(i, { einheit: e.target.value })} /></td>
+                <td><button className="btn small plain destructive" aria-label="Entfernen" onClick={() => { setD({ ...d, paket: d.paket.filter((_, j) => j !== i) }); setFaktorText(faktorText.filter((_, j) => j !== i)); }}>✕</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {d.paket.length === 0 && <div className="empty">Einzelleistung – mit „+ Position“ wird daraus ein Paket.</div>}
+      </div>
+      <div className="meta-row" style={{ marginTop: 8 }}><button className="btn small" onClick={add}>+ Position</button></div>
+      <div className="footnote">Beispiel Bodenplatte je m²: Aushub 0,40 m³ · Bewehrung 0,03 t · Randschalung 0,20 m · Beton 0,25 m³. Beim Einfügen ins LV gibt man die Gesamtmenge an (z. B. 120 m²), die Mengen werden ausmultipliziert.</div>
     </Sheet>
   );
 }

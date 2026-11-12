@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ozNummerieren, parsePositionen, preisspiegel, titelSummen } from './lv';
+import { paketAusmultiplizieren, ozNummerieren, parsePositionen, preisspiegel, titelSummen } from './lv';
 
 describe('Leistungsverzeichnis', () => {
   it('Positionen aus Excel einfügen (Tab oder Semikolon, deutsche Zahlen), Kopfzeile wird übersprungen', () => {
@@ -35,5 +35,15 @@ describe('LV-Gliederung', () => {
     const s = titelSummen(z, new Map([['a', [100, 90]], ['b', [50, null]]]), 2);
     expect(s.get('t')).toEqual([150, 90]);
     expect(s.get('u')).toEqual([150, 90]);
+  });
+});
+
+describe('Leistungspaket', () => {
+  it('Bodenplatte 120 m²: Aushub, Bewehrung, Schalung, Beton ausmultipliziert', () => {
+    const r = paketAusmultiplizieren([
+      { kurztext: 'Aushub', einheit: 'm3', faktor: 0.4 }, { kurztext: 'Bewehrung', einheit: 't', faktor: 0.03 },
+      { kurztext: 'Randschalung', einheit: 'm', faktor: 0.2 }, { kurztext: 'Beton C30/37', einheit: 'm3', faktor: 0.25 },
+    ], 120);
+    expect(r.map((x) => x.menge)).toEqual([48, 3.6, 24, 30]);
   });
 });

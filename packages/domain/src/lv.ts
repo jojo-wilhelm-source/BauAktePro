@@ -96,3 +96,17 @@ export function titelSummen(zeilen: { id: string; art: LvArt }[], gp: Map<string
   }
   return out;
 }
+
+/** Position of a service package: quantity per unit of the package (e.g. 0,25 m³ Beton per m² Bodenplatte). */
+export const PaketPosition = z.object({
+  kurztext: z.string().trim().min(1).max(500),
+  langtext: z.string().max(10000).nullish(),
+  einheit: z.string().trim().min(1).max(20),
+  faktor: z.coerce.number().min(0).max(1e6),
+});
+export type PaketPosition = z.infer<typeof PaketPosition>;
+
+/** Multiply a package out for a total quantity: quantities rounded to 3 decimals. */
+export function paketAusmultiplizieren(paket: PaketPosition[], menge: number) {
+  return paket.map((p) => ({ kurztext: p.kurztext, langtext: p.langtext ?? null, einheit: p.einheit, menge: Math.round(p.faktor * menge * 1000) / 1000 }));
+}

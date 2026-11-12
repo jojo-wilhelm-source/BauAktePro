@@ -1251,5 +1251,10 @@ describe('LV-Ordner, Gliederung, Stammleistungen', () => {
     expect((await call('uBauleitung', 'PUT', '/stammleistungen', { id: randomUUID(), kategorie: 'Estrich', kurztext: 'Zementestrich CT-C25-F4 50 mm', einheit: 'm2' })).status).toBe(200);
     expect((await call('uBauleitung', 'GET', '/stammleistungen?q=zement')).body).toHaveLength(1);
     expect((await call('uElektro', 'GET', '/stammleistungen')).status).toBe(403);
+    const paket = [{ kurztext: 'Aushub', einheit: 'm3', faktor: 0.4 }, { kurztext: 'Beton C30/37', einheit: 'm3', faktor: 0.25 }];
+    expect((await call('uBauleitung', 'PUT', '/stammleistungen', { id: randomUUID(), kategorie: 'Rohbau', kurztext: 'Bodenplatte', einheit: 'm2', paket })).status).toBe(200);
+    const bp = ((await call('uBauleitung', 'GET', '/stammleistungen?q=bodenplatte')).body as { paket: unknown[] }[]);
+    expect(bp[0]?.paket).toEqual(paket);
+    expect((await call('uBauleitung', 'PUT', '/stammleistungen', { id: randomUUID(), kurztext: 'X', einheit: 'St', paket: [{ kurztext: '', einheit: 'm3', faktor: 1 }] })).status).toBe(422);
   });
 });

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { Sql, TxSql } from '@bap/db';
-import { formatDate, LvPositionInput, ozNummerieren, preisspiegel, titelSummen } from '@bap/domain';
+import { formatDate, LvPositionInput, ozNummerieren, PaketPosition, preisspiegel, titelSummen } from '@bap/domain';
 import { WEB_URL } from './anmeldung';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
@@ -278,19 +278,19 @@ export async function copyLv(tx: TxSql, userId: string, id: string, input: unkno
 }
 
 const StammInput = z.object({ id: z.string().uuid(), kategorie: z.string().trim().min(1).max(80).default('Allgemein'), kurztext: z.string().trim().min(1).max(500),
-  langtext: z.string().max(10000).nullish(), einheit: z.string().trim().min(1).max(20) });
+  langtext: z.string().max(10000).nullish(), einheit: z.string().trim().min(1).max(20), paket: z.array(PaketPosition).max(50).default([]) });
 export async function listStamm(tx: TxSql, q?: string) {
   const [ok] = await tx`SELECT app.is_einkauf_any() AS ok`;
   if (!ok?.ok) throw new HttpError(403, 'Die Bibliothek nutzen Einkauf sowie Bau- und Projektleitung');
   const like = q?.trim() ? `%${q.trim()}%` : null;
-  return tx`SELECT id, kategorie, kurztext, langtext, einheit FROM lv_stammleistung
+  return tx`SELECT id, kategorie, kurztext, langtext, einheit, paket FROM lv_stammleistung
     WHERE aktiv ${like ? tx`AND (kurztext ILIKE ${like} OR langtext ILIKE ${like} OR kategorie ILIKE ${like})` : tx``} ORDER BY kategorie, kurztext LIMIT 500`;
 }
 export async function saveStamm(tx: TxSql, userId: string, input: unknown) {
   const d = StammInput.parse(input);
-  const [row] = await tx`INSERT INTO lv_stammleistung (id, tenant_id, kategorie, kurztext, langtext, einheit, created_by)
-    VALUES (${d.id}, app.user_tenant(), ${d.kategorie}, ${d.kurztext}, ${d.langtext ?? null}, ${d.einheit}, ${userId})
-    ON CONFLICT (id) DO UPDATE SET kategorie = EXCLUDED.kategorie, kurztext = EXCLUDED.kurztext, langtext = EXCLUDED.langtext, einheit = EXCLUDED.einheit RETURNING *`;
+  const [row] = await tx`INSERT INTO lv_stammleistung (id, tenant_id, kategorie, kurztext, langtext, einheit, paket, created_by)
+    VALUES (${d.id}, app.user_tenant(), ${d.kategorie}, ${d.kurztext}, ${d.langtext ?? null}, ${d.einheit}, ${tx.json(d.paket as never)}, ${userId})
+    ON CONFLICT (id) DO UPDATE SET kategorie = EXCLUDED.kategorie, kurztext = EXCLUDED.kurztext, langtext = EXCLUDED.langtext, einheit = EXCLUDED.einheit, paket = EXCLUDED.paket RETURNING *`;
   if (!row) throw new HttpError(403, 'Keine Berechtigung');
   return row;
 }
