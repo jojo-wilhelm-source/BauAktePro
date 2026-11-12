@@ -3,7 +3,7 @@
 # Rev 2026-11-10b: link tables got an id column (PowerSync needs one per row).
 # Rev 2026-11-11b: Dokumente offline (folders, documents, released revisions only).
 # Rev 2026-11-12a: Bautagebuch (internal roles only, like RLS).
-# Rev 2026-11-12f: Bestellanforderungen (internal roles, like RLS; the Einkauf works in the web).
+# Rev 2026-11-12g: Bestellanforderungen (internal roles, like RLS; the Einkauf works in the web). Table added to the publication.
 # Rev 2026-11-12e: Teilaufgaben of Besprechungspunkte.
 # Rev 2026-11-12d: Bautagebuch templates.
 # Rev 2026-11-12c: photos on Besprechungspunkte.

@@ -1335,6 +1335,16 @@ describe('Bestellanforderung, Einkaufsportal, Mitteilungen', () => {
     // withdraw only while new
     const seed = (await call('uPolier', 'GET', `/bestellanforderungen/${ID.banf1}`)).body;
     expect((await call('uPolier', 'POST', `/bestellanforderungen/${ID.banf1}/status`, { status: 'zurueckgezogen', base_version: seed.version })).status).toBe(200);
+    // offline from the app: row as PowerSync uploads it (positionen as JSON text, dringend as 0/1), twice
+    const off = randomUUID();
+    const op = { op: 'PUT', table: 'bestellanforderung', id: off, data: { project_id: ID.project, titel: 'Fugenband', beschreibung: null, positionen: JSON.stringify([{ text: 'Fugenband 25 m', menge: 2, einheit: 'Rolle' }]),
+      benoetigt_am: null, dringend: 1, status: 'offen', created_by: ID.uPolier, created_at: '2026-11-12T07:00:00Z' } };
+    expect((await call('uPolier', 'POST', '/sync/upload', { ops: [op] })).body.results[0].ok).toBe(true);
+    await call('uPolier', 'POST', '/sync/upload', { ops: [op] });
+    const offRow = (await call('uEinkauf', 'GET', `/bestellanforderungen/${off}`)).body;
+    expect(offRow.dringend).toBe(true);
+    expect(offRow.positionen[0].einheit).toBe('Rolle');
+    expect((await call('uEinkauf', 'GET', `/projects/${ID.project}/bestellanforderungen`)).body.filter((x: any) => x.titel === 'Fugenband')).toHaveLength(1);
     const audit = await adminSql`SELECT action FROM audit_log WHERE entity = 'bestellanforderung' AND entity_id = ${id} ORDER BY occurred_at`;
     expect(audit.map((a) => a.action)).toContain('status:bestellt');
   });
