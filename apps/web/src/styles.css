@@ -349,3 +349,18 @@ input.switch:checked::after { transform: translateX(20px); }
 .table tr.mine td { background: color-mix(in srgb, var(--yellow, #ffcc00) 18%, transparent); }
 .punkt-fotos { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .punkt-actions { display: flex; gap: 4px; margin-top: 4px; opacity: .85; }
+
+/* Preisspiegel and public offer page */
+.table.spiegel td.best { background: color-mix(in srgb, var(--green) 16%, transparent); font-weight: 600; }
+.table.spiegel th, .table.spiegel td { white-space: nowrap; }
+.table.spiegel td:nth-child(2) { white-space: normal; min-width: 220px; }
+.table tfoot td { border-top: 0.5px solid var(--separator); padding-top: 8px; }
+input.ep { width: 110px; text-align: right; border: 0.5px solid var(--separator); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 16px; background: var(--bg-elevated); color: var(--label); }
+.angebot-table { overflow-x: auto; }
+.angebot-table .oz-m { display: none; }
+@media (max-width: 600px) {
+  .angebot-table .oz, .angebot-table .gp { display: none; }
+  .angebot-table .oz-m { display: block; }
+  .angebot-table th, .angebot-table td { padding-left: 8px; padding-right: 8px; }
+  input.ep { width: 84px; }
+}

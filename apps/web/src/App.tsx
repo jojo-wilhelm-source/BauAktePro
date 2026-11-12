@@ -10,6 +10,7 @@ import { NachunternehmerPage } from './Nachunternehmer';
 import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
 import { BautagebuchPage } from './Bautagebuch';
 import { KontaktePage } from './Kontakte';
+import { AngebotPage, AusschreibungPage } from './Ausschreibung';
 import { KostenPage } from './Kosten';
 import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung';
 import { FreimeldungPage } from './Freimeldung';
@@ -28,7 +29,7 @@ import { PageHeader, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -69,6 +70,8 @@ export function App() {
   // Public pages: QR-Freimeldung, invitation link and password reset (work without being signed in).
   const fm = window.location.pathname.match(/^\/freimeldung\/([A-Za-z0-9_-]{30,80})$/);
   if (fm) return <FreimeldungPage token={fm[1]!} />;
+  const an = window.location.pathname.match(/^\/angebot\/([A-Za-z0-9_-]{30,80})$/);
+  if (an) return <AngebotPage token={an[1]!} />;
   const invite = window.location.pathname.match(/^\/einladung\/([A-Za-z0-9_-]{20,})$/);
   if (invite) return <AcceptInvitationPage token={invite[1]!} onLogin={() => void loadMe()} />;
   if (window.location.pathname === '/passwort-neu') {
@@ -183,8 +186,10 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {info && (info.role === 'bauleitung' || info.role === 'nu') && has('nachtraege') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf' || me.fahrtenbuch) && <div className="side-section">Geld und Betrieb</div>}
         {info && info.role === 'bauleitung' && has('kosten') && nav('kosten', 'kosten', 'Kosten')}
+        {info && (info.role === 'bauleitung' || info.role === 'einkauf') && nav('ausschreibung', 'rechnung', 'LV & Angebote')}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
         {me.fahrtenbuch && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
+        {info && info.role === 'nu' && nav('ausschreibung', 'rechnung', 'Anfragen')}
         {info && info.role !== 'bauherr' && nav('kontakte', 'zugang', info.role === 'nu' ? 'Kontakte meiner Firma' : 'Kontakte')}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
         {info && info.role === 'bauleitung' && (
@@ -295,6 +300,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'stunden' && <StundenPage info={info} run={run} />}
             {module === 'einreichungen' && <EinreichungenPage info={info} run={run} />}
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
+            {module === 'ausschreibung' && <AusschreibungPage info={info} run={run} />}
             {module === 'kontakte' && <KontaktePage info={info} run={run} />}
             {module === 'bautagebuch' && <BautagebuchPage info={info} run={run} />}
             {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}

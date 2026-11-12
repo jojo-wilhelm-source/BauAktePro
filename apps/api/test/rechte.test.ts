@@ -1098,3 +1098,45 @@ describe('Maschinen und mobile Tankstelle', () => {
     expect(zuviel.body.warnung).toMatch(/nur 615 l/);
   });
 });
+
+describe('Einkauf: LV, Anfrage per Link, Preisspiegel', () => {
+  const lvBody = () => ({ id: randomUUID(), project_id: ID.project, titel: 'Estricharbeiten Haus A', angebotsfrist: '2026-11-30', gewerk_id: ID.gwFliesen,
+    positionen: [{ id: randomUUID(), oz: '01.0010', kurztext: 'Zementestrich 50 mm', menge: 100, einheit: 'm2' }, { id: randomUUID(), oz: '01.0020', kurztext: 'Randstreifen', menge: 10, einheit: 'm' }] });
+  const pub = (token: string, method: 'GET' | 'POST', body?: object) => app.inject({ method, url: `/public/angebot/${token}`, payload: body }).then((r) => ({ status: r.statusCode, body: r.json() as any }));
+  it('Polier und NU dürfen kein LV anlegen; Leitung schon', async () => {
+    expect((await call('uPolier', 'PUT', '/lv', lvBody())).status).toBe(403);
+    expect((await call('uElektro', 'PUT', '/lv', lvBody())).status).toBe(403);
+    expect((await call('uBauleitung', 'PUT', '/lv', lvBody())).status).toBe(200);
+  });
+  it('Anfrage per Link: Bieter sieht nur eigenes; Preisspiegel mit günstigstem; NU sieht keine fremden Preise; Vergabe', async () => {
+    const b = lvBody();
+    await call('uBauleitung', 'PUT', '/lv', b);
+    expect((await call('uBauleitung', 'POST', `/lv/${b.id}/anfragen`, { company_ids: [ID.coElektro, ID.coFliesen] })).status).toBe(200);
+    expect((await call('uBauleitung', 'PUT', '/lv', { ...b, positionen: [] })).status).toBe(409); // positions locked after sending
+    const tokens = await adminSql`SELECT company_id, token FROM lv_anfrage WHERE lv_id = ${b.id}`;
+    const tEl = tokens.find((t) => t.company_id === ID.coElektro)!.token as string;
+    const tFl = tokens.find((t) => t.company_id === ID.coFliesen)!.token as string;
+    const view = await pub(tEl, 'GET');
+    expect(view.body.positionen).toHaveLength(2);
+    expect((await pub(tEl, 'POST', { name: 'Erik', preise: {} })).status).toBe(422);
+    expect((await pub(tEl, 'POST', { name: 'Erik', preise: { [b.positionen[0]!.id]: 30, [b.positionen[1]!.id]: 5 } })).status).toBe(200); // 3050
+    expect((await pub(tFl, 'POST', { name: 'Fiona', preise: { [b.positionen[0]!.id]: 28, [b.positionen[1]!.id]: 6 }, nachlass_prozent: 3 })).status).toBe(200); // 2860 → 2774.2
+    expect((await pub(tEl, 'GET')).body.preise[b.positionen[0]!.id]).toBe(30);
+    const sp = (await call('uBauleitung', 'GET', `/lv/${b.id}/preisspiegel`)).body;
+    expect(sp.spiegel.guenstigstes).toBe(sp.angebote.find((a: any) => a.company_id === ID.coFliesen).id);
+    expect(sp.spiegel.summen.find((s: any) => s.company === 'Fliesen Fuchs GmbH').summe_nach_nachlass).toBe(2774.2);
+    // NU: only own requests, never the Preisspiegel or others' offers
+    expect((await call('uElektro', 'GET', `/lv/${b.id}/preisspiegel`)).status).toBe(403);
+    const nuList = (await call('uElektro', 'GET', `/projects/${ID.project}/lv`)).body;
+    expect(nuList).toHaveLength(1);
+    const others = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${ID.uElektro}, true)`;
+      await tx`SET LOCAL ROLE bap_app`;
+      return tx`SELECT company_id FROM angebot WHERE lv_id = ${b.id}`;
+    });
+    expect(others.map((o) => o.company_id)).toEqual([ID.coElektro]);
+    expect([403, 404]).toContain((await call('uPolier', 'GET', `/lv/${b.id}/preisspiegel`)).status); // RLS hides the LV
+    expect((await call('uBauleitung', 'POST', `/lv/${b.id}/vergeben`, { company_id: ID.coFliesen })).status).toBe(200);
+    expect((await pub(tEl, 'POST', { name: 'Erik', preise: { [b.positionen[0]!.id]: 1 } })).status).toBe(409);
+  });
+});

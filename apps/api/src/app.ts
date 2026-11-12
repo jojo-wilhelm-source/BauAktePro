@@ -13,6 +13,7 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import { angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
 import { adminAssign, adminOverview, adminUpdateUser } from './admin-service';
 import { startPage } from './start-service';
@@ -105,6 +106,16 @@ export function buildApp(sql: Sql) {
   });
 
   // --- QR-Freimeldung (public, bound to the link token; docs/fachkonzept/04) ----------
+  // Offer via link (no account, token-bound; also used from the NU portal).
+  app.get<{ Params: { token: string } }>('/public/angebot/:token', async (req) => publicAnfrage(admin, req.params.token));
+  app.post<{ Params: { token: string } }>('/public/angebot/:token', async (req) => {
+    if (req.isMultipart()) {
+      const u = await readUpload(req);
+      const fields = { ...u.fields, preise: u.fields.preise ? JSON.parse(u.fields.preise) : {} };
+      return submitAngebot(admin, req.params.token, fields, u, req.userId ?? null);
+    }
+    return submitAngebot(admin, req.params.token, req.body, null, req.userId ?? null);
+  });
   app.get<{ Params: { token: string } }>('/public/freimeldung/:token', async (req) => publicAnzeige(admin, req.params.token));
   app.get<{ Params: { token: string; fotoId: string } }>('/public/freimeldung/:token/foto/:fotoId', async (req, reply) => {
     const f = await publicFoto(admin, req.params.token, z.string().uuid().parse(req.params.fotoId));
@@ -167,6 +178,19 @@ export function buildApp(sql: Sql) {
   app.post<{ Params: { id: string } }>('/besprechungen/:id/bauherr-freigabe', async (req) =>
     asUser(sql, req.userId, (tx) => bauherrFreigabe(tx, req.userId, req.params.id, z.object({ freigabe: z.boolean() }).parse(req.body).freigabe, meta(req))));
   app.post<{ Params: { id: string } }>('/besprechungen/:id/gegenzeichnen', async (req) => asUser(sql, req.userId, (tx) => bauherrGegenzeichnen(tx, req.userId, req.params.id, req.body, meta(req))));
+
+  // --- Einkauf: LV, Anfragen, Preisspiegel ------------------------------------------------
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/lv', async (req) => asUser(sql, req.userId, (tx) => listLv(tx, req.userId, req.params.projectId)));
+  app.put('/lv', async (req) => asUser(sql, req.userId, (tx) => saveLv(tx, req.userId, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/lv/:id', async (req) => asUser(sql, req.userId, (tx) => getLv(tx, req.userId, req.params.id)));
+  app.post<{ Params: { id: string } }>('/lv/:id/anfragen', async (req) => asUser(sql, req.userId, (tx) => sendAnfragen(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/lv/:id/preisspiegel', async (req) => asUser(sql, req.userId, (tx) => lvPreisspiegel(tx, req.userId, req.params.id)));
+  app.post<{ Params: { id: string } }>('/lv/:id/vergeben', async (req) => asUser(sql, req.userId, (tx) => vergeben(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.get<{ Params: { id: string } }>('/angebote/:id/pdf', async (req, reply) => {
+    const bytes = await asUser(sql, req.userId, (tx) => angebotPdf(tx, req.params.id));
+    reply.header('content-type', 'application/pdf');
+    return reply.send(bytes);
+  });
 
   // --- Bautagebuch (docs/fachkonzept/07) ---------------------------------------------
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/tagesberichte', async (req) => asUser(sql, req.userId, (tx) => listBerichte(tx, req.userId, req.params.projectId)));
