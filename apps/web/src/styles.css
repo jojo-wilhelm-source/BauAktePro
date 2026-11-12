@@ -263,3 +263,17 @@ button.token { border: 0; cursor: pointer; }
 .table tr.folder-row .sub { display: inline; font-weight: 400; }
 .table tr.folder-row .folder-pdf { margin-left: 12px; padding: 2px 10px; }
 button.link { border: 0; background: none; color: var(--accent); padding: 0; font: inherit; cursor: pointer; }
+
+/* Projekt & Struktur */
+.struktur { display: grid; grid-template-columns: 1.3fr 1fr; gap: 28px; align-items: start; max-width: 1200px; }
+@media (max-width: 1100px) { .struktur { grid-template-columns: 1fr; } }
+.struktur .group-head { display: flex; align-items: baseline; gap: 10px; padding: 0 4px 8px; }
+.struktur .group-head h3 { margin: 0; font-size: 17px; }
+.row .actions { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.tree-row .k { display: flex; align-items: center; gap: 4px; }
+.tree-row .kind { color: var(--label-2); font-size: 12px; min-width: 64px; }
+.tree-row .disclosure { border: 0; background: none; padding: 2px; color: var(--label-2); display: inline-flex; transition: transform .15s; cursor: pointer; }
+.tree-row .disclosure.open { transform: rotate(90deg); }
+.btn.small.destructive { color: var(--red); }
+.row .k .sub { color: var(--label-2); font-size: 12px; margin-top: 2px; font-weight: 400; }
+.sheet-body .search { flex: none; }

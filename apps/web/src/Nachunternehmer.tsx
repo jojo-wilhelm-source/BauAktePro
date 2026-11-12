@@ -17,6 +17,7 @@ export function NachunternehmerPage({ info, run, onReload }: { info: ProjectInfo
   const [sel, setSel] = useState<string | null>(null);
   const [edit, setEdit] = useState<Nu | 'new' | null>(null);
   const [vertrag, setVertrag] = useState<Nu | null>(null);
+  const [uebernehmen, setUebernehmen] = useState(false);
   const [q, setQ] = useState('');
   const leitung = info.role === 'bauleitung';
   const reload = useCallback(async () => setList((await api<{ nu: Nu[] }>(`/projects/${info.project.id}/nachunternehmer`)).nu), [info.project.id]);
@@ -34,7 +35,12 @@ export function NachunternehmerPage({ info, run, onReload }: { info: ProjectInfo
       <PageHeader
         eyebrow={info.project.name}
         title="Nachunternehmer"
-        action={leitung && <button className="btn filled" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Nachunternehmer</button>}
+        action={leitung && (
+          <div className="meta-row">
+            <button className="btn" onClick={() => setUebernehmen(true)}>Aus anderem Projekt …</button>
+            <button className="btn filled" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Neuer Nachunternehmer</button>
+          </div>
+        )}
       >
         <label className="search"><Icon name="suche" size={16} /><input placeholder="Suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       </PageHeader>
@@ -97,6 +103,7 @@ export function NachunternehmerPage({ info, run, onReload }: { info: ProjectInfo
         </div>
       </div>
       {edit && <NuSheet info={info} nu={edit === 'new' ? null : edit} run={runAndReload} onClose={() => setEdit(null)} />}
+      {uebernehmen && <UebernehmenSheet info={info} run={runAndReload} onClose={() => setUebernehmen(false)} />}
       {vertrag && <VertragSheet info={info} nu={vertrag} run={runAndReload} onClose={() => setVertrag(null)} />}
     </>
   );
@@ -142,6 +149,32 @@ function VertragSheet({ info, nu, run, onClose }: { info: ProjectInfo; nu: Nu; r
         <div className="row"><span className="k">Gewerk</span><select value={f.gewerk_id} onChange={(e) => setF({ ...f, gewerk_id: e.target.value })}><option value="">–</option>{info.gewerke.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
         <div className="row"><span className="k">Unterschrieben am</span><input type="date" value={f.signed_on} onChange={(e) => setF({ ...f, signed_on: e.target.value })} /></div>
       </div>
+    </Sheet>
+  );
+}
+
+/** Existing NU firms from the company's other projects: added with their Gewerke (matched by name), no contracts or accesses. */
+function UebernehmenSheet({ info, run, onClose }: { info: ProjectInfo; run: Run; onClose: () => void }) {
+  const [list, setList] = useState<{ id: string; name: string; contact_person: string | null; projekte: string[]; gewerke: string[] }[] | null>(null);
+  const [sel, setSel] = useState<string[]>([]);
+  const [q, setQ] = useState('');
+  useEffect(() => void api<typeof list>(`/projects/${info.project.id}/nu-kandidaten`).then(setList), [info.project.id]);
+  const shown = (list ?? []).filter((n) => !q || `${n.name} ${n.gewerke.join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <Sheet title="Nachunternehmer übernehmen" primary={sel.length ? `${sel.length} übernehmen` : 'Übernehmen'} primaryDisabled={!sel.length} onCancel={onClose}
+      onPrimary={() => run(async () => { await api(`/projects/${info.project.id}/nu-uebernehmen`, { method: 'POST', body: { company_ids: sel } }); onClose(); }, `${sel.length} Nachunternehmer übernommen`)}>
+      <label className="search"><Icon name="suche" size={16} /><input placeholder="Firma oder Gewerk suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+      <div className="group">
+        {list === null && <div className="empty">Wird geladen …</div>}
+        {list && shown.length === 0 && <div className="empty">Keine weiteren Nachunternehmer aus anderen Projekten</div>}
+        {shown.map((n) => (
+          <label key={n.id} className="row" style={{ cursor: 'pointer' }}>
+            <span className="k">{n.name}<div className="sub">{[n.gewerke.join(', '), n.projekte.length ? `aus ${n.projekte.join(', ')}` : ''].filter(Boolean).join(' · ')}</div></span>
+            <input type="checkbox" checked={sel.includes(n.id)} onChange={(e) => setSel(e.target.checked ? [...sel, n.id] : sel.filter((x) => x !== n.id))} />
+          </label>
+        ))}
+      </div>
+      <div className="footnote">Kontaktdaten bleiben gleich (eine Firma, mehrere Projekte). Gewerke werden über den Namen zugeordnet, wenn es sie hier gibt. Verträge, Preise und Zugänge werden nicht übernommen.</div>
     </Sheet>
   );
 }

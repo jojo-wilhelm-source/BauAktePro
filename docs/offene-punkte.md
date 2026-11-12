@@ -64,3 +64,5 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
   **Entscheidung:**
 - [ ] **D7 – Offline-Speicher:** Sollen wirklich alle Dokumente und Fotos aufs Gerät, oder nur gewählte Ordner („offline halten“)? Speicherlimit je Gerät? Große Dateien nur im WLAN laden (Annahme bisher: alles, auch mobil)? → [05](fachkonzept/05-offline-sync.md)
   **Entscheidung:**
+- [ ] **D8 – Projekte anlegen:** Wer darf neue Projekte anlegen (Annahme: Bau- und Projektleitung der eigenen Firma; später ggf. nur Geschäftsführung)? Gibt es Firmen-Vorlagen unabhängig von einem Projekt („Musterprojekt“)? → [01](fachkonzept/01-rollen-rechte.md)
+  **Entscheidung:**

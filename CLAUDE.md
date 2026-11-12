@@ -29,6 +29,16 @@ Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Li
 6. **Kleine, prüfbare Schritte** in der Reihenfolge unten. Vor jedem Modul: kurzer Plan, Änderungen am Datenmodell, Rechte, Tests.
 7. **Keine Zahlungen auslösen.** Elektronische Unterschriften gelten nicht als rechtswirksam, bis das ausdrücklich geklärt ist.
 8. **Sprache:** Oberfläche und Dokumente auf Deutsch (€, `dd.MM.yyyy`, deutsche Zahlenformate). **Code, Bezeichner, Kommentare und Commits auf Englisch**, deutsche Fachbegriffe ohne gute Übersetzung bleiben deutsch (`gewerk_id`, `Nachtrag`, `Bemusterung`, `Regie`, `Polier`).
+9. **Vor jedem größeren Modul nachfragen** (Ablauf, Rechte, offene Fachfragen), damit nichts doppelt gebaut wird. Offene Fragen stehen in `docs/offene-punkte.md`.
+
+## Commits (feste Regel, vom Nutzer so gewünscht)
+
+- **Nach jedem fertigen und getesteten Schritt selbst committen**, ohne nachzufragen (je abgeschlossene Funktion, nicht je Kleinigkeit).
+- Nur committen, wenn `pnpm test` und die Typprüfung aller Pakete grün sind. Halbfertiges wird nicht committet.
+- Nachricht auf Englisch, kurze Zusammenfassung des Schritts; Arbeit direkt auf `main`.
+- **Nie pushen** und nichts nach außen senden ohne ausdrückliche Zustimmung.
+- Am Ende der Antwort die neuen Commits nennen.
+- Der Git-Hook `.githooks/pre-commit` (aktiv über `git config core.hooksPath .githooks`) prüft vor jedem Commit Typen und Domain-Tests.
 
 ## Umsetzungsreihenfolge
 
@@ -39,7 +49,19 @@ Das Fachkonzept liegt in [`docs/fachkonzept/`](docs/fachkonzept/README.md). **Li
 | **3 Geld und Beschaffung** | 9. Verträge, Nachträge, Rechnungsprüfung, Abschläge, Freigabe an die Buchhaltung, Budget · 10. Lieferanmeldung, Einkauf, Wareneingang, Mengenabgleich |
 | **4 Ausbau** | 11. Sync-Ordner (Windows, iOS-Dateien-App) · 12. Anfragen und Angebotsvergleich, Bewertungen, KI-Funktionen, Planvergleich, weitere Schnittstellen |
 
-**Stand 10.11.2026 (spät):** Fertig sind Apple-Design, Mangelanzeige (mit Fotos, Mängelbericht-PDF), Raum aus Pin, Planregister mit Index/Freigabe/QR-Prüfung, Dateiablage (Ordner Pläne/Dokumente, einfacher Upload, Pläne erscheinen automatisch unter „Pläne“, Alt-Versionen), Projektleitung = Bauleitungsrechte, Bau- und NU-Besprechung (Anwesenheit, Bemerkungen, nächster Termin mit .ics, Web + offline iPad/iPhone), Gerät synchronisieren (alle Pläne/Fotos/Dokumente offline, automatisch oder per Klick, Abgleich-Zentrale), Mängel sortieren/Ordner-Ansicht/Bericht aus Auswahl, Stundenzettel, Nachträge & Rechnungen (getrennte Nummern, Entscheidung zurücknehmbar), Nachunternehmer-Verzeichnis mit Verträgen, Kostenübersicht je Gewerk, Baustellen-Einkäufe und Fahrtenbuch (Web + offline iPhone). Als Nächstes offen: Bautagebuch mit Bauzeitenplan (07), Bemusterung (10), Lieferungen/Einkauf (12), DATEV-Export, offene Punkte D1–D7.
+**Stand 10.11.2026 (spät):** Fertig sind Apple-Design, Mangelanzeige (mit Fotos, Mängelbericht-PDF), Raum aus Pin, Planregister mit Index/Freigabe/QR-Prüfung, Dateiablage (Ordner Pläne/Dokumente, einfacher Upload, Pläne erscheinen automatisch unter „Pläne“, Alt-Versionen), Projektleitung = Bauleitungsrechte, Bau- und NU-Besprechung (Anwesenheit, Bemerkungen, nächster Termin mit .ics, Web + offline iPad/iPhone), Gerät synchronisieren (alle Pläne/Fotos/Dokumente offline, automatisch oder per Klick, Abgleich-Zentrale), Mängel sortieren/Ordner-Ansicht/Bericht aus Auswahl, Projekte anlegen mit Struktur-Übernahme und Struktur bearbeiten (Orte, Gewerke, NU je Projekt, auch aus anderen Projekten), Stundenzettel, Nachträge & Rechnungen (getrennte Nummern, Entscheidung zurücknehmbar), Nachunternehmer-Verzeichnis mit Verträgen, Kostenübersicht je Gewerk, Baustellen-Einkäufe und Fahrtenbuch (Web + offline iPhone). Offene Punkte D1–D8.
+
+**Fahrplan ab 12.11.2026 (vom Nutzer bestätigt, alles soll umgesetzt werden):**
+1. Echte Anmeldung (E-Mail + Passwort, Face ID in der App), Einladungen, Zugang entziehen
+2. QR-Code/Link je Mangelanzeige: unbefristet, sperrbar/neu erzeugbar; Freimeldung mit Name, Firma, Pflicht-Foto; Bauleitung nimmt ab
+3. Komplettes NU-Portal
+4. Freie Ortsstruktur je Projekt (Ebenen frei benennbar), Mangel ohne Plan, übertragbare Projekteinstellungen
+5. Bestellanforderungen (auch offline) + Einkaufsportal über alle Baustellen, mit Benachrichtigung
+6. Fotodokumentation auf Plänen (geschlossene Wände, Schächte, Doppelboden, Hohlraumdecken …), aus Fotos Mangelanzeigen machen
+7. Begehungen (Fotos, Mängel, Notizen, Planänderungen)
+8. Bautagebuch, Behinderungs-/Bedenkenanzeige, Aufgaben, Lieferanmeldung/Logistik
+9. Bauzeitenplan, Kalender, Abnahmen/Übergabe, Gewährleistung, Checklisten, Personal-Nachweise, Geräte, Arbeitssicherheit, Bemusterung, Aufmaß, Dashboard
+10. Benachrichtigungen laufen mit; danach Betrieb (Hosting DE, TestFlight)
 
 **Start mit einem schmalen Durchstich** (vor der vollen Stufe 1): Projekte/Orte/Rollen → Mängel mit Plan-Pin → offline auf dem iPad erfassen → Abgleich mit dem Server → Web-Ansicht für die Bauleitung. Damit wird das Schwierigste (Offline-Abgleich) zuerst geprüft. Danach die volle Dateiablage mit Prüfketten und der Rest von Stufe 1.
 

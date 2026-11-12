@@ -9,6 +9,7 @@ import { StundenPage } from './Stunden';
 import { NachunternehmerPage } from './Nachunternehmer';
 import { EinkaeufePage, FahrtenbuchPage } from './Betrieb';
 import { KostenPage } from './Kosten';
+import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
@@ -28,7 +29,7 @@ const TEST_USERS = [
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
+type Module = 'struktur' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -69,7 +70,11 @@ export function App() {
     setMe(null);
     setProjectId(null);
   };
-  return projectId ? <ProjectShell key={`${projectId}-${me.user.id}`} me={me} projectId={projectId} onProject={setProjectId} onLogout={logout} /> : <p className="loading">Kein Projekt zugeordnet.</p>;
+  return projectId ? (
+    <ProjectShell key={`${projectId}-${me.user.id}`} me={me} projectId={projectId} onProject={setProjectId} onLogout={logout} onMeReload={() => void loadMe()} />
+  ) : (
+    <p className="loading">Kein Projekt zugeordnet.</p>
+  );
 }
 
 function Login({ onLogin }: { onLogin: () => void }) {
@@ -110,7 +115,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectId: string; onProject: (id: string) => void; onLogout: () => void }) {
+function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: Me; projectId: string; onProject: (id: string) => void; onLogout: () => void; onMeReload: () => void }) {
+  const [newProject, setNewProject] = useState(false);
   const [info, setInfo] = useState<ProjectInfo | null>(null);
   const [maengel, setMaengel] = useState<Mangel[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
@@ -176,12 +182,13 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
           </div>
         </div>
         <div className="project-picker">
-          <select value={projectId} onChange={(e) => onProject(e.target.value)} aria-label="Projekt">
+          <select value={projectId} onChange={(e) => (e.target.value === '__neu' ? setNewProject(true) : onProject(e.target.value))} aria-label="Projekt">
             {me.projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}
+            {me.canCreateProject && <option value="__neu">+ Neues Projekt …</option>}
           </select>
         </div>
         <div className="side-section">Baustelle</div>
@@ -198,6 +205,12 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
         {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
         {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
+        {info && info.role === 'bauleitung' && (
+          <>
+            <div className="side-section">Projekt</div>
+            {nav('struktur', 'firmen', 'Projekt & Struktur')}
+          </>
+        )}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
           <div className="who">
@@ -289,6 +302,7 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
             {module === 'einkaeufe' && <EinkaeufePage info={info} me={{ name: me.user.name }} run={run} />}
             {module === 'fahrtenbuch' && <FahrtenbuchPage info={info} run={run} />}
             {module === 'kosten' && <KostenPage info={info} run={run} />}
+            {module === 'struktur' && <StrukturPage info={info} me={me} run={run} onReload={() => void reload()} onMeReload={onMeReload} />}
             {module === 'hinweise' && <HinweisePage info={info} conflicts={conflicts} run={run} />}
           </>
         )}
@@ -306,6 +320,19 @@ function ProjectShell({ me, projectId, onProject, onLogout }: { me: Me; projectI
               setSelected(r.id);
             }, 'Mangel erfasst')
           }
+        />
+      )}
+      {newProject && (
+        <NewProjectSheet
+          me={me}
+          current={projectId}
+          run={run}
+          onCancel={() => setNewProject(false)}
+          onCreated={(id) => {
+            setNewProject(false);
+            onMeReload();
+            onProject(id);
+          }}
         />
       )}
       {toast && (

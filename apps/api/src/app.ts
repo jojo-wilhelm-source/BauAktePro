@@ -12,6 +12,10 @@ import { attachToZettel, decideZettel, listZettel, saveZettel, submitZettel, zet
 import { addFahrt, addFahrzeug, addTanken, addVertrag, attachBeleg, belegFile, createEinkauf, decideEinkauf, fahrtenbuch, kosten, listEinkaeufe, listNu, saveNu, setBudget } from './betrieb-service';
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
+import {
+  addGewerk, addLocation, canCreateProject, createProject, deleteGewerk, deleteLocation, nuKandidaten, nuUebernehmen, renameGewerk,
+  renameLocation, renameProject, structure, takeOverStructure,
+} from './projekt-service';
 import { addPunkt, besprechungDetails, createBesprechung, listBesprechungen, nextTerminIcs, patchBesprechung, patchPunkt, protokollPdf, sendBesprechung, setAnwesenheit, setTeilnehmer } from './besprechung-service';
 import { checkRevision, decideRevision, listPlans, stampedRevisionPdf, uploadRevision } from './plan-service';
 import { actorFor, createMangel, HttpError, patchMangel, setNachfrist, transitionMangel, type WriteMeta } from './mangel-service';
@@ -47,6 +51,8 @@ export function buildApp(sql: Sql) {
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send({ error: err.message });
     if (err instanceof ZodError) return reply.status(422).send({ error: 'Ungültige Eingabe', details: err.issues });
+    // Row level security / permission refused by the database: never a 500.
+    if ((err as { code?: string }).code === '42501') return reply.status(403).send({ error: (err as Error).message || 'Keine Berechtigung' });
     app.log.error(err);
     return reply.status(500).send({ error: 'Interner Fehler' });
   });
@@ -84,9 +90,31 @@ export function buildApp(sql: Sql) {
       const projects = await tx`
         SELECT p.id, p.name, pm.role FROM project p JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${req.userId}
         ORDER BY p.name`;
-      return { user, projects };
+      return { user, projects, canCreateProject: await canCreateProject(tx) };
     }),
   );
+
+  // --- Projekte und Struktur (docs/fachkonzept/01, 02) --------------------------------
+  app.post('/projects', async (req) => asUser(sql, req.userId, (tx) => createProject(tx, req.userId, req.body, meta(req))));
+  app.patch<{ Params: { projectId: string } }>('/projects/:projectId', async (req) => asUser(sql, req.userId, (tx) => renameProject(tx, req.userId, req.params.projectId, req.body, meta(req))));
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/struktur', async (req) => asUser(sql, req.userId, (tx) => structure(tx, req.userId, req.params.projectId)));
+  app.post<{ Params: { projectId: string } }>('/projects/:projectId/struktur-uebernehmen', async (req) =>
+    asUser(sql, req.userId, (tx) => takeOverStructure(tx, req.userId, req.params.projectId, req.body, meta(req))));
+  app.post('/locations', async (req) => asUser(sql, req.userId, (tx) => addLocation(tx, req.userId, req.body, meta(req))));
+  app.patch<{ Params: { id: string } }>('/locations/:id', async (req) => asUser(sql, req.userId, (tx) => renameLocation(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.delete<{ Params: { id: string } }>('/locations/:id', async (req) => {
+    await asUser(sql, req.userId, (tx) => deleteLocation(tx, req.userId, req.params.id, meta(req)));
+    return { ok: true };
+  });
+  app.post('/gewerke', async (req) => asUser(sql, req.userId, (tx) => addGewerk(tx, req.userId, req.body, meta(req))));
+  app.patch<{ Params: { id: string } }>('/gewerke/:id', async (req) => asUser(sql, req.userId, (tx) => renameGewerk(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.delete<{ Params: { id: string } }>('/gewerke/:id', async (req) => {
+    await asUser(sql, req.userId, (tx) => deleteGewerk(tx, req.userId, req.params.id, meta(req)));
+    return { ok: true };
+  });
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/nu-kandidaten', async (req) => asUser(sql, req.userId, (tx) => nuKandidaten(tx, req.userId, req.params.projectId)));
+  app.post<{ Params: { projectId: string } }>('/projects/:projectId/nu-uebernehmen', async (req) =>
+    asUser(sql, req.userId, (tx) => nuUebernehmen(tx, req.userId, req.params.projectId, req.body, meta(req))));
 
   app.get<{ Params: { projectId: string } }>('/projects/:projectId', async (req) =>
     asUser(sql, req.userId, async (tx) => {

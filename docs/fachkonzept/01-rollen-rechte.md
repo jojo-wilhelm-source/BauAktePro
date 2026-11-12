@@ -28,3 +28,10 @@ Rollen gelten **pro Projekt**. Zusätzlich gibt es **Firmenrollen** für die pro
 ## Externe Zugänge
 - Per Einladung (Link oder E-Mail).
 - **Einmal-Links ohne Login** nur für Bemusterungsentscheidungen: zeitlich begrenzt, nur einmal nutzbar, an eine E-Mail-Adresse gebunden, abschaltbar.
+
+## Umsetzungsstand (10.11.2026): Projekte und Struktur
+- **Neues Projekt** (Web, Projektauswahl → „+ Neues Projekt …“): Bau- und Projektleitung der eigenen Firma. Der Ersteller wird Bauleitung (bzw. Projektleitung, wenn das seine Rolle ist). ANNAHME (offene-punkte D8).
+- **Struktur übernehmen** beim Anlegen oder später (Projekt & Struktur → „Struktur übernehmen …“): wählbar Orte, Gewerke, Ordnerstruktur, Nachunternehmer (mit Gewerken), eigenes Team. Zusammenführen nach Name/Pfad: Vorhandenes bleibt, nur Fehlendes kommt dazu. Nie übernommen: Mängel, Pläne, Dokumente, Verträge, Preise, Zugänge anderer Firmen.
+- **Struktur ändern** (Projekt & Struktur): Orte als Baum (Gebäude › Geschoss › Abschnitt › Raum; Unterorte immer feiner), Gewerke anlegen, umbenennen, löschen. Was von Mängeln, Plänen oder Unterorten benutzt wird, lässt sich nicht löschen. Projekt umbenennen/Adresse.
+- **Nachunternehmer je Projekt** (Web, Nachunternehmer): neu anlegen oder „Aus anderem Projekt …“ übernehmen (eine Firma, mehrere Projekte; Gewerke über den Namen zugeordnet; ohne Verträge, Preise und Zugang).
+- Alles im Audit Log (Teamänderungen einzeln). Rechte-Tests in `apps/api/test/rechte.test.ts`.

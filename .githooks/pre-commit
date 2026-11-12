@@ -1,0 +1,12 @@
+#!/bin/sh
+# Safety net before every commit (CLAUDE.md, "Commits"): type check of all packages + domain tests.
+# The rights tests need the running database and are run by hand before committing (pnpm test).
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "pre-commit: Typprüfung …"
+for d in packages/domain packages/db apps/api apps/web apps/mobile; do
+  (cd "$d" && npx tsc --noEmit -p .) || { echo "pre-commit: Typfehler in $d – Commit abgebrochen"; exit 1; }
+done
+echo "pre-commit: Domain-Tests …"
+(cd packages/domain && npx vitest run --silent) || { echo "pre-commit: Domain-Tests rot – Commit abgebrochen"; exit 1; }
+echo "pre-commit: ok"

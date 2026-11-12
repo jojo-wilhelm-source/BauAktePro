@@ -13,7 +13,8 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: init.method ?? 'GET',
-    headers: { 'content-type': 'application/json', ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}) },
+    // No content-type without a body (Fastify rejects an empty JSON body, e.g. on DELETE).
+    headers: { ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}) },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   const body = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
@@ -25,6 +26,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 export interface Me {
   user: { id: string; name: string; email: string; company: string };
   projects: { id: string; name: string; role: ProjectRole }[];
+  canCreateProject: boolean;
 }
 export interface ProjectInfo {
   project: { id: string; name: string };

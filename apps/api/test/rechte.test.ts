@@ -637,3 +637,81 @@ describe('Mängelbericht aus Auswahl, sortiert und nach Ordnern', () => {
     expect((await pdf('uBauleitung', 'gruppen=firma,x')).statusCode).toBe(422);
   });
 });
+
+describe('Projekte anlegen und Struktur übernehmen', () => {
+  const ALLE = ['orte', 'gewerke', 'ordner', 'nachunternehmer', 'team'];
+  const neu = (u: keyof typeof ID, body: object = {}) => call(u, 'POST', '/projects', { id: randomUUID(), name: 'Wohnanlage Lindenhof BA 2', ...body });
+  it('nur Bau-/Projektleitung der eigenen Firma legt Projekte an', async () => {
+    for (const u of ['uPolier', 'uElektro', 'uBauherr'] as const) expect((await neu(u)).status).toBe(403);
+    expect((await call('uPolier', 'GET', '/me')).body.canCreateProject).toBe(false);
+    expect((await call('uProjektleitung', 'GET', '/me')).body.canCreateProject).toBe(true);
+    const r = await neu('uProjektleitung');
+    expect(r.status).toBe(200);
+    const me = (await call('uProjektleitung', 'GET', '/me')).body.projects.find((p: any) => p.id === r.body.id);
+    expect(me.role).toBe('projektleitung');
+  });
+  it('aus Vorlage: Orte, Gewerke, Ordner, NU und Team; zweimal übernehmen erzeugt keine Doppelten; NU-Zugänge nicht', async () => {
+    const r = await neu('uBauleitung', { vorlage_id: ID.project, teile: ALLE });
+    expect(r.body.uebernommen).toEqual({ orte: 6, gewerke: 2, ordner: 6, nachunternehmer: 2, team: 2 });
+    const again = await call('uBauleitung', 'POST', `/projects/${r.body.id}/struktur-uebernehmen`, { from: ID.project, teile: ALLE });
+    expect(again.body).toEqual({ orte: 0, gewerke: 0, ordner: 0, nachunternehmer: 0, team: 0 });
+    const s = (await call('uBauleitung', 'GET', `/projects/${r.body.id}/struktur`)).body;
+    expect(s.gewerke.map((g: any) => [g.name, g.firmen])).toEqual([['Elektro', ['Elektro Blitz GmbH']], ['Fliesen', ['Fliesen Fuchs GmbH']]]);
+    // Polier came along with the team, the NU only as a firm (no access).
+    expect((await call('uPolier', 'GET', `/projects/${r.body.id}/maengel`)).status).toBe(200);
+    expect((await call('uElektro', 'GET', `/projects/${r.body.id}/maengel`)).status).toBe(403);
+    // No Mängel, plans, contracts copied.
+    expect((await call('uBauleitung', 'GET', `/projects/${r.body.id}/maengel`)).body).toEqual([]);
+    expect((await call('uBauleitung', 'GET', `/projects/${r.body.id}/nachunternehmer`)).body.nu.every((n: any) => n.auftrag === 0)).toBe(true);
+  });
+  it('Vorlage muss ein eigenes Projekt sein; Struktur übernehmen nur als Leitung', async () => {
+    const r = await neu('uBauleitung');
+    // Fliesen (NU) cannot pull a structure into a project, Polier neither.
+    expect((await call('uPolier', 'POST', `/projects/${ID.project}/struktur-uebernehmen`, { from: ID.otherProject, teile: ['orte'] })).status).toBe(403);
+    expect((await neu('uProjektleitung', { vorlage_id: ID.otherProject, teile: ['orte'] })).status).toBe(403); // not a member of Bürohaus
+    expect(r.status).toBe(200);
+  });
+});
+
+describe('Struktur bearbeiten: Orte und Gewerke', () => {
+  const loc = (u: keyof typeof ID, body: object) => call(u, 'POST', '/locations', { id: randomUUID(), project_id: ID.project, ...body });
+  it('Leitung legt Orte an (nur feinere Unterorte), Polier und NU nicht', async () => {
+    expect((await loc('uPolier', { kind: 'gebaeude', name: 'Haus B' })).status).toBe(403);
+    expect((await loc('uElektro', { kind: 'gebaeude', name: 'Haus B' })).status).toBe(403);
+    const haus = await loc('uBauleitung', { kind: 'gebaeude', name: 'Haus B' });
+    expect(haus.status).toBe(200);
+    expect((await loc('uBauleitung', { kind: 'gebaeude', name: 'X', parent_id: haus.body.id })).status).toBe(422);
+    const eg = await loc('uBauleitung', { kind: 'geschoss', name: 'EG', parent_id: haus.body.id });
+    expect(eg.status).toBe(200);
+    expect((await call('uBauleitung', 'PATCH', `/locations/${eg.body.id}`, { name: 'Erdgeschoss' })).body.name).toBe('Erdgeschoss');
+    // Parent with child: refused; leaf: deleted.
+    const del = (id: string) => app.inject({ method: 'DELETE', url: `/locations/${id}`, headers: { authorization: `Bearer ${tokens.uBauleitung}` } });
+    expect((await del(haus.body.id)).statusCode).toBe(409);
+    expect((await del(eg.body.id)).statusCode).toBe(200);
+  });
+  it('benutzte Orte und Gewerke lassen sich nicht löschen; doppelte Gewerke nicht anlegen', async () => {
+    const del = (url: string) => app.inject({ method: 'DELETE', url, headers: { authorization: `Bearer ${tokens.uBauleitung}` } });
+    expect((await del(`/locations/${ID.raumBad}`)).statusCode).toBe(409); // Mangel M-001
+    expect((await del(`/gewerke/${ID.gwFliesen}`)).statusCode).toBe(409);
+    expect((await call('uBauleitung', 'POST', '/gewerke', { id: randomUUID(), project_id: ID.project, name: 'fliesen' })).status).toBe(409);
+    const tb = await call('uBauleitung', 'POST', '/gewerke', { id: randomUUID(), project_id: ID.project, name: 'Trockenbau' });
+    expect(tb.status).toBe(200);
+    expect((await call('uPolier', 'POST', '/gewerke', { id: randomUUID(), project_id: ID.project, name: 'Maler' })).status).toBe(403);
+    expect((await del(`/gewerke/${tb.body.id}`)).statusCode).toBe(200);
+  });
+});
+
+describe('Nachunternehmer aus anderem Projekt übernehmen', () => {
+  it('Bürohaus übernimmt Elektro aus Lindenhof; Firma ohne Zugang, ohne Preise', async () => {
+    const k = (await call('uBauleitung', 'GET', `/projects/${ID.otherProject}/nu-kandidaten`)).body as any[];
+    expect(k.map((n) => n.name)).toEqual(['Elektro Blitz GmbH', 'Fliesen Fuchs GmbH']);
+    expect((await call('uElektro', 'GET', `/projects/${ID.otherProject}/nu-kandidaten`)).status).toBe(403);
+    // Bürohaus gets an "Elektro" Gewerk: the firm's Gewerk is matched by name.
+    await call('uBauleitung', 'POST', '/gewerke', { id: randomUUID(), project_id: ID.otherProject, name: 'Elektro' });
+    const r = await call('uBauleitung', 'POST', `/projects/${ID.otherProject}/nu-uebernehmen`, { company_ids: [ID.coElektro] });
+    expect(r.body.added).toBe(1);
+    const nu = (await call('uBauleitung', 'GET', `/projects/${ID.otherProject}/nachunternehmer`)).body.nu as any[];
+    expect(nu.map((n) => [n.name, n.gewerke, n.auftrag])).toEqual([['Elektro Blitz GmbH', ['Elektro'], 0]]);
+    expect((await call('uElektro', 'GET', `/projects/${ID.otherProject}/maengel`)).status).toBe(403);
+  });
+});
