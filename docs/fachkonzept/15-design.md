@@ -16,3 +16,9 @@ Entschieden 10.11.2026: Die ganze Anwendung (iOS **und** Web) folgt den Apple Hu
 ## Umsetzung
 - Web: gemeinsame Design-Tokens als CSS-Variablen (`apps/web/src/styles.css`), Komponenten in `apps/web/src/ui/`.
 - iOS: Theme in `apps/mobile/src/theme.ts`, native Bausteine von Expo/React Native (z. B. `expo-symbols`, `expo-blur`), wo möglich echte iOS-Steuerelemente.
+
+## Oberfläche je Rolle (entschieden 13.11.2026)
+Jede Rolle bekommt eine auf ihre Arbeit zugeschnittene Oberfläche – nicht überall derselbe Rahmen.
+- **Einkauf:** startet im Einkaufsportal (Dashboard über alle seine Baustellen), Baustellen in der Seitenleiste, je Baustelle nur Bestellanforderungen und LV & Angebote. Kein Projektwechsler.
+- **NU:** Portal „Was ist zu tun?“ (besteht).
+- Bauleitung/Projektleitung, Polier, Bauherr: eigene Startseiten folgen mit dem Dashboard (Fahrplan Punkt 9).

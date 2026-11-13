@@ -22,7 +22,8 @@ import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
-import { BestellungenPage, EinkaufsportalPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
+import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
+import { EinkaufShell } from './EinkaufShell';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -31,7 +32,7 @@ import { PageHeader, Sheet, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'portal' | 'mitteilungen';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -94,6 +95,8 @@ export function App() {
     setMe(null);
     setProjectId(null);
   };
+  // Every role gets its own layout (decided 13.11.2026). The Einkauf starts in its portal over all sites.
+  if (!me.isAdmin && me.projects.length > 0 && me.projects.every((p) => p.role === 'einkauf')) return <EinkaufShell key={me.user.id} me={me} onLogout={logout} />;
   return projectId ? (
     <ProjectShell key={`${projectId}-${me.user.id}`} me={me} projectId={projectId} onProject={setProjectId} onLogout={logout} onMeReload={() => void loadMe()} />
   ) : (
@@ -112,9 +115,9 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
     sessionStorage.removeItem('bap.ziel');
     return raw ? JSON.parse(raw) : null;
   });
-  // NU-Portal starts with "Was ist zu tun?", the Einkauf with its portal, internal roles with the Mängel list.
+  // NU-Portal starts with "Was ist zu tun?", internal roles with the Mängel list (the Einkauf has its own EinkaufShell).
   const startRole = me.projects.find((p) => p.id === projectId)?.role;
-  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'einkauf' ? 'portal' : 'maengel'));
+  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : 'maengel'));
   const [lvOpen, setLvOpen] = useState<string | null>(ziel?.lv ?? null);
   const [banfOpen, setBanfOpen] = useState<string | null>(ziel?.banf ?? null);
   const [ungelesen, setUngelesen] = useState(0);
@@ -198,7 +201,6 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
           </select>
         </div>
         {nav('mitteilungen', 'nachricht', 'Mitteilungen', ungelesen > 0 ? <span className="badge">{ungelesen}</span> : undefined)}
-        {(startRole === 'einkauf' || startRole === 'bauleitung' || me.isAdmin) && nav('portal', 'portal', 'Einkaufsportal')}
         <div className="side-section">Baustelle</div>
         {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
@@ -332,7 +334,6 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'ausschreibung' && <AusschreibungPage key={lvOpen ?? 'liste'} info={info} run={run} initialLv={lvOpen} />}
             {module === 'bestellungen' && <BestellungenPage key={banfOpen ?? 'liste'} info={info} run={run} meId={me.user.id} openId={banfOpen} onOpenLv={(lv) => gehe(projectId, { module: 'ausschreibung', lv })} />}
-            {module === 'portal' && <EinkaufsportalPage meId={me.user.id} run={run} onOpenLv={(lv, pid) => gehe(pid, { module: 'ausschreibung', lv })} onOpenProject={(pid) => gehe(pid, { module: 'bestellungen' })} />}
             {module === 'mitteilungen' && <MitteilungenPage onChange={() => void ladeUngelesen()} onOpen={(m: Mitteilung) => {
               if (m.entity === 'bestellanforderung' && m.project_id && m.entity_id) gehe(m.project_id, { module: 'bestellungen', banf: m.entity_id });
             }} />}

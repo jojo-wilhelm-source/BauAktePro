@@ -215,24 +215,14 @@ const seit = (iso: string) => {
   const t = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
   return t <= 0 ? 'heute' : t === 1 ? 'seit gestern' : `seit ${t} Tagen`;
 };
-type Filter = 'neu' | 'arbeit' | 'bestellt' | 'alle';
-const FILTER: [Filter, string, (b: Banf) => boolean][] = [
-  ['neu', 'Neu', (b) => b.status === 'offen'],
-  ['arbeit', 'In Arbeit', (b) => b.status === 'in_bearbeitung' || b.status === 'angefragt'],
-  ['bestellt', 'Bestellt', (b) => b.status === 'bestellt'],
-  ['alle', 'Alle', () => true],
-];
 
 /**
- * Einkaufsportal (decided 12.11.2026): first a dashboard over all sites – key figures and, per site, what is
- * requested and how urgent; a click on a site opens its requests.
+ * Einkaufsportal (decided 12./13.11.2026): the Einkauf's start page – a dashboard over all sites with key figures and,
+ * per site, what is requested and how urgent; a click on a site opens it in the Einkauf layout (EinkaufShell).
  */
 export function EinkaufsportalPage({ meId, run, onOpenLv, onOpenProject }: { meId: string; run: Run; onOpenLv: (lvId: string, projectId: string) => void; onOpenProject: (projectId: string) => void }) {
   const [d, setD] = useState<Portal | null>(null);
-  const [baustelle, setBaustelle] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>('neu');
   const [offen, setOffen] = useState<string | null>(null);
-  const [q, setQ] = useState('');
   const load = useCallback(async () => setD(await api<Portal>('/einkaufsportal?status=alle')), []);
   useEffect(() => void load(), [load]);
   useEffect(() => { const t = setInterval(() => void load(), 60_000); return () => clearInterval(t); }, [load]);
@@ -240,30 +230,6 @@ export function EinkaufsportalPage({ meId, run, onOpenLv, onOpenProject }: { meI
   if (!d) return <p className="loading">Wird geladen …</p>;
   const b = d.anforderungen.find((x) => x.id === offen) ?? null;
   const detail = b && <BanfDetail b={b} info={null} meId={meId} run={runAndLoad} onClose={() => setOffen(null)} onOpenLv={onOpenLv} />;
-  const site = d.baustellen.find((x) => x.id === baustelle);
-
-  // --- One site: its requests ---------------------------------------------------------------------
-  if (site) {
-    const alleDer = d.anforderungen.filter((x) => x.project_id === site.id);
-    const f = FILTER.find((x) => x[0] === filter)!;
-    const rows = alleDer.filter(f[2]).filter((x) => !q || `${x.titel} ${x.angefordert_von} ${x.positionen.map((p) => p.text).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
-    return (
-      <>
-        <PageHeader eyebrow="Einkaufsportal" title={site.name}
-          action={<div className="meta-row"><button className="btn" onClick={() => { setBaustelle(null); setQ(''); }}>‹ Alle Baustellen</button><button className="btn" onClick={() => onOpenProject(site.id)}>Baustelle öffnen</button></div>}>
-          <div className="segmented">
-            {FILTER.map(([k, label, fn]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{label} ({alleDer.filter(fn).length})</button>)}
-          </div>
-        </PageHeader>
-        <div className="list-pad" style={{ maxWidth: 1100, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <label className="search" style={{ flex: 'none', maxWidth: 420 }}><Icon name="suche" size={16} /><input placeholder="Suchen (Material, Anforderer)" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-          <BanfTabelle rows={rows} onOpen={(x) => setOffen(x.id)} />
-        </div>
-        {detail}
-      </>
-    );
-  }
-
   // --- Dashboard over all sites --------------------------------------------------------------------
   const sum = (k: keyof Pick<Baustelle, 'neu' | 'in_arbeit' | 'bestellt' | 'dringend' | 'ueberfaellig'>) => d.baustellen.reduce((s, x) => s + x[k], 0);
   const kacheln: [string, number, string][] = [
@@ -285,7 +251,7 @@ export function EinkaufsportalPage({ meId, run, onOpenLv, onOpenProject }: { meI
             const top = offeneJe(s.id);
             const ruhig = !s.neu && !s.in_arbeit && !s.bestellt;
             return (
-              <button key={s.id} className={`card portal-card ${s.neu ? 'hat-neu' : ''}`} onClick={() => { setBaustelle(s.id); setFilter(s.neu ? 'neu' : s.in_arbeit ? 'arbeit' : s.bestellt ? 'bestellt' : 'alle'); }}>
+              <button key={s.id} className={`card portal-card ${s.neu ? 'hat-neu' : ''}`} onClick={() => onOpenProject(s.id)}>
                 <div className="meta-row" style={{ justifyContent: 'space-between' }}><strong>{s.name}</strong><Icon name="chevron" size={16} /></div>
                 {ruhig ? <span className="sub">Keine offenen Anforderungen{s.letzte_anforderung ? ` · letzte ${formatDate(s.letzte_anforderung)}` : ''}</span> : (
                   <div className="meta-row">
@@ -298,7 +264,7 @@ export function EinkaufsportalPage({ meId, run, onOpenLv, onOpenProject }: { meI
                 )}
                 {top.length > 0 && (
                   <ul className="portal-top">
-                    {top.slice(0, 3).map((x) => <li key={x.id}><span>{x.dringend ? '❗ ' : ''}{x.titel}</span><span className="sub">{x.benoetigt_am ? formatDate(x.benoetigt_am) : BANF_LABEL[x.status]}</span></li>)}
+                    {top.slice(0, 3).map((x) => <li key={x.id} onClick={(e) => { e.stopPropagation(); setOffen(x.id); }}><span>{x.dringend ? '❗ ' : ''}{x.titel}</span><span className="sub">{x.benoetigt_am ? formatDate(x.benoetigt_am) : BANF_LABEL[x.status]}</span></li>)}
                     {top.length > 3 && <li className="sub">+ {top.length - 3} weitere</li>}
                   </ul>
                 )}
@@ -307,7 +273,7 @@ export function EinkaufsportalPage({ meId, run, onOpenLv, onOpenProject }: { meI
             );
           })}
         </div>
-        <div className="footnote">Baustellen mit neuen Anforderungen stehen oben. Neue Anforderungen kommen sofort als Mitteilung und per E-Mail; ein Klick auf die Baustelle zeigt ihre Anforderungen. Daraus wird mit einem Klick ein LV für die Anfrage, nach der Bestellung bekommt die Baustelle Bescheid.</div>
+        <div className="footnote">Baustellen mit neuen Anforderungen stehen oben. Neue Anforderungen kommen sofort als Mitteilung und per E-Mail; ein Klick auf die Baustelle öffnet sie (Anforderungen, LV & Angebote), ein Klick auf eine Anforderung öffnet diese direkt. Daraus wird mit einem Klick ein LV für die Anfrage, nach der Bestellung bekommt die Baustelle Bescheid.</div>
       </div>
       {detail}
     </>
