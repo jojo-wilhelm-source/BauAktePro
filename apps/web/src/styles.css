@@ -484,3 +484,5 @@ select.status-select { border: 0; appearance: none; -webkit-appearance: none; pa
 .einst-prio small { color: var(--label-2); font-size: 11px; text-transform: capitalize; }
 .protokoll-daten { margin: 0; font-size: 12px; background: var(--fill); padding: 10px; border-radius: 8px; white-space: pre-wrap; max-height: 260px; overflow: auto; }
 .einst .row > input:first-child { text-align: left; flex: 1; max-width: 360px; }
+.nu-baustelle { display: flex; flex-direction: column; gap: 10px; }
+.nu-baustelle > .group-head { border-bottom: 1px solid var(--separator); padding-bottom: 6px; }

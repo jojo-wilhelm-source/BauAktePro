@@ -17,7 +17,6 @@ import { AcceptInvitationPage, LoginPage, ResetPasswordPage } from './Anmeldung'
 import { FreimeldungPage } from './Freimeldung';
 import { ZugaengePage } from './Zugaenge';
 import { AdminPage } from './Admin';
-import { StartPage } from './Start';
 import { NewProjectSheet, StrukturPage } from './Struktur';
 import { CheckPage, Planregister } from './Planregister';
 import type { PunktPin } from './PlanView';
@@ -26,7 +25,7 @@ import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellun
 import { EinkaufShell } from './EinkaufShell';
 import { AdminShell } from './AdminShell';
 import { FotodokuPage } from './Fotodoku';
-import { BauherrCockpit, LeitungCockpit, PolierCockpit } from './Cockpit';
+import { BauherrCockpit, LeitungCockpit, NuCockpit, PolierCockpit } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -226,7 +225,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload, onAdmin 
         {info && info.role === 'bauleitung' && nav('uebersicht', 'portal', me.projects.length > 1 ? 'Übersicht (alle Projekte)' : 'Übersicht')}
         {nav('mitteilungen', 'nachricht', 'Mitteilungen', ungelesen > 0 ? <span className="badge">{ungelesen}</span> : undefined)}
         {gruppe('baustelle', 'Baustelle', <>
-          {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
+          {info && info.role === 'nu' && nav('start', 'haken', me.projects.length > 1 ? 'Was ist zu tun? (alle Baustellen)' : 'Was ist zu tun?')}
           {info && info.role === 'bauherr' && nav('bauvorhaben', 'haken', 'Mein Bauvorhaben')}
           {info && (info.role === 'polier' || info.role === 'bauleitung') && nav('heute', 'haken', info.role === 'polier' ? 'Heute' : 'Heute im Projekt')}
           {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
@@ -277,7 +276,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload, onAdmin 
           <p className="loading">Projekt wird geladen …</p>
         ) : (
           <>
-            {module === 'start' && <StartPage info={info} onOpen={setModule} onMangel={(id) => { setSelected(id); setModule('maengel'); }} />}
+            {module === 'start' && <NuCockpit firma={me.user.company} onOpen={(pid, z) => gehe(pid, { module: z })} onMangel={(pid, id) => { if (pid === projectId) { setSelected(id); setModule('maengel'); } else gehe(pid, { module: 'maengel' }); }} />}
             {module === 'maengel' && <MaengelPage info={info} maengel={maengel} selected={selected} onSelect={setSelected} run={run} onAnzeige={startAnzeige} />}
             {module === 'anzeigen' && (
               <AnzeigenPage

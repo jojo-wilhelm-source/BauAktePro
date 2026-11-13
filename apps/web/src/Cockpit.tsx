@@ -277,3 +277,108 @@ export function BauherrCockpit({ info, onOpen, onMangel }: { info: ProjectInfo; 
     </>
   );
 }
+
+interface NuBaustelle {
+  id: string; name: string;
+  maengel: { id: string; number: number; description: string; status: string; location: string; due: string | null; esc: Escalation; todo: string }[];
+  anzeigen: { id: string; no: string; deadline: string; offen: number; positionen: number }[];
+  punkte: { id: string; no: string; text: string; status: PunktStatus; due: string | null; location_name: string | null }[];
+  einreichungen: { id: string; kind: 'nachtrag' | 'rechnung'; number: number; title: string; status: string; amount: number }[];
+  stunden: { id: string; number: number; period_from: string; period_to: string; status: string }[];
+  counts: { ueberfaellig: number; offen: number; punkte: number };
+}
+interface NuDaten {
+  baustellen: NuBaustelle[];
+  anfragen: { id: string; titel: string; angebotsfrist: string | null; project_id: string; projekt: string; link: string; abgegeben_at: string | null }[];
+  summe: { ueberfaellig: number; offen: number; punkte: number; anfragen: number; abgelehnt: number };
+}
+export type NuZiel = 'maengel' | 'anzeigen' | 'besprechungen' | 'einreichungen' | 'stunden' | 'ausschreibung';
+const EIN_STATUS: Record<string, [string, string]> = {
+  eingereicht: ['Eingereicht', 'c-blue'], in_pruefung: ['In Prüfung', 'c-orange'], freigegeben: ['Freigegeben', 'c-green'], gf_erforderlich: ['Weitere Freigabe', 'c-orange'],
+  abgelehnt: ['Abgelehnt', 'c-red'], zurueckgezogen: ['Zurückgezogen', 'c-gray'], entwurf: ['Entwurf', 'c-gray'], bestaetigt: ['Bestätigt', 'c-green'], gekuerzt: ['Gekürzt', 'c-orange'],
+};
+
+/** Nachunternehmer: "Was ist zu tun?" over all sites of the own firm; a click opens the site at the right place. */
+export function NuCockpit({ firma, onOpen, onMangel }: { firma: string; onOpen: (projectId: string, z: NuZiel) => void; onMangel: (projectId: string, id: string) => void }) {
+  const [d, setD] = useState<NuDaten | null>(null);
+  useEffect(() => void api<NuDaten>('/cockpit/nu').then(setD), []);
+  if (!d) return <p className="loading">Wird geladen …</p>;
+  const s = d.summe;
+  const eins = d.baustellen[0];
+  return (
+    <>
+      <PageHeader eyebrow={`${firma} · ${d.baustellen.length} Baustelle${d.baustellen.length === 1 ? '' : 'n'}`} title="Was ist zu tun?" />
+      <div className="list-pad cockpit">
+        {eins && (
+          <div className="schnell-row">
+            <Schnell primary icon="kosten" label="Stundenzettel erfassen" onClick={() => onOpen(eins.id, 'stunden')} />
+            <Schnell icon="rechnung" label="Nachtrag / Rechnung einreichen" onClick={() => onOpen(eins.id, 'einreichungen')} />
+            <Schnell icon="mangel" label="Mangel als behoben melden" onClick={() => onOpen(eins.id, 'maengel')} />
+          </div>
+        )}
+        <div className="kpi-row">
+          <Kachel n={s.ueberfaellig} label="Mängel überfällig" tone="var(--red)" />
+          <Kachel n={s.offen} label="Mängel zu beheben" tone="var(--orange)" />
+          <Kachel n={s.punkte} label="offene Besprechungspunkte" tone="var(--orange)" />
+          <Kachel n={s.anfragen} label="Anfragen ohne Angebot" tone="var(--accent)" />
+          <Kachel n={s.abgelehnt} label="abgelehnt / gekürzt" tone="var(--red)" />
+        </div>
+        {d.anfragen.length > 0 && (
+          <Abschnitt titel="Angebotsanfragen">
+            {d.anfragen.map((a) => (
+              <a key={a.id} className="row action" style={{ color: 'var(--label)', textDecoration: 'none' }} href={a.link} target="_blank" rel="noreferrer">
+                <span className="k">{a.titel}<div className="sub">{a.projekt}{a.angebotsfrist ? ` · Angebot bis ${formatDate(a.angebotsfrist)}` : ''}</div></span>
+                {a.abgegeben_at ? <span className="pill c-green">abgegeben {formatDate(a.abgegeben_at)}</span> : <span className="pill c-blue">Preise eintragen ›</span>}
+              </a>
+            ))}
+          </Abschnitt>
+        )}
+        {d.baustellen.map((b) => (
+          <section key={b.id} className="nu-baustelle">
+            <div className="group-head"><h3>{b.name}</h3><span className="sub">{b.counts.offen} Mängel · {b.counts.punkte} Punkte</span></div>
+            <div className="cockpit-grid">
+              <Abschnitt titel="Mängel" onMehr={() => onOpen(b.id, 'maengel')}>
+                {b.maengel.slice(0, 8).map((m) => (
+                  <button key={m.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onMangel(b.id, m.id)}>
+                    <span className="k"><strong className="tabular">{mNo(m.number)}</strong> {m.description}<div className="sub">{m.location} · <strong>{m.todo}</strong>{m.due ? ` · Frist ${formatDate(m.due)}` : ''}</div></span>
+                    <AmpelPill e={m.esc} />
+                  </button>
+                ))}
+                {!b.maengel.length && <div className="empty">Keine offenen Mängel.</div>}
+              </Abschnitt>
+              <Abschnitt titel="Besprechungspunkte" onMehr={() => onOpen(b.id, 'besprechungen')}>
+                {b.punkte.slice(0, 8).map((p) => (
+                  <button key={p.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen(b.id, 'besprechungen')}>
+                    <span className="k"><strong className="tabular">{p.no}</strong> {p.text}<div className="sub">{p.location_name ?? 'Allgemein'} · {PUNKT_STATUS_LABELS[p.status] ?? p.status}</div></span>
+                    <span className="v" style={{ color: istHeute(p.due) ? 'var(--red)' : undefined }}>{p.due ? formatDate(p.due) : ''}</span>
+                  </button>
+                ))}
+                {!b.punkte.length && <div className="empty">Keine offenen Punkte.</div>}
+              </Abschnitt>
+              {(b.anzeigen.length > 0 || b.einreichungen.length > 0 || b.stunden.length > 0) && (
+                <Abschnitt titel="Mangelanzeigen, Einreichungen, Stunden" onMehr={() => onOpen(b.id, 'einreichungen')}>
+                  {b.anzeigen.map((a) => (
+                    <button key={a.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen(b.id, 'anzeigen')}>
+                      <span className="k">Mangelanzeige {a.no}<div className="sub">{a.offen} von {a.positionen} offen</div></span><span className="v">bis {formatDate(a.deadline)}</span>
+                    </button>
+                  ))}
+                  {b.einreichungen.map((e) => (
+                    <button key={e.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen(b.id, 'einreichungen')}>
+                      <span className="k">{e.kind === 'nachtrag' ? 'Nachtrag' : 'Rechnung'} {e.number} · {e.title}</span><span className={`pill ${EIN_STATUS[e.status]?.[1] ?? 'c-gray'}`}>{EIN_STATUS[e.status]?.[0] ?? e.status}</span>
+                    </button>
+                  ))}
+                  {b.stunden.map((z) => (
+                    <button key={z.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen(b.id, 'stunden')}>
+                      <span className="k">Stundenzettel {z.number} · {formatDate(z.period_from)} – {formatDate(z.period_to)}</span><span className={`pill ${EIN_STATUS[z.status]?.[1] ?? 'c-gray'}`}>{EIN_STATUS[z.status]?.[0] ?? z.status}</span>
+                    </button>
+                  ))}
+                </Abschnitt>
+              )}
+            </div>
+          </section>
+        ))}
+        {!d.baustellen.length && <div className="empty">Ihre Firma ist noch keiner Baustelle zugeordnet.</div>}
+      </div>
+    </>
+  );
+}

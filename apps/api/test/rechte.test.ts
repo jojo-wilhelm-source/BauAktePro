@@ -1444,3 +1444,14 @@ describe('IT-Administration: Einstellungen, Systemübersicht, Protokoll', () => 
     expect((await call('uElektro', 'GET', '/admin/protokoll')).status).toBe(403);
   });
 });
+
+describe('Startseite Nachunternehmer', () => {
+  it('über alle Baustellen, nur eigene Firma (NU-Isolation)', async () => {
+    const el = (await call('uElektro', 'GET', '/cockpit/nu')).body;
+    expect(el.baustellen.map((b: any) => b.id)).toEqual([ID.project]);
+    const ids = el.baustellen.flatMap((b: any) => b.maengel.map((m: any) => m.id));
+    expect(ids).toContain(ID.mElektro);
+    expect(ids).not.toContain(ID.mFliesen);
+    expect((await call('uBauleitung', 'GET', '/cockpit/nu')).body.baustellen).toHaveLength(0);
+  });
+});

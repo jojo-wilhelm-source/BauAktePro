@@ -6,6 +6,8 @@
 import type { TxSql } from '@bap/db';
 import { escalation, punktNo, type MangelStatus, type Priority } from '@bap/domain';
 import { actorFor, HttpError } from './mangel-service';
+import { startPage } from './start-service';
+import { angebotUrl } from './lv-service';
 
 const iso = (v: unknown) => (v ? (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)) : null);
 
@@ -136,5 +138,32 @@ export async function bauherrCockpit(t: TxSql, userId: string, projectId: string
     },
     berichte, protokolle, maengel: offen.slice(0, 10), plaene, dokumente,
     termin: (termin?.next_at as string) ?? null,
+  };
+}
+
+/**
+ * Nachunternehmer: "Was ist zu tun?" over all sites of the own firm (each site's list from the NU-Portal start page),
+ * plus open LV requests with their link. RLS limits everything to the own firm.
+ */
+export async function nuCockpit(t: TxSql) {
+  const projekte = await t`SELECT p.id, p.name FROM project p WHERE app.project_role(p.id) = 'nu' ORDER BY p.name`;
+  const [me] = await t`SELECT app.current_user_id() AS id`;
+  const baustellen: ({ id: string; name: string } & Awaited<ReturnType<typeof startPage>>)[] = [];
+  for (const p of projekte) baustellen.push({ id: p.id as string, name: p.name as string, ...(await startPage(t, me!.id as string, p.id as string)) });
+  const anfragen = await t`
+    SELECT l.id, l.titel, l.angebotsfrist::text AS angebotsfrist, p.id AS project_id, p.name AS projekt, a.token,
+      (SELECT max(o.abgegeben_at) FROM angebot o WHERE o.anfrage_id = a.id) AS abgegeben_at
+    FROM lv_anfrage a JOIN lv l ON l.id = a.lv_id JOIN project p ON p.id = l.project_id
+    WHERE a.aktiv AND a.sent_at IS NOT NULL AND l.status = 'angefragt' AND a.company_id = app.user_company()
+    ORDER BY l.angebotsfrist NULLS LAST`;
+  const sum = (f: (b: (typeof baustellen)[number]) => number) => baustellen.reduce((s, b) => s + f(b), 0);
+  return {
+    baustellen: baustellen.sort((x, y) => y.counts.ueberfaellig - x.counts.ueberfaellig || y.counts.offen - x.counts.offen),
+    anfragen: anfragen.map((x) => ({ ...x, link: angebotUrl(x.token as string), token: undefined })),
+    summe: {
+      ueberfaellig: sum((b) => b.counts.ueberfaellig), offen: sum((b) => b.counts.offen), punkte: sum((b) => b.counts.punkte),
+      anfragen: anfragen.filter((x) => !x.abgegeben_at).length,
+      abgelehnt: sum((b) => b.einreichungen.filter((e) => e.status === 'abgelehnt').length + b.stunden.filter((s) => s.status === 'abgelehnt' || s.status === 'gekuerzt').length),
+    },
   };
 }
