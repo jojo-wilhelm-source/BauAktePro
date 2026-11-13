@@ -24,6 +24,7 @@ import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
 import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { EinkaufShell } from './EinkaufShell';
+import { AdminShell } from './AdminShell';
 import { FotodokuPage } from './Fotodoku';
 import { BauherrCockpit, LeitungCockpit, PolierCockpit } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
@@ -47,6 +48,8 @@ export function App() {
     setProjectIdState(id);
   };
   const [checked, setChecked] = useState(false);
+  const [ansicht, setAnsicht] = useState<'admin' | 'projekte'>(() => (localStorage.getItem('bap.ansicht') === 'projekte' ? 'projekte' : 'admin'));
+  const setAnsichtStore = (a: 'admin' | 'projekte') => { localStorage.setItem('bap.ansicht', a); setAnsicht(a); };
 
   const loadMe = useCallback(async () => {
     await ensureFreshToken();
@@ -97,16 +100,20 @@ export function App() {
     setMe(null);
     setProjectId(null);
   };
-  // Every role gets its own layout (decided 13.11.2026). The Einkauf starts in its portal over all sites.
+  // Every role gets its own layout (decided 13.11.2026). The IT administrator starts in the administration.
+  if (me.isAdmin && ansicht === 'admin') {
+    return <AdminShell key={me.user.id} me={me} onLogout={logout} onProjekte={(pid) => { if (pid) setProjectId(pid); setAnsichtStore('projekte'); }} />;
+  }
+  // The Einkauf starts in its portal over all sites.
   if (!me.isAdmin && me.projects.length > 0 && me.projects.every((p) => p.role === 'einkauf')) return <EinkaufShell key={me.user.id} me={me} onLogout={logout} />;
   return projectId ? (
-    <ProjectShell key={`${projectId}-${me.user.id}`} me={me} projectId={projectId} onProject={setProjectId} onLogout={logout} onMeReload={() => void loadMe()} />
+    <ProjectShell key={`${projectId}-${me.user.id}`} me={me} projectId={projectId} onProject={setProjectId} onLogout={logout} onMeReload={() => void loadMe()} onAdmin={() => setAnsichtStore('admin')} />
   ) : (
     <p className="loading">Kein Projekt zugeordnet.</p>
   );
 }
 
-function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: Me; projectId: string; onProject: (id: string) => void; onLogout: () => void; onMeReload: () => void }) {
+function ProjectShell({ me, projectId, onProject, onLogout, onMeReload, onAdmin }: { me: Me; projectId: string; onProject: (id: string) => void; onLogout: () => void; onMeReload: () => void; onAdmin: () => void }) {
   const [newProject, setNewProject] = useState(false);
   const [info, setInfo] = useState<ProjectInfo | null>(null);
   const [maengel, setMaengel] = useState<Mangel[]>([]);
@@ -252,7 +259,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
           {nav('zugaenge', 'zugang', 'Zugänge')}
         </>)}
         {info && info.role === 'nu' && me.companyAdmin && gruppe('firma', 'Meine Firma', <>{nav('zugaenge', 'zugang', 'Mitarbeiter einladen')}</>)}
-        {me.isAdmin && gruppe('admin', 'Administration', <>{nav('admin', 'zugang', 'Benutzer & Projekte')}</>)}
+        {me.isAdmin && gruppe('admin', 'Administration', <><button className="side-item" onClick={onAdmin}><Icon name="zugang" />Zur Administration</button></>)}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
           <div className="who">

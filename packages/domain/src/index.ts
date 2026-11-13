@@ -14,3 +14,4 @@ export * from './etiketten';
 export * from './bestellung';
 export * from './fotodoku';
 export * from './pano';
+export * from './einstellungen';

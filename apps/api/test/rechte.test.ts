@@ -1418,3 +1418,29 @@ describe('Startseite Bauherr', () => {
     for (const u of ['uElektro', 'uPolier'] as const) expect((await call(u, 'GET', `/projects/${ID.project}/cockpit/bauherr`)).status).toBe(403);
   });
 });
+
+describe('IT-Administration: Einstellungen, Systemübersicht, Protokoll', () => {
+  it('nur Admin ändert; Fristen und Freigabegrenze wirken; Protokoll mit Seiten', async () => {
+    const e = (await call('uPolier', 'GET', '/einstellungen')).body;
+    expect(e.maengel.frist_tage.normal).toBe(14);
+    const neu = { ...e, maengel: { ...e.maengel, frist_tage: { ...e.maengel.frist_tage, normal: 5 } }, freigabe: { nachtrag_grenze_netto: 1000 } };
+    expect((await call('uBauleitung', 'PUT', '/admin/einstellungen', neu)).status).toBe(403);
+    expect((await call('uAdmin', 'PUT', '/admin/einstellungen', { ...neu, maengel: { ...neu.maengel, vorwarnung_tage: -1 } })).status).toBe(422);
+    expect((await call('uAdmin', 'PUT', '/admin/einstellungen', neu)).status).toBe(200);
+    // new Mangel gets the configured default deadline (5 days)
+    const id = randomUUID();
+    await call('uBauleitung', 'POST', '/maengel', { id, project_id: ID.project, location_id: ID.raumBad, gewerk_id: ID.gwFliesen, description: 'Silikonfuge fehlt' });
+    const m = (await call('uBauleitung', 'GET', `/projects/${ID.project}/maengel`)).body.find((x: any) => x.id === id);
+    const tage = Math.round((new Date(m.due_date).getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime()) / 86_400_000);
+    expect(tage).toBe(5);
+    // system overview and audit log: admin only
+    expect((await call('uBauleitung', 'GET', '/admin/system')).status).toBe(403);
+    const sys = (await call('uAdmin', 'GET', '/admin/system')).body;
+    expect(sys.zahlen.benutzer_aktiv).toBeGreaterThanOrEqual(8);
+    expect(Array.isArray(sys.speicher)).toBe(true);
+    const p = (await call('uAdmin', 'GET', '/admin/protokoll?bereich=einstellungen')).body;
+    expect(p.eintraege[0].action).toBe('geaendert');
+    expect(p.eintraege[0].data.bereiche).toEqual(expect.arrayContaining(['maengel', 'freigabe']));
+    expect((await call('uElektro', 'GET', '/admin/protokoll')).status).toBe(403);
+  });
+});

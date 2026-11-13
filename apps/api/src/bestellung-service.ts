@@ -10,6 +10,7 @@ import type { TxSql } from '@bap/db';
 import { BANF_LABEL, BANF_STATUS, BanfInput, banfTransition, type BanfStatus } from '@bap/domain';
 import { WEB_URL } from './anmeldung';
 import { sendMail } from './mailer';
+import { ladeEinstellungen } from './system-service';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
 const FROM = () => process.env.MAIL_FROM ?? 'Bau Akte Pro <noreply@bauaktepro.example.test>';
@@ -23,7 +24,7 @@ async function audit(tx: TxSql, userId: string, projectId: string, id: string, a
 
 // --- Notifications --------------------------------------------------------------------------------
 
-export interface Nachricht { art: string; titel: string; text?: string | null; entity?: string | null; entityId?: string | null }
+export interface Nachricht { art: string; titel: string; text?: string | null; entity?: string | null; entityId?: string | null; mailArt?: 'bestellung_mail' | 'status_mail' }
 
 /**
  * Notify users of a project: in-app (always) and by mail (optional). The DB function checks that recipients are
@@ -37,6 +38,8 @@ export async function benachrichtigen(tx: TxSql, userId: string, projectId: stri
     const [r] = await tx`SELECT app.benachrichtigen(${u}, ${projectId}, ${n.art}, ${n.titel}, ${n.text ?? null}, ${n.entity ?? null}, ${n.entityId ?? null}) AS ok`;
     if (r?.ok) count++;
   }
+  // The administrator can switch mails off per kind (settings); the in-app notification always stays.
+  if (mail && n.mailArt && !(await ladeEinstellungen(tx)).benachrichtigung[n.mailArt]) mail = false;
   if (mail) {
     const users = await tx`SELECT email, name FROM app_user WHERE id IN ${tx(ids)} AND active`; // RLS: co-members only
     const [p] = projectId ? await tx`SELECT name FROM project WHERE id = ${projectId}` : [];
@@ -145,7 +148,7 @@ export async function createBanf(tx: TxSql, userId: string, input: unknown, meta
   const text = `${me?.name as string} fordert an: ${d.titel}${d.benoetigt_am ? ` (benötigt am ${d.benoetigt_am.split('-').reverse().join('.')})` : ''}` +
     (d.positionen.length ? `\n${d.positionen.map((p) => `· ${p.menge != null ? `${p.menge} ${p.einheit ?? ''} ` : ''}${p.text}`).join('\n')}` : '');
   const ek = await einkaeufer(tx, d.project_id);
-  const nachricht = { art: 'bestellanforderung', titel: `${d.dringend ? 'DRINGEND: ' : ''}Bestellanforderung Nr. ${n}: ${d.titel}`, text, entity: 'bestellanforderung', entityId: d.id };
+  const nachricht = { art: 'bestellanforderung', titel: `${d.dringend ? 'DRINGEND: ' : ''}Bestellanforderung Nr. ${n}: ${d.titel}`, text, entity: 'bestellanforderung', entityId: d.id, mailArt: 'bestellung_mail' as const };
   // Einkauf by app + mail; the Leitung sees it in the app (mail only if there is no Einkauf on this site).
   await benachrichtigen(tx, userId, d.project_id, ek.length ? ek : await leitung(tx, d.project_id), nachricht, true);
   if (ek.length) await benachrichtigen(tx, userId, d.project_id, await leitung(tx, d.project_id), nachricht, false);
@@ -207,7 +210,7 @@ export async function statusBanf(tx: TxSql, userId: string, id: string, input: u
     : d.bemerkung ?? null;
   const empf = rolle === 'anforderer' ? [...(await einkaeufer(tx, b.project_id as string))] : [b.created_by as string];
   await benachrichtigen(tx, userId, b.project_id as string, empf,
-    { art: 'bestellanforderung', titel: `Bestellanforderung Nr. ${b.number as number} „${b.titel as string}“: ${BANF_LABEL[d.status]}`, text: txt, entity: 'bestellanforderung', entityId: id },
+    { art: 'bestellanforderung', titel: `Bestellanforderung Nr. ${b.number as number} „${b.titel as string}“: ${BANF_LABEL[d.status]}`, text: txt, entity: 'bestellanforderung', entityId: id, mailArt: 'status_mail' },
     d.status !== 'in_bearbeitung');
   return getBanf(tx, id);
 }

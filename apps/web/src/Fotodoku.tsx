@@ -4,11 +4,26 @@
  * viewer. A photo can become a Mangel at the same spot.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FOTODOKU_KATEGORIEN, FOTODOKU_LABEL, PANO_JS, PRIORITIES, formatDate, type FotodokuKategorie } from '@bap/domain';
+import { FOTODOKU_KATEGORIEN, FOTODOKU_LABEL as STANDARD_LABEL, PANO_JS, PRIORITIES, formatDate, type Einstellungen, type FotodokuKategorie } from '@bap/domain';
 import { api, getToken, type ProjectInfo } from './api';
 import { PlanView } from './PlanView';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
+
+/** Category names from the company settings (administration); falls back to the defaults. */
+let FOTODOKU_LABEL: Record<FotodokuKategorie, string> = { ...STANDARD_LABEL };
+let AKTIV: FotodokuKategorie[] = [...FOTODOKU_KATEGORIEN];
+let geladen: Promise<void> | null = null;
+function useKategorien() {
+  const [, setV] = useState(0);
+  useEffect(() => {
+    geladen ??= api<Einstellungen>('/einstellungen').then((e) => {
+      FOTODOKU_LABEL = Object.fromEntries(FOTODOKU_KATEGORIEN.map((k) => [k, e.fotodoku.kategorien[k]?.label ?? STANDARD_LABEL[k]])) as Record<FotodokuKategorie, string>;
+      AKTIV = FOTODOKU_KATEGORIEN.filter((k) => e.fotodoku.kategorien[k]?.aktiv !== false);
+    }).catch(() => {});
+    void geladen.then(() => setV((v) => v + 1));
+  }, []);
+}
 
 export interface DokuFoto {
   id: string; project_id: string; plan_id: string | null; pin_page: number | null; pin_x: number | null; pin_y: number | null;
@@ -60,6 +75,7 @@ export function Pano360({ url }: { url: string }) {
 }
 
 export function FotodokuPage({ info, run, onOpenMangel }: { info: ProjectInfo; run: Run; onOpenMangel: (id: string) => void }) {
+  useKategorien();
   const plaene = info.plans.filter((p) => p.released);
   const [planId, setPlanId] = useState<string>(plaene[0]?.id ?? '');
   const [kat, setKat] = useState<FotodokuKategorie | ''>('');
@@ -142,7 +158,7 @@ function HochladenSheet({ info, planId, pos, run, onClose }: { info: ProjectInfo
       }, files.length > 1 ? `${files.length} Fotos abgelegt` : 'Foto abgelegt')}>
       <div className="group">
         <label className="row"><span className="k">Fotos</span><input type="file" accept="image/jpeg,image/png" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} /></label>
-        <div className="row"><span className="k">Kategorie</span><select value={kat} onChange={(e) => setKat(e.target.value as FotodokuKategorie)}>{FOTODOKU_KATEGORIEN.map((k) => <option key={k} value={k}>{FOTODOKU_LABEL[k]}</option>)}</select></div>
+        <div className="row"><span className="k">Kategorie</span><select value={kat} onChange={(e) => setKat(e.target.value as FotodokuKategorie)}>{AKTIV.map((k) => <option key={k} value={k}>{FOTODOKU_LABEL[k]}</option>)}</select></div>
         <div className="row"><span className="k">Titel</span><input value={titel} onChange={(e) => setTitel(e.target.value)} placeholder="z. B. Bad Vorwand vor Beplankung" /></div>
         <div className="row"><span className="k">Ort</span><select value={ort} onChange={(e) => setOrt(e.target.value)}><option value="">{pos ? 'aus der Planposition' : '–'}</option>{info.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
         <div className="row stack"><textarea rows={2} placeholder="Notiz (z. B. Leitungsführung, Abstände, Besonderheiten)" value={notiz} onChange={(e) => setNotiz(e.target.value)} /></div>

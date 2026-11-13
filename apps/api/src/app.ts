@@ -14,6 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
+import { ladeEinstellungen, protokoll, saveEinstellungen, systemUebersicht } from './system-service';
 import { bauherrCockpit, leitungCockpit, polierCockpit } from './cockpit-service';
 import { createFotodoku, editFotodoku, fotodokuDatei, fotodokuFile, listFotodoku, mangelAusFoto, removeFotodoku } from './fotodoku-service';
 import { anzahlUngelesen, banfZuLv, createBanf, editBanf, einkaufsportal, getBanf, listBanf, listNachrichten, nachrichtGelesen, statusBanf } from './bestellung-service';
@@ -295,6 +296,11 @@ export function buildApp(sql: Sql) {
   });
 
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/cockpit/bauherr', async (req) => asUser(sql, req.userId, (tx) => bauherrCockpit(tx, req.userId, req.params.projectId)));
+  // --- IT administration (settings, system overview, audit log) ---------------------------------
+  app.get('/einstellungen', async (req) => asUser(sql, req.userId, (tx) => ladeEinstellungen(tx)));
+  app.put('/admin/einstellungen', async (req) => asUser(sql, req.userId, (tx) => saveEinstellungen(tx, req.userId, req.body, meta(req))));
+  app.get('/admin/system', async (req) => asUser(sql, req.userId, (tx) => systemUebersicht(tx)));
+  app.get('/admin/protokoll', async (req) => asUser(sql, req.userId, (tx) => protokoll(tx, req.query)));
   app.get('/cockpit/leitung', async (req) => asUser(sql, req.userId, (tx) => leitungCockpit(tx)));
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/cockpit/polier', async (req) => asUser(sql, req.userId, (tx) => polierCockpit(tx, req.userId, req.params.projectId)));
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/start', async (req) => asUser(sql, req.userId, (tx) => startPage(tx, req.userId, req.params.projectId)));

@@ -111,9 +111,14 @@ const DAY = 86_400_000;
 const toDate = (iso: string) => new Date(`${iso}T00:00:00Z`);
 const toIso = (d: Date) => d.toISOString().slice(0, 10);
 
+/** Thresholds from the company settings (Einstellungen.maengel); defaults = start values of the Fachkonzept. */
+export interface EskalationsRegeln { vorwarnung_tage: number; eskalation_tage: number; nachfrist_tage: Record<Priority, number> }
+const STANDARD_REGELN: EskalationsRegeln = { vorwarnung_tage: 2, eskalation_tage: 7, nachfrist_tage: DEFAULT_NACHFRIST_DAYS };
+
 export function escalation(
   m: { status: MangelStatus; due_date: string | null; nachfrist_date: string | null; priority: Priority },
   today: Date = new Date(),
+  regeln: EskalationsRegeln = STANDARD_REGELN,
 ): Escalation {
   if (m.status === 'abgenommen') return { stage: 'erledigt', daysOverdue: null, ampel: 'grau', label: 'Erledigt', nachfristSuggestion: null };
   const deadline = m.nachfrist_date ?? m.due_date;
@@ -121,15 +126,15 @@ export function escalation(
   const t = toDate(toIso(today)).getTime();
   const days = Math.round((t - toDate(deadline).getTime()) / DAY);
   const suggestion =
-    days > 0 && !m.nachfrist_date ? toIso(new Date(t + DEFAULT_NACHFRIST_DAYS[m.priority] * DAY)) : null;
+    days > 0 && !m.nachfrist_date ? toIso(new Date(t + regeln.nachfrist_tage[m.priority] * DAY)) : null;
   const prefix = m.nachfrist_date ? '2. Nachfrist ' : '';
-  if (days < -2) return { stage: 'laeuft', daysOverdue: days, ampel: 'gruen', label: `${prefix}läuft (${-days} Tage)`, nachfristSuggestion: null };
+  if (days < -regeln.vorwarnung_tage) return { stage: 'laeuft', daysOverdue: days, ampel: 'gruen', label: `${prefix}läuft (${-days} Tage)`, nachfristSuggestion: null };
   if (days <= 0) return { stage: 'bald_faellig', daysOverdue: days, ampel: 'gelb', label: days === 0 ? `${prefix}heute fällig` : `${prefix}in ${-days} Tagen fällig`, nachfristSuggestion: null };
-  if (days < 7) return { stage: 'ueberfaellig', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig seit ${days} Tagen`, nachfristSuggestion: suggestion };
-  // Decided 12.11.2026: no escalation to the Geschäftsführung; from day 7 the Bauleitung is the last stage.
+  if (days < regeln.eskalation_tage) return { stage: 'ueberfaellig', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig seit ${days} Tagen`, nachfristSuggestion: suggestion };
+  // Decided 12.11.2026: no escalation to the Geschäftsführung; from day 7 (configurable) the Bauleitung is the last stage.
   return { stage: 'an_bauleitung', daysOverdue: days, ampel: 'rot', label: `${prefix}überfällig ${days} Tage – Bauleitung`, nachfristSuggestion: suggestion };
 }
 
-export function defaultDueDate(priority: Priority, from: Date = new Date()): string {
-  return toIso(new Date(toDate(toIso(from)).getTime() + DEFAULT_DEADLINE_DAYS[priority] * DAY));
+export function defaultDueDate(priority: Priority, from: Date = new Date(), tage: Record<Priority, number> = DEFAULT_DEADLINE_DAYS): string {
+  return toIso(new Date(toDate(toIso(from)).getTime() + tage[priority] * DAY));
 }

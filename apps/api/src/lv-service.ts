@@ -14,6 +14,7 @@ import { WEB_URL } from './anmeldung';
 import { LOGO_DIR } from './bautagebuch-service';
 import { renderLvPdf } from './lv-pdf';
 import { banfAngefragt } from './bestellung-service';
+import { ladeEinstellungen } from './system-service';
 import { sendMail } from './mailer';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
@@ -331,7 +332,7 @@ export async function submitAngebot(admin: Sql, token: string, input: unknown, f
              VALUES (${a.tenant_id}, ${a.project_id}, 'lv', ${a.lv_id}, 'angebot', ${userId}, ${d.name}, now(), ${tx.json({ angebot: id, positionen: preise.length, pdf: !!pdfKey } as never)})`;
   });
   const [owner] = await admin`SELECT u.email, c.name AS company FROM app_user u, company c WHERE u.id = ${l.created_by} AND c.id = ${a.company_id}`;
-  if (owner?.email) {
+  if (owner?.email && (await ladeEinstellungen(admin, a.tenant_id)).benachrichtigung.angebot_mail) {
     await sendMail({ from: FROM(), to: owner.email as string, subject: `Angebot eingegangen: ${owner.company as string} – ${l.titel as string}`,
       text: `${d.name} (${owner.company as string}) hat ein Angebot für „${l.titel as string}“ abgegeben.\nPreisspiegel: ${WEB_URL}\n`, attachments: [] });
   }

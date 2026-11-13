@@ -8,6 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { TxSql } from '@bap/db';
+import { ladeEinstellungen } from './system-service';
 import { EINREICHUNG_STATUS_LABELS, needsGeschaeftsfuehrung, type EinreichungStatus } from '@bap/domain';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
 
@@ -98,7 +99,7 @@ export async function decideEinreichung(tx: TxSql, userId: string, id: string, i
       if (d.decision === 'ablehnen' && !d.reason?.trim()) throw new HttpError(422, 'Bitte eine Begründung angeben (der NU sieht sie)');
       status = d.decision === 'pruefen' ? 'in_pruefung'
         : d.decision === 'ablehnen' ? 'abgelehnt'
-          : needsGeschaeftsfuehrung(e.kind as 'nachtrag' | 'rechnung', Number(e.amount_net)) ? 'gf_erforderlich' : 'freigegeben';
+          : needsGeschaeftsfuehrung(e.kind as 'nachtrag' | 'rechnung', Number(e.amount_net), (await ladeEinstellungen(tx)).freigabe.nachtrag_grenze_netto) ? 'gf_erforderlich' : 'freigegeben';
     }
   }
   const decided = status !== 'in_pruefung' && status !== 'zurueckgezogen';

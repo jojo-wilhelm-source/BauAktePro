@@ -55,5 +55,5 @@ export type EinreichungStatus = keyof typeof EINREICHUNG_STATUS_LABELS;
 export const RECHNUNG_ART_LABELS = { abschlag: 'Abschlagsrechnung', teil: 'Teilrechnung', schluss: 'Schlussrechnung', regie: 'Regierechnung' } as const;
 /** Freigabegrenze (B3): Nachträge bis einschließlich 50.000,00 € netto gibt die Leitung frei, darüber die Geschäftsführung. */
 export const FREIGABEGRENZE_NETTO = 50_000;
-export const needsGeschaeftsfuehrung = (kind: 'nachtrag' | 'rechnung', amountNet: number) => kind === 'nachtrag' && amountNet > FREIGABEGRENZE_NETTO;
+export const needsGeschaeftsfuehrung = (kind: 'nachtrag' | 'rechnung', amountNet: number, grenze = FREIGABEGRENZE_NETTO) => kind === 'nachtrag' && amountNet > grenze;
 export const einreichungNo = (kind: 'nachtrag' | 'rechnung', n: number) => `${kind === 'nachtrag' ? 'NT' : 'RE'}-${String(n).padStart(3, '0')}`;

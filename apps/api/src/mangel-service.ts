@@ -11,6 +11,7 @@ import {
   type MangelStatus,
   type ProjectRole,
 } from '@bap/domain';
+import { ladeEinstellungen } from './system-service';
 import { z } from 'zod';
 
 export class HttpError extends Error {
@@ -73,7 +74,7 @@ export async function createMangel(tx: TxSql, userId: string, input: unknown, me
   const [{ n }] = (await tx`SELECT app.next_mangel_number(${data.project_id}) AS n`) as unknown as [{ n: number }];
   const row = {
     ...data,
-    due_date: data.due_date ?? defaultDueDate(data.priority, meta.occurredAt),
+    due_date: data.due_date ?? defaultDueDate(data.priority, meta.occurredAt, (await ladeEinstellungen(tx)).maengel.frist_tage),
     number: n,
     status: confirmed ? 'zugewiesen' : 'neu',
     assignment_confirmed: confirmed,
