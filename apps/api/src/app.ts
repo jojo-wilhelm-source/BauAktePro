@@ -16,6 +16,7 @@ import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, pa
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
 import { archivieren, konto, passwortAendern, saveKonto } from './konto-service';
 import { ladeEinstellungen, protokoll, saveEinstellungen, systemUebersicht } from './system-service';
+import { dateiSenden } from './datei';
 import { bauherrCockpit, leitungCockpit, nuCockpit, polierCockpit } from './cockpit-service';
 import { createFotodoku, editFotodoku, fotodokuDatei, fotodokuFile, listFotodoku, mangelAusFoto, removeFotodoku } from './fotodoku-service';
 import { anzahlUngelesen, banfZuLv, createBanf, editBanf, einkaufsportal, getBanf, listBanf, listNachrichten, nachrichtGelesen, statusBanf } from './bestellung-service';
@@ -129,9 +130,7 @@ export function buildApp(sql: Sql) {
   });
   app.get<{ Params: { token: string } }>('/public/freimeldung/:token', async (req) => publicAnzeige(admin, req.params.token));
   app.get<{ Params: { token: string; fotoId: string } }>('/public/freimeldung/:token/foto/:fotoId', async (req, reply) => {
-    const f = await publicFoto(admin, req.params.token, z.string().uuid().parse(req.params.fotoId));
-    reply.header('content-type', f.type).header('cache-control', 'private, max-age=3600');
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await publicFoto(admin, req.params.token, z.string().uuid().parse(req.params.fotoId)), { maxAge: 3600 });
   });
   app.post<{ Params: { token: string; posId: string } }>('/public/freimeldung/:token/positionen/:posId', async (req) => {
     const posId = z.string().uuid().parse(req.params.posId);
@@ -190,9 +189,7 @@ export function buildApp(sql: Sql) {
     return asUser(sql, req.userId, (tx) => addPunktFoto(tx, req.userId, req.params.id, u, u.fields.caption ?? null, u.fields.id));
   });
   app.get<{ Params: { id: string } }>('/besprechung-fotos/:id', async (req, reply) => {
-    const f = await asUser(sql, req.userId, (tx) => punktFotoFile(tx, req.params.id));
-    reply.header('content-type', f.type).header('cache-control', 'private, max-age=86400');
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => punktFotoFile(tx, req.params.id)));
   });
   app.post<{ Params: { id: string } }>('/besprechungen/:id/bauherr-freigabe', async (req) =>
     asUser(sql, req.userId, (tx) => bauherrFreigabe(tx, req.userId, req.params.id, z.object({ freigabe: z.boolean() }).parse(req.body).freigabe, meta(req))));
@@ -230,9 +227,7 @@ export function buildApp(sql: Sql) {
     return asUser(sql, req.userId, (tx) => fotodokuDatei(tx, req.userId, req.params.id, u.bytes));
   });
   app.get<{ Params: { id: string }; Querystring: { vorschau?: string } }>('/fotodoku/:id/datei', async (req, reply) => {
-    const f = await asUser(sql, req.userId, (tx) => fotodokuFile(tx, req.params.id, req.query.vorschau === '1'));
-    reply.header('content-type', f.type).header('cache-control', 'private, max-age=604800, immutable');
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => fotodokuFile(tx, req.params.id, req.query.vorschau === '1')), { maxAge: 604800 });
   });
   app.post<{ Params: { id: string } }>('/fotodoku/:id/mangel', async (req) => asUser(sql, req.userId, (tx) => mangelAusFoto(tx, req.userId, req.params.id, req.body, meta(req))));
 
@@ -256,9 +251,7 @@ export function buildApp(sql: Sql) {
     return reply.send(Buffer.from(pdf.bytes));
   });
   app.get<{ Params: { id: string } }>('/angebote/:id/pdf', async (req, reply) => {
-    const bytes = await asUser(sql, req.userId, (tx) => angebotPdf(tx, req.params.id));
-    reply.header('content-type', 'application/pdf');
-    return reply.send(bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => angebotPdf(tx, req.params.id)));
   });
 
   // --- Bautagebuch (docs/fachkonzept/07) ---------------------------------------------
@@ -282,9 +275,7 @@ export function buildApp(sql: Sql) {
     return asUser(sql, req.userId, (tx) => addTbFoto(tx, req.userId, req.params.id, u, u.fields.caption ?? null));
   });
   app.get<{ Params: { id: string } }>('/tagesbericht-fotos/:id', async (req, reply) => {
-    const f = await asUser(sql, req.userId, (tx) => tbFotoFile(tx, req.params.id));
-    reply.header('content-type', f.type);
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => tbFotoFile(tx, req.params.id)));
   });
   app.put('/tagesbericht-vorlagen', async (req) => asUser(sql, req.userId, (tx) => saveTbVorlage(tx, req.userId, req.body)));
   app.delete<{ Params: { id: string } }>('/tagesbericht-vorlagen/:id', async (req) => asUser(sql, req.userId, (tx) => removeTbVorlage(tx, req.params.id)));
@@ -332,9 +323,7 @@ export function buildApp(sql: Sql) {
   app.patch<{ Params: { id: string } }>('/mitglieder/:id', async (req) => asUser(sql, req.userId, (tx) => updateMember(tx, req.userId, req.params.id, req.body, meta(req))));
   app.get('/firma', async (req) => asUser(sql, req.userId, (tx) => ownCompany(tx)));
   app.get('/firma/logo', async (req, reply) => {
-    const f = await asUser(sql, req.userId, (tx) => ownLogo(tx));
-    reply.header('content-type', f.type);
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => ownLogo(tx)), { maxAge: 3600 });
   });
   app.post('/admin/firma', async (req) => {
     if (req.isMultipart()) {
@@ -468,22 +457,17 @@ export function buildApp(sql: Sql) {
   app.get<{ Params: { id: string } }>('/plans/:id/file', async (req, reply) => {
     const plan = await asUser(sql, req.userId, async (tx) => (await tx`SELECT file_key, name FROM plan WHERE id = ${req.params.id}`)[0]);
     if (!plan) throw new HttpError(404, 'Plan nicht gefunden');
-    reply.header('content-type', 'application/pdf');
-    return reply.send(createReadStream(PLAN_DIR + (plan.file_key as string).replace(/[^a-z0-9._-]/gi, '')));
+    // Streamed with byte ranges: the PDF viewer loads large plans page by page; ETag avoids loading twice.
+    return dateiSenden(req, reply, { pfad: PLAN_DIR + (plan.file_key as string).replace(/[^a-z0-9._-]/gi, ''), type: 'application/pdf' }, { maxAge: 3600 });
   });
 
   // --- Fotos & Mängelbericht (docs/fachkonzept/04) -------------------------------
   app.post<{ Params: { id: string } }>('/maengel/:id/fotos', async (req) => {
-    const file = await req.file();
-    if (!file) throw new HttpError(422, 'Kein Foto');
-    const bytes = await file.toBuffer();
-    const fields = Object.fromEntries(Object.entries(file.fields).flatMap(([k, v]) => (v && 'value' in (v as object) ? [[k, (v as { value: string }).value]] : [])));
+    const { bytes, fields } = await readUpload(req);
     return asUser(sql, req.userId, (tx) => addFoto(tx, req.userId, req.params.id, fields, bytes, meta(req, fields.taken_at as string | undefined)));
   });
   app.get<{ Params: { id: string } }>('/fotos/:id/file', async (req, reply) => {
-    const f = await asUser(sql, req.userId, (tx) => fotoFile(tx, req.params.id));
-    reply.header('content-type', f.type).header('cache-control', 'private, max-age=86400');
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => fotoFile(tx, req.params.id)));
   });
   /** Mängelbericht: ids = selection (else all visible), sort and gruppen (folders, e.g. "firma,monat") as in the list. */
   app.get<{ Params: { projectId: string }; Querystring: { ids?: string; sort?: string; gruppen?: string } }>('/projects/:projectId/maengel/pdf', async (req, reply) => {
@@ -527,10 +511,7 @@ export function buildApp(sql: Sql) {
   // --- Pläne: register, revisions, approval, QR check (docs/fachkonzept/03) -------
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/plaene', async (req) => asUser(sql, req.userId, (tx) => listPlans(tx, req.userId, req.params.projectId)));
   app.post('/plan-revisions', async (req) => {
-    const file = await req.file();
-    if (!file) throw new HttpError(422, 'Keine Datei');
-    const bytes = await file.toBuffer();
-    const fields = Object.fromEntries(Object.entries(file.fields).flatMap(([k, v]) => (v && 'value' in (v as object) ? [[k, (v as { value: string }).value]] : [])));
+    const { bytes, fields } = await readUpload(req);
     return asUser(sql, req.userId, (tx) => uploadRevision(tx, req.userId, fields, bytes, meta(req)));
   });
   app.post<{ Params: { id: string } }>('/plan-revisions/:id/decision', async (req) =>
@@ -578,9 +559,7 @@ export function buildApp(sql: Sql) {
     return asUser(sql, req.userId, (tx) => attachToZettel(tx, req.userId, req.params.id, u, meta(req)));
   });
   app.get<{ Params: { id: string } }>('/stundenzettel/:id/anhang', async (req, reply) => {
-    const f = await asUser(sql, req.userId, (tx) => zettelAttachment(tx, req.params.id));
-    reply.header('content-type', f.mime);
-    return reply.send(f.bytes);
+    return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => zettelAttachment(tx, req.params.id)));
   });
 
   // --- NU-Einreichungen: Nachträge und Rechnungen (docs/fachkonzept/11) ----------------
@@ -592,8 +571,8 @@ export function buildApp(sql: Sql) {
   app.post<{ Params: { id: string } }>('/einreichungen/:id/decision', async (req) => asUser(sql, req.userId, (tx) => decideEinreichung(tx, req.userId, req.params.id, req.body, meta(req))));
   app.get<{ Params: { id: string } }>('/einreichungen/:id/file', async (req, reply) => {
     const f = await asUser(sql, req.userId, (tx) => einreichungFile(tx, req.params.id));
-    reply.header('content-type', f.mime).header('content-disposition', contentDisposition(f.name));
-    return reply.send(f.bytes);
+    reply.header('content-disposition', contentDisposition(f.name));
+    return dateiSenden(req, reply, { pfad: f.pfad, type: f.type });
   });
 
   // --- Nachunternehmer, Einkäufe, Fahrtenbuch, Kosten (docs/fachkonzept/11, 14) ---------
@@ -610,9 +589,7 @@ export function buildApp(sql: Sql) {
       return asUser(sql, req.userId, (tx) => attachBeleg(tx, kind, req.params.id, u));
     });
     app.get<{ Params: { id: string } }>(`${base}/:id/beleg`, async (req, reply) => {
-      const f = await asUser(sql, req.userId, (tx) => belegFile(tx, kind, req.params.id));
-      reply.header('content-type', f.mime);
-      return reply.send(f.bytes);
+      return dateiSenden(req, reply, await asUser(sql, req.userId, (tx) => belegFile(tx, kind, req.params.id)));
     });
   }
   app.get('/fahrtenbuch', async (req) => asUser(sql, req.userId, (tx) => fahrtenbuch(tx, req.userId)));

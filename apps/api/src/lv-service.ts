@@ -270,7 +270,7 @@ export async function vergeben(tx: TxSql, userId: string, id: string, input: unk
 export async function angebotPdf(tx: TxSql, angebotId: string) {
   const [o] = await tx`SELECT pdf_key FROM angebot WHERE id = ${angebotId}`; // RLS
   if (!o?.pdf_key) throw new HttpError(404, 'Kein PDF');
-  return readFile(DIR + (o.pdf_key as string).replace(/[^a-z0-9._-]/gi, ''));
+  return { pfad: DIR + (o.pdf_key as string).replace(/[^a-z0-9._-]/gi, ''), type: 'application/pdf' };
 }
 
 // --- Public link (no account) -------------------------------------------------------------------

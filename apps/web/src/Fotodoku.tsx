@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FOTODOKU_KATEGORIEN, FOTODOKU_LABEL as STANDARD_LABEL, PANO_JS, PRIORITIES, formatDate, type Einstellungen, type FotodokuKategorie } from '@bap/domain';
 import { api, getToken, type ProjectInfo } from './api';
 import { PlanView } from './PlanView';
+import { useApiBild } from './ui/useApiBild';
 import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 
@@ -32,20 +33,8 @@ export interface DokuFoto {
   version: number; created_by: string; von: string; created_at: string;
 }
 
-/** Image from the API with the auth header (no token in URLs); preview size for lists. */
-function useBild(id: string | null, vorschau: boolean) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!id) return;
-    let u: string | null = null;
-    let cancel = false;
-    void fetch(`/api/fotodoku/${id}/datei${vorschau ? '?vorschau=1' : ''}`, { headers: { authorization: `Bearer ${getToken()}` } })
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((b) => { if (b && !cancel) setUrl((u = URL.createObjectURL(b))); });
-    return () => { cancel = true; if (u) URL.revokeObjectURL(u); };
-  }, [id, vorschau]);
-  return url;
-}
+/** Photo of the Fotodoku via the shared image cache; preview size for lists. */
+const useBild = (id: string | null, vorschau: boolean) => useApiBild(id ? `/fotodoku/${id}/datei${vorschau ? '?vorschau=1' : ''}` : null);
 
 function Kachel({ f, onOpen, anzahl = 1 }: { f: DokuFoto; onOpen: () => void; anzahl?: number }) {
   const url = useBild(f.hochgeladen ? f.id : null, true);

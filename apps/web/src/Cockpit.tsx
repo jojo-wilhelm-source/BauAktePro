@@ -4,7 +4,8 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { BANF_LABEL, FOTODOKU_LABEL, PUNKT_STATUS_LABELS, formatDate, type BanfStatus, type Escalation, type FotodokuKategorie, type PunktStatus } from '@bap/domain';
-import { api, getToken, type ProjectInfo } from './api';
+import { api, type ProjectInfo } from './api';
+import { useApiBild } from './ui/useApiBild';
 import { Icon, type IconName } from './ui/Icon';
 import { PageHeader } from './ui/layout';
 import { AmpelPill, mNo } from './ui/status';
@@ -44,12 +45,7 @@ function Schnell({ icon, label, onClick, primary }: { icon: IconName; label: str
   return <button className={`btn ${primary ? 'filled' : ''} schnell`} onClick={onClick}><Icon name={icon} size={18} />{label}</button>;
 }
 function Vorschau({ id }: { id: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let u: string | null = null;
-    void fetch(`/api/fotodoku/${id}/datei?vorschau=1`, { headers: { authorization: `Bearer ${getToken()}` } }).then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) setUrl((u = URL.createObjectURL(b))); });
-    return () => { if (u) URL.revokeObjectURL(u); };
-  }, [id]);
+  const url = useApiBild(`/fotodoku/${id}/datei?vorschau=1`);
   return url ? <img src={url} alt="" /> : null;
 }
 

@@ -52,7 +52,7 @@ export async function fotoFile(tx: TxSql, id: string) {
   const [f] = await tx`SELECT file_key FROM mangel_foto WHERE id = ${id}`;
   if (!f) throw new HttpError(404, 'Foto nicht gefunden');
   const key = (f.file_key as string).replace(/[^a-z0-9._-]/gi, '');
-  return { bytes: await readFile(FOTO_DIR + key), type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
+  return { pfad: FOTO_DIR + key, type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }
 
 /** First "mangel" photo per Mangel, for PDFs. */

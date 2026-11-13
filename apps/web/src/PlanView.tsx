@@ -56,7 +56,8 @@ export function PlanView({ planId, planIndex, maengel, punkte = [], selectedId, 
     setSize(null);
     (async () => {
       try {
-        const doc = await pdfjs.getDocument({ url: `/api/plans/${planId}/file?v=${planIndex}`, httpHeaders: { authorization: `Bearer ${getToken()}` } }).promise;
+        // Large plans: the server answers byte ranges, so pdf.js loads only the data for page 1 (disableAutoFetch).
+        const doc = await pdfjs.getDocument({ url: `/api/plans/${planId}/file?v=${planIndex}`, httpHeaders: { authorization: `Bearer ${getToken()}` }, disableAutoFetch: true, rangeChunkSize: 262144 }).promise;
         const page = await doc.getPage(1);
         const width = canvas.current?.parentElement?.parentElement?.clientWidth ?? 900;
         const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });

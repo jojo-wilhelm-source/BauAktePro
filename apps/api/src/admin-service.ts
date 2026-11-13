@@ -3,7 +3,7 @@
  * all users with their projects and roles, locks/unlocks accounts, grants admin and firm-admin rights.
  * Every change is a rights change and goes to the audit log (per affected project, or tenant-wide entry).
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { LOGO_DIR } from './bautagebuch-service';
 import type { TxSql } from '@bap/db';
@@ -101,5 +101,5 @@ export async function ownLogo(tx: TxSql) {
   const [c] = await tx`SELECT logo_key FROM company WHERE tenant_id = app.user_tenant() AND kind = 'own' AND logo_key IS NOT NULL LIMIT 1`;
   if (!c) throw new HttpError(404, 'Kein Logo');
   const key = (c.logo_key as string).replace(/[^a-z0-9._-]/gi, '');
-  return { bytes: await readFile(LOGO_DIR + key), type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
+  return { pfad: LOGO_DIR + key, type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }

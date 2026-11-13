@@ -3,7 +3,7 @@
  * the device – also offline – and the file follows; 360° photos (Insta360 export, equirectangular) are recognised from
  * the file. Internal roles only (RLS). A photo can become a Mangel at the same spot.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { z } from 'zod';
@@ -121,10 +121,11 @@ export async function fotodokuFile(tx: TxSql, id: string, thumb = false) {
   const [f] = await tx`SELECT file_key FROM foto_doku WHERE id = ${id}`; // RLS
   if (!f?.file_key) throw new HttpError(404, 'Foto nicht gefunden');
   if (thumb) {
-    try { return { bytes: await readFile(`${FOTO_DIR}doku-${id.replace(/[^a-f0-9-]/gi, '')}-t.jpg`), type: 'image/jpeg' }; } catch { /* no preview: original */ }
+    const vorschau = `${FOTO_DIR}doku-${id.replace(/[^a-f0-9-]/gi, '')}-t.jpg`;
+    if (await stat(vorschau).then(() => true, () => false)) return { pfad: vorschau, type: 'image/jpeg' };
   }
   const key = (f.file_key as string).replace(/[^a-z0-9._-]/gi, '');
-  return { bytes: await readFile(FOTO_DIR + key), type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
+  return { pfad: FOTO_DIR + key, type: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }
 
 export async function editFotodoku(tx: TxSql, userId: string, id: string, input: unknown, meta: WriteMeta) {
@@ -173,7 +174,7 @@ export async function mangelAusFoto(tx: TxSql, userId: string, id: string, input
   }, meta);
   if (f.hochgeladen) {
     const file = await fotodokuFile(tx, id);
-    await addFoto(tx, userId, mangelId, { id: randomUUID(), kind: 'mangel', taken_at: new Date(f.taken_at as string).toISOString() }, file.bytes, meta);
+    await addFoto(tx, userId, mangelId, { id: randomUUID(), kind: 'mangel', taken_at: new Date(f.taken_at as string).toISOString() }, await readFile(file.pfad), meta);
   }
   await tx`UPDATE foto_doku SET mangel_id = ${mangelId}, version = version + 1 WHERE id = ${id}`;
   await audit(tx, userId, f.project_id as string, id, 'mangel_erstellt', meta, { mangel_id: mangelId });

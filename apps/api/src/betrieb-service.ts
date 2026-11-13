@@ -2,7 +2,7 @@
  * Nachunternehmer-Verzeichnis, Baustellen-Einkäufe, Fahrtenbuch und Kostenübersicht
  * (docs/fachkonzept/11, 14). Visibility via RLS; the API adds role checks and never returns prices to non-Leitung.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { TxSql } from '@bap/db';
@@ -179,7 +179,7 @@ export async function belegFile(tx: TxSql, kind: 'einkauf' | 'tankvorgang', id: 
   const [row] = kind === 'einkauf' ? await tx`SELECT beleg_key FROM einkauf WHERE id = ${id}` : await tx`SELECT beleg_key FROM tankvorgang WHERE id = ${id}`;
   if (!row?.beleg_key) throw new HttpError(404, 'Kein Beleg');
   const key = (row.beleg_key as string).replace(/[^a-z0-9._-]/gi, '');
-  return { bytes: await readFile(BELEG_DIR + key), mime: key.endsWith('.pdf') ? 'application/pdf' : key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
+  return { pfad: BELEG_DIR + key, type: key.endsWith('.pdf') ? 'application/pdf' : key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }
 
 // --- Fahrtenbuch -------------------------------------------------------------------------

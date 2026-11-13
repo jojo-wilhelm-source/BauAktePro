@@ -4,7 +4,7 @@
  * No payment is ever triggered (CLAUDE.md, Arbeitsweise 7).
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { TxSql } from '@bap/db';
@@ -120,5 +120,5 @@ export async function einreichungFile(tx: TxSql, id: string) {
   if (!e) throw new HttpError(404, 'Einreichung nicht gefunden');
   const key = (e.file_key as string).replace(/[^a-z0-9._-]/gi, '');
   const mime = key.endsWith('.pdf') ? 'application/pdf' : key.endsWith('.xml') ? 'application/xml' : key.endsWith('.png') ? 'image/png' : 'image/jpeg';
-  return { bytes: await readFile(DIR + key), mime, name: e.file_name as string };
+  return { pfad: DIR + key, type: mime, name: e.file_name as string };
 }

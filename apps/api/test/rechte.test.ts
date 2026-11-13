@@ -1490,3 +1490,19 @@ describe('Fotodoku-Serien', () => {
     expect((await call('uPolier', 'POST', '/fotodoku', { id: randomUUID(), serie_id: randomUUID(), project_id: ID.project, kategorie: 'schacht' })).status).toBe(422);
   });
 });
+
+describe('Große Dateien: Teil-Downloads und Zwischenspeicher', () => {
+  it('Plan mit Range (206) und ETag (304); fremde Pläne bleiben gesperrt', async () => {
+    const h = { authorization: `Bearer ${tokens.uBauleitung}` };
+    const voll = await app.inject({ method: 'GET', url: `/plans/${ID.planEg}/file`, headers: h });
+    expect(voll.statusCode).toBe(200);
+    expect(voll.headers['accept-ranges']).toBe('bytes');
+    const groesse = Number(voll.headers['content-length']);
+    const teil = await app.inject({ method: 'GET', url: `/plans/${ID.planEg}/file`, headers: { ...h, range: 'bytes=0-99' } });
+    expect(teil.statusCode).toBe(206);
+    expect(teil.headers['content-range']).toBe(`bytes 0-99/${groesse}`);
+    expect(teil.rawPayload.length).toBe(100);
+    const wieder = await app.inject({ method: 'GET', url: `/plans/${ID.planEg}/file`, headers: { ...h, 'if-none-match': String(voll.headers.etag) } });
+    expect(wieder.statusCode).toBe(304);
+  });
+});

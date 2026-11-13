@@ -9,7 +9,7 @@
  * The public part runs on the admin connection, but every query is bound to the token and to this one Anzeige.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { Sql, TxSql } from '@bap/db';
@@ -120,7 +120,7 @@ export async function publicFoto(admin: Sql, token: string, fotoId: string) {
     WHERE f.id = ${fotoId} AND p.anzeige_id = ${l.anzeige_id}`;
   if (!f) throw new HttpError(404, 'Foto nicht gefunden');
   const key = (f.file_key as string).replace(/[^a-z0-9._-]/gi, '');
-  return { bytes: await readFile(FOTO_DIR + key), type: key.endsWith('.png') ? 'image/png' : key.endsWith('.heic') ? 'image/heic' : 'image/jpeg' };
+  return { pfad: FOTO_DIR + key, type: key.endsWith('.png') ? 'image/png' : key.endsWith('.heic') ? 'image/heic' : 'image/jpeg' };
 }
 
 const MeldungInput = z.object({

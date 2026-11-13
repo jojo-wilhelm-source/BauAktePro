@@ -3,7 +3,7 @@
  * Entwurf → Eingereicht → Bestätigt | Gekürzt | Abgelehnt. Decided by Bau- or Projektleitung.
  * Visibility via RLS: internal sees all, NU only the own company.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { TxSql } from '@bap/db';
@@ -99,7 +99,7 @@ export async function zettelAttachment(tx: TxSql, id: string) {
   const z0 = await load(tx, id);
   if (!z0.attachment_key) throw new HttpError(404, 'Kein Anhang');
   const key = (z0.attachment_key as string).replace(/[^a-z0-9._-]/gi, '');
-  return { bytes: await readFile(DIR + key), mime: key.endsWith('.pdf') ? 'application/pdf' : key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
+  return { pfad: DIR + key, type: key.endsWith('.pdf') ? 'application/pdf' : key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
 }
 
 /** Submit: number assigned, locked for the submitter. */
