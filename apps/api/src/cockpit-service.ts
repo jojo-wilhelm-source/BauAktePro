@@ -67,3 +67,38 @@ export async function polierCockpit(t: TxSql, userId: string, projectId: string)
     fotos,
   };
 }
+
+/**
+ * Bau-/Projektleitung: every project the person leads at a glance (one query, counts per project), sorted so that
+ * projects with something to decide come first. "Zu tun" = waiting for the Leitung.
+ */
+export async function leitungCockpit(t: TxSql) {
+  const rows = await t`
+    SELECT p.id, p.name,
+      (SELECT count(*)::int FROM mangel m WHERE m.project_id = p.id AND m.deleted_at IS NULL AND m.status <> 'abgenommen') AS maengel_offen,
+      (SELECT count(*)::int FROM mangel m WHERE m.project_id = p.id AND m.deleted_at IS NULL AND m.status NOT IN ('abgenommen', 'behoben_gemeldet')
+         AND coalesce(m.nachfrist_date, m.due_date) < current_date) AS maengel_ueberfaellig,
+      (SELECT count(*)::int FROM mangel m WHERE m.project_id = p.id AND m.deleted_at IS NULL AND m.status = 'behoben_gemeldet') AS maengel_pruefen,
+      (SELECT count(*)::int FROM mangel m WHERE m.project_id = p.id AND m.deleted_at IS NULL AND m.status = 'neu') AS maengel_neu,
+      (SELECT count(*)::int FROM tagesbericht b WHERE b.project_id = p.id AND b.status = 'unterschrieben' AND b.countersigned_at IS NULL) AS berichte,
+      (SELECT count(*)::int FROM einkauf e WHERE e.project_id = p.id AND e.status = 'eingereicht') AS einkaeufe,
+      (SELECT count(*)::int FROM einreichung r WHERE r.project_id = p.id AND r.status IN ('eingereicht', 'in_pruefung')) AS einreichungen,
+      (SELECT count(*)::int FROM einreichung r WHERE r.project_id = p.id AND r.status = 'gf_erforderlich') AS ueber_grenze,
+      (SELECT count(*)::int FROM stundenzettel s WHERE s.project_id = p.id AND s.status = 'eingereicht') AS stunden,
+      (SELECT count(*)::int FROM bestellanforderung a WHERE a.project_id = p.id AND a.status = 'offen') AS anforderungen,
+      (SELECT min(b.next_at) FROM besprechung b WHERE b.project_id = p.id AND b.next_at >= now()) AS naechste_besprechung,
+      (SELECT max(b.datum)::text FROM tagesbericht b WHERE b.project_id = p.id) AS letzter_bericht
+    FROM project p WHERE app.project_role(p.id) = 'bauleitung' ORDER BY p.name`;
+  const projekte = rows.map((r) => {
+    const zuTun = (r.maengel_pruefen as number) + (r.berichte as number) + (r.einkaeufe as number) + (r.einreichungen as number) + (r.stunden as number) + (r.maengel_neu as number);
+    return { ...(r as Record<string, unknown>), zu_tun: zuTun } as Record<string, unknown> & { zu_tun: number; name: string; maengel_ueberfaellig: number };
+  }).sort((x, y) => y.zu_tun - x.zu_tun || (y.maengel_ueberfaellig as number) - (x.maengel_ueberfaellig as number) || String(x.name).localeCompare(String(y.name), 'de'));
+  const sum = (k: string) => projekte.reduce((s, p) => s + ((p as Record<string, unknown>)[k] as number), 0);
+  return {
+    projekte,
+    summe: {
+      zu_tun: sum('zu_tun'), maengel_ueberfaellig: sum('maengel_ueberfaellig'), maengel_pruefen: sum('maengel_pruefen'), berichte: sum('berichte'),
+      einkaeufe: sum('einkaeufe'), einreichungen: sum('einreichungen'), stunden: sum('stunden'), anforderungen: sum('anforderungen'), ueber_grenze: sum('ueber_grenze'),
+    },
+  };
+}

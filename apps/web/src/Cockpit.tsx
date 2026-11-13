@@ -133,3 +133,65 @@ export function PolierCockpit({ info, onOpen, onMangel }: { info: ProjectInfo; o
     </>
   );
 }
+
+interface LeitungProjekt {
+  id: string; name: string; zu_tun: number; maengel_offen: number; maengel_ueberfaellig: number; maengel_pruefen: number; maengel_neu: number;
+  berichte: number; einkaeufe: number; einreichungen: number; ueber_grenze: number; stunden: number; anforderungen: number;
+  naechste_besprechung: string | null; letzter_bericht: string | null;
+}
+interface LeitungDaten { projekte: LeitungProjekt[]; summe: Record<string, number> }
+export type LeitungZiel = 'maengel' | 'bautagebuch' | 'einkaeufe' | 'einreichungen' | 'stunden' | 'bestellungen' | 'besprechungen' | 'heute';
+
+/** Bau-/Projektleitung: all own projects with what waits for a decision; a click opens the project at the right place. */
+export function LeitungCockpit({ onOpen, onNeu }: { onOpen: (projectId: string, z: LeitungZiel) => void; onNeu?: () => void }) {
+  const [d, setD] = useState<LeitungDaten | null>(null);
+  const [q, setQ] = useState('');
+  useEffect(() => void api<LeitungDaten>('/cockpit/leitung').then(setD), []);
+  if (!d) return <p className="loading">Wird geladen …</p>;
+  const s = d.summe;
+  const rows = d.projekte.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()));
+  const zelle = (p: LeitungProjekt, n: number, z: LeitungZiel, tone = 'var(--orange)') => (
+    <td className="money"><button className="zelle" disabled={!n} style={{ color: n ? tone : 'var(--label-3)' }} onClick={(e) => { e.stopPropagation(); onOpen(p.id, z); }}>{n || '–'}</button></td>
+  );
+  return (
+    <>
+      <PageHeader eyebrow={`${d.projekte.length} Projekte`} title="Übersicht" action={onNeu && <button className="btn" onClick={onNeu}><Icon name="plus" size={16} /> Neues Projekt</button>} />
+      <div className="list-pad cockpit">
+        <div className="kpi-row">
+          <Kachel n={s.zu_tun ?? 0} label="Entscheidungen offen" tone="var(--accent)" />
+          <Kachel n={s.maengel_pruefen ?? 0} label="Mängel abnehmen" tone="var(--orange)" />
+          <Kachel n={s.berichte ?? 0} label="Tagesberichte gegenzeichnen" tone="var(--orange)" />
+          <Kachel n={(s.einreichungen ?? 0) + (s.stunden ?? 0)} label="Nachträge, Rechnungen, Stunden prüfen" tone="var(--orange)" />
+          <Kachel n={s.maengel_ueberfaellig ?? 0} label="Mängel überfällig" tone="var(--red)" />
+        </div>
+        {d.projekte.length > 6 && <label className="search" style={{ flex: 'none', maxWidth: 360 }}><Icon name="suche" size={16} /><input placeholder="Projekt suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>}
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table className="table leitung-table">
+            <thead><tr>
+              <th>Projekt</th><th className="money">Zu tun</th><th className="money">Mängel prüfen</th><th className="money">neu</th><th className="money">überfällig</th>
+              <th className="money">Tages­berichte</th><th className="money">Einkäufe</th><th className="money">Nachträge / Rechn.</th><th className="money">Stunden</th><th className="money">Anforde­rungen</th><th>Nächste Besprechung</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((p) => (
+                <tr key={p.id} onClick={() => onOpen(p.id, 'heute')}>
+                  <td><strong>{p.name}</strong><div className="sub">{p.maengel_offen} Mängel offen{p.letzter_bericht ? ` · letzter Bericht ${formatDate(p.letzter_bericht)}` : ''}{p.ueber_grenze ? ` · ${p.ueber_grenze} über Freigabegrenze` : ''}</div></td>
+                  <td className="money">{p.zu_tun ? <span className="pill c-blue">{p.zu_tun}</span> : <span className="sub">–</span>}</td>
+                  {zelle(p, p.maengel_pruefen, 'maengel')}
+                  {zelle(p, p.maengel_neu, 'maengel', 'var(--accent)')}
+                  {zelle(p, p.maengel_ueberfaellig, 'maengel', 'var(--red)')}
+                  {zelle(p, p.berichte, 'bautagebuch')}
+                  {zelle(p, p.einkaeufe, 'einkaeufe')}
+                  {zelle(p, p.einreichungen, 'einreichungen')}
+                  {zelle(p, p.stunden, 'stunden')}
+                  {zelle(p, p.anforderungen, 'bestellungen', 'var(--accent)')}
+                  <td>{p.naechste_besprechung ? <button className="zelle" onClick={(e) => { e.stopPropagation(); onOpen(p.id, 'besprechungen'); }}>{new Date(p.naechste_besprechung).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</button> : <span className="sub">–</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="footnote">Projekte mit offenen Entscheidungen stehen oben. Ein Klick auf eine Zahl öffnet das Projekt genau dort, ein Klick auf die Zeile „Heute im Projekt“.</div>
+      </div>
+    </>
+  );
+}

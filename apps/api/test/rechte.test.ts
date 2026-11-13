@@ -1397,3 +1397,13 @@ describe('Startseiten je Rolle', () => {
     for (const u of ['uElektro', 'uBauherr', 'uEinkauf'] as const) expect((await call(u, 'GET', `/projects/${ID.project}/cockpit/polier`)).status).toBe(403);
   });
 });
+
+describe('Startseite Leitung', () => {
+  it('Übersicht über alle eigenen Projekte; andere Rollen sehen keine', async () => {
+    const r = (await call('uBauleitung', 'GET', '/cockpit/leitung')).body;
+    expect(r.projekte.map((p: any) => p.id).sort()).toEqual([ID.project, ID.otherProject].sort());
+    expect(r.projekte[0].id).toBe(ID.project); // project with open decisions first
+    expect((await call('uProjektleitung', 'GET', '/cockpit/leitung')).body.projekte).toHaveLength(1);
+    for (const u of ['uPolier', 'uElektro', 'uBauherr', 'uEinkauf'] as const) expect((await call(u, 'GET', '/cockpit/leitung')).body.projekte).toHaveLength(0);
+  });
+});

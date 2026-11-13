@@ -25,7 +25,7 @@ import { PlanView } from './PlanView';
 import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { EinkaufShell } from './EinkaufShell';
 import { FotodokuPage } from './Fotodoku';
-import { PolierCockpit } from './Cockpit';
+import { LeitungCockpit, PolierCockpit } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -34,7 +34,7 @@ import { PageHeader, Sheet, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku' | 'heute';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku' | 'heute' | 'uebersicht';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -119,10 +119,11 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
   });
   // NU-Portal starts with "Was ist zu tun?", internal roles with the Mängel list (the Einkauf has its own EinkaufShell).
   const startRole = me.projects.find((p) => p.id === projectId)?.role;
-  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'polier' ? 'heute' : 'maengel'));
+  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'polier' ? 'heute' : (startRole === 'bauleitung' || me.isAdmin) ? 'uebersicht' : 'maengel'));
   const [lvOpen, setLvOpen] = useState<string | null>(ziel?.lv ?? null);
   const [banfOpen, setBanfOpen] = useState<string | null>(ziel?.banf ?? null);
   const [ungelesen, setUngelesen] = useState(0);
+  const [zu, setZu] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('bap.sidebar.zu') ?? '[]') as string[]; } catch { return []; } });
   const ladeUngelesen = useCallback(async () => { try { setUngelesen((await api<{ n: number }>('/mitteilungen/anzahl')).n); } catch { /* offline */ } }, []);
   useEffect(() => { void ladeUngelesen(); const t = setInterval(() => void ladeUngelesen(), 60_000); return () => clearInterval(t); }, [ladeUngelesen]);
   /** Open a module in another (or this) project. */
@@ -182,6 +183,19 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
     </button>
   );
 
+  // Collapsible sidebar sections (decided 13.11.2026): the state is kept per browser.
+  const gruppe = (key: string, label: string, items: ReactNode, badge?: number) => {
+    const auf = !zu.includes(key);
+    return (
+      <>
+        <button className="side-section toggle" aria-expanded={auf} onClick={() => setZu((z) => { const n = z.includes(key) ? z.filter((k) => k !== key) : [...z, key]; localStorage.setItem('bap.sidebar.zu', JSON.stringify(n)); return n; })}>
+          <Icon name="chevron" size={12} className={auf ? 'auf' : ''} />{label}{!auf && badge ? <span className="badge">{badge}</span> : null}
+        </button>
+        {auf && items}
+      </>
+    );
+  };
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -202,50 +216,42 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {me.canCreateProject && <option value="__neu">+ Neues Projekt …</option>}
           </select>
         </div>
+        {info && info.role === 'bauleitung' && nav('uebersicht', 'portal', me.projects.length > 1 ? 'Übersicht (alle Projekte)' : 'Übersicht')}
         {nav('mitteilungen', 'nachricht', 'Mitteilungen', ungelesen > 0 ? <span className="badge">{ungelesen}</span> : undefined)}
-        <div className="side-section">Baustelle</div>
-        {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
-        {info && info.role === 'polier' && nav('heute', 'haken', 'Heute')}
-        {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
-        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'bauherr') && has('bautagebuch') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
-        {has('besprechungen') && nav('besprechungen', 'besprechung', 'Besprechungen')}
-        {has('plaene') && nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
-        {has('dokumente') && nav('dokumente', 'ordner', 'Dokumente')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('fotodoku', 'kamera', 'Fotodokumentation')}
-        {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('nachunternehmer', 'firmen', 'Nachunternehmer')}
-        {info && info.role !== 'bauherr' && info.role !== 'einkauf' && has('stunden') && nav('stunden', 'kosten', 'Stundenzettel')}
-        {info && (info.role === 'bauleitung' || info.role === 'nu') && has('nachtraege') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf' || me.fahrtenbuch) && <div className="side-section">Geld und Betrieb</div>}
-        {info && info.role === 'bauleitung' && has('kosten') && nav('kosten', 'kosten', 'Kosten')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('bestellungen', 'paket', 'Bestellanforderungen')}
-        {info && (info.role === 'bauleitung' || info.role === 'einkauf') && nav('ausschreibung', 'rechnung', 'LV & Angebote')}
-        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
-        {me.fahrtenbuch && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
-        {info && info.role === 'nu' && nav('ausschreibung', 'rechnung', 'Anfragen')}
-        {info && info.role === 'polier' && nav('etiketten', 'plan', 'Raum-QR-Etiketten')}
-        {info && info.role !== 'bauherr' && nav('kontakte', 'zugang', info.role === 'nu' ? 'Kontakte meiner Firma' : 'Kontakte')}
-        {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
-        {info && info.role === 'bauleitung' && (
-          <>
-            <div className="side-section">Projekt</div>
-            {nav('struktur', 'firmen', 'Projekt & Struktur')}
-            {nav('etiketten', 'plan', 'Raum-QR-Etiketten')}
-            {nav('zugaenge', 'zugang', 'Zugänge')}
-          </>
-        )}
-        {info && info.role === 'nu' && me.companyAdmin && (
-          <>
-            <div className="side-section">Meine Firma</div>
-            {nav('zugaenge', 'zugang', 'Mitarbeiter einladen')}
-          </>
-        )}
-        {me.isAdmin && (
-          <>
-            <div className="side-section">Administration</div>
-            {nav('admin', 'zugang', 'Benutzer & Projekte')}
-          </>
-        )}
+        {gruppe('baustelle', 'Baustelle', <>
+          {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
+          {info && (info.role === 'polier' || info.role === 'bauleitung') && nav('heute', 'haken', info.role === 'polier' ? 'Heute' : 'Heute im Projekt')}
+          {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
+          {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
+          {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'bauherr') && has('bautagebuch') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
+          {has('besprechungen') && nav('besprechungen', 'besprechung', 'Besprechungen')}
+          {has('plaene') && nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
+          {has('dokumente') && nav('dokumente', 'ordner', 'Dokumente')}
+          {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('fotodoku', 'kamera', 'Fotodokumentation')}
+          {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('nachunternehmer', 'firmen', 'Nachunternehmer')}
+          {info && info.role !== 'bauherr' && info.role !== 'einkauf' && has('stunden') && nav('stunden', 'kosten', 'Stundenzettel')}
+          {info && (info.role === 'bauleitung' || info.role === 'nu') && has('nachtraege') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
+        </>)}
+        {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf' || info.role === 'nu' || me.fahrtenbuch) && gruppe('geld', 'Geld und Betrieb', <>
+          {info.role === 'bauleitung' && has('kosten') && nav('kosten', 'kosten', 'Kosten')}
+          {(info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('bestellungen', 'paket', 'Bestellanforderungen')}
+          {(info.role === 'bauleitung' || info.role === 'einkauf') && nav('ausschreibung', 'rechnung', 'LV & Angebote')}
+          {(info.role === 'bauleitung' || info.role === 'polier' || info.role === 'einkauf') && nav('einkaeufe', 'einkauf', 'Einkäufe')}
+          {me.fahrtenbuch && nav('fahrtenbuch', 'auto', 'Fahrtenbuch')}
+          {info.role === 'nu' && nav('ausschreibung', 'rechnung', 'Anfragen')}
+        </>)}
+        {gruppe('mehr', 'Weiteres', <>
+          {info && info.role === 'polier' && nav('etiketten', 'plan', 'Raum-QR-Etiketten')}
+          {info && info.role !== 'bauherr' && nav('kontakte', 'zugang', info.role === 'nu' ? 'Kontakte meiner Firma' : 'Kontakte')}
+          {nav('hinweise', 'hinweis', 'Hinweise', conflicts.length > 0 ? <span className="badge">{conflicts.length}</span> : undefined)}
+        </>, conflicts.length)}
+        {info && info.role === 'bauleitung' && gruppe('projekt', 'Projekt', <>
+          {nav('struktur', 'firmen', 'Projekt & Struktur')}
+          {nav('etiketten', 'plan', 'Raum-QR-Etiketten')}
+          {nav('zugaenge', 'zugang', 'Zugänge')}
+        </>)}
+        {info && info.role === 'nu' && me.companyAdmin && gruppe('firma', 'Meine Firma', <>{nav('zugaenge', 'zugang', 'Mitarbeiter einladen')}</>)}
+        {me.isAdmin && gruppe('admin', 'Administration', <>{nav('admin', 'zugang', 'Benutzer & Projekte')}</>)}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
           <div className="who">
@@ -337,6 +343,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'ausschreibung' && <AusschreibungPage key={lvOpen ?? 'liste'} info={info} run={run} initialLv={lvOpen} />}
+            {module === 'uebersicht' && <LeitungCockpit onNeu={me.canCreateProject ? () => setNewProject(true) : undefined} onOpen={(pid, z) => gehe(pid, { module: z })} />}
             {module === 'heute' && <PolierCockpit info={info} onMangel={(id) => { setSelected(id); setModule('maengel'); }} onOpen={(z, id) => { if (z === 'bestellungen') setBanfOpen(id ?? null); setModule(z); }} />}
             {module === 'fotodoku' && <FotodokuPage info={info} run={run} onOpenMangel={(id) => { setSelected(id); setModule('maengel'); }} />}
             {module === 'bestellungen' && <BestellungenPage key={banfOpen ?? 'liste'} info={info} run={run} meId={me.user.id} openId={banfOpen} onOpenLv={(lv) => gehe(projectId, { module: 'ausschreibung', lv })} />}

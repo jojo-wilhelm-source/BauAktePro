@@ -463,3 +463,13 @@ select.status-select { border: 0; appearance: none; -webkit-appearance: none; pa
 .kpi-btn:not(:disabled):hover { box-shadow: 0 0 0 2px var(--accent) inset; }
 .hinweis-band { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--label); }
 .cockpit-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 10px; }
+.side-section.toggle { display: flex; align-items: center; gap: 4px; width: 100%; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--label-2); }
+.side-section.toggle svg { transition: transform .15s; }
+.side-section.toggle svg.auf { transform: rotate(90deg); }
+.side-section.toggle .badge { margin-left: auto; }
+.side-section.toggle:hover { color: var(--label); }
+.leitung-table td, .leitung-table th { white-space: nowrap; }
+.leitung-table td:first-child { white-space: normal; min-width: 220px; }
+.zelle { border: 0; background: none; font: inherit; font-weight: 600; cursor: pointer; padding: 4px 6px; border-radius: 6px; color: inherit; }
+.zelle:not(:disabled):hover { background: var(--fill); }
+.zelle:disabled { cursor: default; font-weight: 400; }
