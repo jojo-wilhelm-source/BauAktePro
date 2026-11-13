@@ -69,7 +69,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 
 export interface Me {
   user: { id: string; name: string; email: string; company: string };
-  projects: { id: string; name: string; role: ProjectRole; module: Modul[] }[];
+  projects: { id: string; name: string; role: ProjectRole; module: Modul[]; archiviert?: boolean }[];
   canCreateProject: boolean;
   /** Fahrtenbuch granted by the administrator. */
   fahrtenbuch: boolean;

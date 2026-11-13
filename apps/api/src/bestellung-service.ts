@@ -41,7 +41,8 @@ export async function benachrichtigen(tx: TxSql, userId: string, projectId: stri
   // The administrator can switch mails off per kind (settings); the in-app notification always stays.
   if (mail && n.mailArt && !(await ladeEinstellungen(tx)).benachrichtigung[n.mailArt]) mail = false;
   if (mail) {
-    const users = await tx`SELECT email, name FROM app_user WHERE id IN ${tx(ids)} AND active`; // RLS: co-members only
+    // RLS: co-members only. Personal setting: the person may have taken this kind off e-mail.
+    const users = await tx`SELECT email, name FROM app_user WHERE id IN ${tx(ids)} AND active AND NOT coalesce(einstellungen->'mail_aus', '[]'::jsonb) ? ${n.art}`;
     const [p] = projectId ? await tx`SELECT name FROM project WHERE id = ${projectId}` : [];
     for (const u of users) {
       await sendMail({

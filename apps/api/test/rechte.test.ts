@@ -1455,3 +1455,24 @@ describe('Startseite Nachunternehmer', () => {
     expect((await call('uBauleitung', 'GET', '/cockpit/nu')).body.baustellen).toHaveLength(0);
   });
 });
+
+describe('Mein Konto und Projektarchiv', () => {
+  it('eigene Daten und Passwort ändern; Archivieren nur Leitung, Übersicht blendet aus', async () => {
+    expect((await call('uPolier', 'PATCH', '/konto', { name: 'Paul Polier-Neu', telefon: '0171 1234567', einstellungen: { mail_aus: ['bestellanforderung'] } })).status).toBe(200);
+    const k = (await call('uPolier', 'GET', '/konto')).body;
+    expect([k.name, k.telefon, k.einstellungen.mail_aus]).toEqual(['Paul Polier-Neu', '0171 1234567', ['bestellanforderung']]);
+    expect((await call('uPolier', 'POST', '/konto/passwort', { alt: 'falsch-falsch', neu: 'NeuesPasswort2026!' })).status).toBe(422);
+    expect((await call('uPolier', 'POST', '/konto/passwort', { alt: TEST_PASSWORD, neu: 'NeuesPasswort2026!' })).status).toBe(200);
+    const login = await app.inject({ method: 'POST', url: '/auth/login', payload: { email: 'polier@example.test', password: 'NeuesPasswort2026!' } });
+    expect(login.statusCode).toBe(200);
+    // admin edits a name
+    expect((await call('uAdmin', 'PATCH', `/admin/users/${ID.uFliesen}`, { name: 'Fiona Fliesenleger' })).status).toBe(200);
+    // archive
+    expect((await call('uPolier', 'POST', `/projects/${ID.otherProject}/archiv`, { archiviert: true })).status).toBe(403);
+    expect((await call('uBauleitung', 'POST', `/projects/${ID.otherProject}/archiv`, { archiviert: true })).status).toBe(200);
+    const c = (await call('uBauleitung', 'GET', '/cockpit/leitung')).body;
+    expect(c.projekte.map((p: any) => p.id)).toEqual([ID.project]);
+    expect(c.archiviert).toBe(1);
+    expect((await call('uBauleitung', 'GET', '/me')).body.projects.find((p: any) => p.id === ID.otherProject).archiviert).toBe(true);
+  });
+});

@@ -486,3 +486,5 @@ select.status-select { border: 0; appearance: none; -webkit-appearance: none; pa
 .einst .row > input:first-child { text-align: left; flex: 1; max-width: 360px; }
 .nu-baustelle { display: flex; flex-direction: column; gap: 10px; }
 .nu-baustelle > .group-head { border-bottom: 1px solid var(--separator); padding-bottom: 6px; }
+.who.konto-btn { border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 2px 4px; border-radius: 6px; flex: 1; min-width: 0; }
+.who.konto-btn:hover { background: var(--fill); }

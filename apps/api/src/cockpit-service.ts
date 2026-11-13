@@ -90,7 +90,8 @@ export async function leitungCockpit(t: TxSql) {
       (SELECT count(*)::int FROM bestellanforderung a WHERE a.project_id = p.id AND a.status = 'offen') AS anforderungen,
       (SELECT min(b.next_at) FROM besprechung b WHERE b.project_id = p.id AND b.next_at >= now()) AS naechste_besprechung,
       (SELECT max(b.datum)::text FROM tagesbericht b WHERE b.project_id = p.id) AS letzter_bericht
-    FROM project p WHERE app.project_role(p.id) = 'bauleitung' ORDER BY p.name`;
+    FROM project p WHERE app.project_role(p.id) = 'bauleitung' AND p.archiviert_at IS NULL ORDER BY p.name`;
+  const [arch] = await t`SELECT count(*)::int AS n FROM project p WHERE app.project_role(p.id) = 'bauleitung' AND p.archiviert_at IS NOT NULL`;
   const projekte = rows.map((r) => {
     const zuTun = (r.maengel_pruefen as number) + (r.berichte as number) + (r.einkaeufe as number) + (r.einreichungen as number) + (r.stunden as number) + (r.maengel_neu as number);
     return { ...(r as Record<string, unknown>), zu_tun: zuTun } as Record<string, unknown> & { zu_tun: number; name: string; maengel_ueberfaellig: number };
@@ -98,6 +99,7 @@ export async function leitungCockpit(t: TxSql) {
   const sum = (k: string) => projekte.reduce((s, p) => s + ((p as Record<string, unknown>)[k] as number), 0);
   return {
     projekte,
+    archiviert: (arch?.n as number) ?? 0,
     summe: {
       zu_tun: sum('zu_tun'), maengel_ueberfaellig: sum('maengel_ueberfaellig'), maengel_pruefen: sum('maengel_pruefen'), berichte: sum('berichte'),
       einkaeufe: sum('einkaeufe'), einreichungen: sum('einreichungen'), stunden: sum('stunden'), anforderungen: sum('anforderungen'), ueber_grenze: sum('ueber_grenze'),

@@ -11,6 +11,7 @@ import { Kachel, Abschnitt } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
 import { PageHeader, type Run } from './ui/layout';
 import { initials } from './ui/status';
+import { KontoSheet } from './ui/Konto';
 
 type View = 'system' | 'benutzer' | 'einstellungen' | 'protokoll';
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -21,6 +22,7 @@ const zeit = (t: string) => new Date(t).toLocaleString('de-DE', { dateStyle: 'sh
 export function AdminShell({ me, onLogout, onProjekte }: { me: Me; onLogout: () => void; onProjekte: (projectId?: string) => void }) {
   const [view, setView] = useState<View>('system');
   const [toast, setToast] = useState<Toast>(null);
+  const [kontoOffen, setKontoOffen] = useState(false);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); }, [toast]);
   const run: Run = async (fn, ok) => {
     try { await fn(); setToast({ kind: 'ok', text: ok }); } catch (e) { setToast({ kind: 'error', text: e instanceof ApiError ? e.message : String(e) }); }
@@ -40,10 +42,11 @@ export function AdminShell({ me, onLogout, onProjekte }: { me: Me; onLogout: () 
         <button className="side-item" onClick={() => onProjekte()}><Icon name="firmen" />Zu den Projekten</button>
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
-          <div className="who"><div>{me.user.name}</div><small>{me.user.company}</small></div>
+          <button className="who konto-btn" onClick={() => setKontoOffen(true)} title="Mein Konto"><div>{me.user.name}</div><small>{me.user.company}</small></button>
           <button className="btn plain" onClick={onLogout} title="Abmelden" aria-label="Abmelden"><Icon name="abmelden" /></button>
         </div>
       </aside>
+      {kontoOffen && <KontoSheet onClose={() => setKontoOffen(false)} />}
       <div className="content">
         {view === 'system' && <SystemPage onOpen={setView} />}
         {view === 'benutzer' && <AdminPage meId={me.user.id} run={run} onOpenProject={(id) => onProjekte(id)} />}

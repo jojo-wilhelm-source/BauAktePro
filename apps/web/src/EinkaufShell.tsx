@@ -10,6 +10,7 @@ import { BestellungenPage, EinkaufsportalPage, MitteilungenPage } from './Bestel
 import { Icon } from './ui/Icon';
 import { type Run } from './ui/layout';
 import { initials } from './ui/status';
+import { KontoSheet } from './ui/Konto';
 
 type View =
   | { kind: 'portal' }
@@ -25,6 +26,7 @@ export function EinkaufShell({ me, onLogout }: { me: Me; onLogout: () => void })
   const [ungelesen, setUngelesen] = useState(0);
   const [zahlen, setZahlen] = useState<Zahl[]>([]);
   const [rev, setRev] = useState(0);
+  const [kontoOffen, setKontoOffen] = useState(false);
 
   const ladeZahlen = useCallback(async () => {
     try {
@@ -83,10 +85,11 @@ export function EinkaufShell({ me, onLogout }: { me: Me; onLogout: () => void })
         })}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
-          <div className="who"><div>{me.user.name}</div><small>{me.user.company}</small></div>
+          <button className="who konto-btn" onClick={() => setKontoOffen(true)} title="Mein Konto"><div>{me.user.name}</div><small>{me.user.company}</small></button>
           <button className="btn plain" onClick={onLogout} title="Abmelden" aria-label="Abmelden"><Icon name="abmelden" /></button>
         </div>
       </aside>
+      {kontoOffen && <KontoSheet onClose={() => setKontoOffen(false)} />}
 
       <div className="content">
         {view.kind === 'portal' && <EinkaufsportalPage meId={me.user.id} run={run} onOpenLv={(lv, pid) => baustelle(pid, 'lv', { lv })} onOpenProject={(pid) => baustelle(pid)} />}

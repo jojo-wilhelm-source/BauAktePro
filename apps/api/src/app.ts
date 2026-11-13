@@ -14,6 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
+import { archivieren, konto, passwortAendern, saveKonto } from './konto-service';
 import { ladeEinstellungen, protokoll, saveEinstellungen, systemUebersicht } from './system-service';
 import { bauherrCockpit, leitungCockpit, nuCockpit, polierCockpit } from './cockpit-service';
 import { createFotodoku, editFotodoku, fotodokuDatei, fotodokuFile, listFotodoku, mangelAusFoto, removeFotodoku } from './fotodoku-service';
@@ -166,11 +167,11 @@ export function buildApp(sql: Sql) {
         FROM app_user u JOIN company c ON c.id = u.company_id WHERE u.id = ${req.userId}`;
       // RLS: members see their projects; the administrator sees all projects of the company.
       const projects = await tx`
-        SELECT p.id, p.name, coalesce(pm.role, 'admin') AS role, pm.m_plaene, pm.m_dokumente, pm.m_besprechungen, pm.m_bautagebuch, pm.m_stunden, pm.m_nachtraege, pm.m_kosten
+        SELECT p.id, p.name, p.archiviert_at IS NOT NULL AS archiviert, coalesce(pm.role, 'admin') AS role, pm.m_plaene, pm.m_dokumente, pm.m_besprechungen, pm.m_bautagebuch, pm.m_stunden, pm.m_nachtraege, pm.m_kosten
         FROM project p LEFT JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${req.userId}
-        ORDER BY p.name`;
+        ORDER BY p.archiviert_at IS NOT NULL, p.name`;
       // Areas switched on for this person (role + switches); the UI hides the rest, RLS enforces it.
-      const list = projects.map((p) => ({ id: p.id, name: p.name, role: p.role, module: aktiveModule(p.role as string, p as never) }));
+      const list = projects.map((p) => ({ id: p.id, name: p.name, archiviert: p.archiviert, role: p.role, module: aktiveModule(p.role as string, p as never) }));
       return { user, projects: list, fahrtenbuch: !!user?.fahrtenbuch || !!user?.is_admin, canCreateProject: await canCreateProject(tx), isAdmin: !!user?.is_admin, companyAdmin: !!user?.company_admin };
     }),
   );
@@ -296,6 +297,12 @@ export function buildApp(sql: Sql) {
   });
 
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/cockpit/bauherr', async (req) => asUser(sql, req.userId, (tx) => bauherrCockpit(tx, req.userId, req.params.projectId)));
+  // --- Own account and project archive ---------------------------------------------------------
+  app.get('/konto', async (req) => asUser(sql, req.userId, (tx) => konto(tx, req.userId)));
+  app.patch('/konto', async (req) => asUser(sql, req.userId, (tx) => saveKonto(tx, req.userId, req.body)));
+  app.post('/konto/passwort', async (req) => passwortAendern(admin, req.userId, req.body, (req.body as { refresh?: string } | null)?.refresh ?? null));
+  app.post<{ Params: { id: string } }>('/projects/:id/archiv', async (req) => asUser(sql, req.userId, (tx) => archivieren(tx, req.userId, req.params.id, req.body, meta(req))));
+
   // --- IT administration (settings, system overview, audit log) ---------------------------------
   app.get('/einstellungen', async (req) => asUser(sql, req.userId, (tx) => ladeEinstellungen(tx)));
   app.put('/admin/einstellungen', async (req) => asUser(sql, req.userId, (tx) => saveEinstellungen(tx, req.userId, req.body, meta(req))));

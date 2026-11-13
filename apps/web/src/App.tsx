@@ -24,6 +24,7 @@ import { PlanView } from './PlanView';
 import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { EinkaufShell } from './EinkaufShell';
 import { AdminShell } from './AdminShell';
+import { KontoSheet } from './ui/Konto';
 import { FotodokuPage } from './Fotodoku';
 import { BauherrCockpit, LeitungCockpit, NuCockpit, PolierCockpit } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
@@ -129,6 +130,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload, onAdmin 
   const [lvOpen, setLvOpen] = useState<string | null>(ziel?.lv ?? null);
   const [banfOpen, setBanfOpen] = useState<string | null>(ziel?.banf ?? null);
   const [ungelesen, setUngelesen] = useState(0);
+  const [kontoOffen, setKontoOffen] = useState(false);
   const [zu, setZu] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('bap.sidebar.zu') ?? '[]') as string[]; } catch { return []; } });
   const ladeUngelesen = useCallback(async () => { try { setUngelesen((await api<{ n: number }>('/mitteilungen/anzahl')).n); } catch { /* offline */ } }, []);
   useEffect(() => { void ladeUngelesen(); const t = setInterval(() => void ladeUngelesen(), 60_000); return () => clearInterval(t); }, [ladeUngelesen]);
@@ -214,11 +216,10 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload, onAdmin 
         </div>
         <div className="project-picker">
           <select value={projectId} onChange={(e) => (e.target.value === '__neu' ? setNewProject(true) : onProject(e.target.value))} aria-label="Projekt">
-            {me.projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
+            {me.projects.filter((p) => !p.archiviert).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {me.projects.some((p) => p.archiviert) && (
+              <optgroup label="Archiv">{me.projects.filter((p) => p.archiviert).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+            )}
             {me.canCreateProject && <option value="__neu">+ Neues Projekt …</option>}
           </select>
         </div>
@@ -261,15 +262,13 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload, onAdmin 
         {me.isAdmin && gruppe('admin', 'Administration', <><button className="side-item" onClick={onAdmin}><Icon name="zugang" />Zur Administration</button></>)}
         <div className="sidebar-footer">
           <span className="avatar">{initials(me.user.name)}</span>
-          <div className="who">
-            <div>{me.user.name}</div>
-            <small>{me.user.company}</small>
-          </div>
+          <button className="who konto-btn" onClick={() => setKontoOffen(true)} title="Mein Konto"><div>{me.user.name}</div><small>{me.user.company}</small></button>
           <button className="btn plain" onClick={onLogout} title="Abmelden" aria-label="Abmelden">
             <Icon name="abmelden" />
           </button>
         </div>
       </aside>
+      {kontoOffen && <KontoSheet onClose={() => setKontoOffen(false)} />}
 
       <div className="content">
         {!info ? (

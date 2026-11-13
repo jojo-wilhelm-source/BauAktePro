@@ -139,7 +139,7 @@ interface LeitungProjekt {
   berichte: number; einkaeufe: number; einreichungen: number; ueber_grenze: number; stunden: number; anforderungen: number;
   naechste_besprechung: string | null; letzter_bericht: string | null;
 }
-interface LeitungDaten { projekte: LeitungProjekt[]; summe: Record<string, number> }
+interface LeitungDaten { projekte: LeitungProjekt[]; archiviert: number; summe: Record<string, number> }
 export type LeitungZiel = 'maengel' | 'bautagebuch' | 'einkaeufe' | 'einreichungen' | 'stunden' | 'bestellungen' | 'besprechungen' | 'heute';
 
 /** Bau-/Projektleitung: all own projects with what waits for a decision; a click opens the project at the right place. */
@@ -155,7 +155,7 @@ export function LeitungCockpit({ onOpen, onNeu }: { onOpen: (projectId: string, 
   );
   return (
     <>
-      <PageHeader eyebrow={`${d.projekte.length} Projekte`} title="Übersicht" action={onNeu && <button className="btn" onClick={onNeu}><Icon name="plus" size={16} /> Neues Projekt</button>} />
+      <PageHeader eyebrow={`${d.projekte.length} Projekt${d.projekte.length === 1 ? "" : "e"}`} title="Übersicht" action={onNeu && <button className="btn" onClick={onNeu}><Icon name="plus" size={16} /> Neues Projekt</button>} />
       <div className="list-pad cockpit">
         <div className="kpi-row">
           <Kachel n={s.zu_tun ?? 0} label="Entscheidungen offen" tone="var(--accent)" />
@@ -190,7 +190,7 @@ export function LeitungCockpit({ onOpen, onNeu }: { onOpen: (projectId: string, 
             </tbody>
           </table>
         </div>
-        <div className="footnote">Projekte mit offenen Entscheidungen stehen oben. Ein Klick auf eine Zahl öffnet das Projekt genau dort, ein Klick auf die Zeile „Heute im Projekt“.</div>
+        <div className="footnote">Projekte mit offenen Entscheidungen stehen oben. Ein Klick auf eine Zahl öffnet das Projekt genau dort, ein Klick auf die Zeile „Heute im Projekt“.{d.archiviert ? ` ${d.archiviert} archivierte Projekte sind ausgeblendet (in der Projektauswahl unter „Archiv“).` : ''}</div>
       </div>
     </>
   );

@@ -127,11 +127,13 @@ export function StrukturPage({ info, me, run, onReload, onMeReload }: { info: Pr
       ];
     });
 
+  const archiviert = !!me.projects.find((p) => p.id === s.project.id)?.archiviert;
   return (
     <>
-      <PageHeader eyebrow={`angelegt ${formatDate(s.project.created_at)}`} title="Projekt & Struktur"
+      <PageHeader eyebrow={`angelegt ${formatDate(s.project.created_at)}${archiviert ? ' · archiviert' : ''}`} title="Projekt & Struktur"
         action={<div className="meta-row">
           <button className="btn" onClick={() => setRename({ kind: 'project', id: s.project.id, name: s.project.name, address: s.project.address ?? '', bauort: s.project.bauort ?? '', baustellen_nr: s.project.baustellen_nr ?? '', bauherr_name: s.project.bauherr_name ?? '' })}><Icon name="stift" size={16} /> Projektdaten</button>
+          <button className="btn" onClick={() => void run(async () => { await api(`/projects/${s.project.id}/archiv`, { method: 'POST', body: { archiviert: !archiviert } }); onMeReload(); }, archiviert ? 'Projekt wiederhergestellt' : 'Projekt archiviert – es bleibt vollständig lesbar')}>{archiviert ? 'Aus dem Archiv holen' : 'Archivieren'}</button>
           <button className="btn filled" onClick={() => setTakeOver(true)}>Struktur übernehmen …</button>
         </div>} />
       <div className="list-pad struktur">

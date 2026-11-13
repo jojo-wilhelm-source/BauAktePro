@@ -17,7 +17,7 @@ async function requireAdmin(tx: TxSql) {
 export async function adminOverview(tx: TxSql) {
   await requireAdmin(tx);
   const users = await tx`
-    SELECT u.id, u.name, u.email, u.active, u.is_admin, u.company_admin, u.fahrtenbuch, c.id AS company_id, c.name AS company, c.kind AS company_kind,
+    SELECT u.id, u.name, u.email, u.telefon, u.active, u.is_admin, u.company_admin, u.fahrtenbuch, c.id AS company_id, c.name AS company, c.kind AS company_kind,
       app.user_last_seen(u.id) AS last_seen,
       coalesce((SELECT json_agg(json_build_object('project_id', p.id, 'member_id', pm.id, 'project', p.name, 'role', pm.role) ORDER BY p.name)
                 FROM project_member pm JOIN project p ON p.id = pm.project_id WHERE pm.user_id = u.id), '[]') AS projekte
@@ -34,7 +34,8 @@ export async function adminOverview(tx: TxSql) {
 
 export async function adminUpdateUser(tx: TxSql, adminId: string, userId: string, input: unknown, meta: WriteMeta) {
   await requireAdmin(tx);
-  const d = z.object({ active: z.boolean().optional(), is_admin: z.boolean().optional(), company_admin: z.boolean().optional(), fahrtenbuch: z.boolean().optional() }).parse(input);
+  const d = z.object({ active: z.boolean().optional(), is_admin: z.boolean().optional(), company_admin: z.boolean().optional(), fahrtenbuch: z.boolean().optional(),
+    name: z.string().trim().min(2).max(120).optional(), telefon: z.string().trim().max(40).nullish() }).parse(input);
   if (userId === adminId && (d.active === false || d.is_admin === false)) throw new HttpError(422, 'Den eigenen Admin-Zugang kann man nicht sperren oder entziehen');
   const [u] = await tx`SELECT u.id, u.email, u.active, u.is_admin, u.company_admin, c.kind FROM app_user u JOIN company c ON c.id = u.company_id WHERE u.id = ${userId}`;
   if (!u) throw new HttpError(404, 'Benutzer nicht gefunden');
@@ -43,7 +44,7 @@ export async function adminUpdateUser(tx: TxSql, adminId: string, userId: string
   if (d.company_admin && u.kind !== 'nu') throw new HttpError(422, 'Firmen-Admin gibt es nur für Nachunternehmer');
   const patch = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined));
   if (!Object.keys(patch).length) return u;
-  const [row] = await tx`UPDATE app_user SET ${tx(patch as never)}, updated_at = now() WHERE id = ${userId} RETURNING id, active, is_admin, company_admin, fahrtenbuch`;
+  const [row] = await tx`UPDATE app_user SET ${tx(patch as never)}, updated_at = now() WHERE id = ${userId} RETURNING id, name, telefon, active, is_admin, company_admin, fahrtenbuch`;
   // A locked account loses its sessions right away (devices must sign in again).
   if (d.active === false) await tx`SELECT app.end_sessions(${userId})`;
   await tx`

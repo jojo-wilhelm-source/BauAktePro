@@ -7,7 +7,7 @@ import { Icon } from './ui/Icon';
 import { PageHeader, Sheet, type Run } from './ui/layout';
 
 interface User {
-  id: string; name: string; email: string; active: boolean; is_admin: boolean; company_admin: boolean; fahrtenbuch: boolean;
+  id: string; name: string; email: string; telefon?: string | null; active: boolean; is_admin: boolean; company_admin: boolean; fahrtenbuch: boolean;
   company: string; company_kind: 'own' | 'nu' | 'bauherr'; last_seen: string | null; projekte: { project_id: string; member_id: string; project: string; role: string }[];
 }
 interface Project { id: string; name: string; created_at: string; mitglieder: number; maengel_offen: number }
@@ -18,6 +18,7 @@ export function AdminPage({ meId, run, onOpenProject }: { meId: string; run: Run
   const [q, setQ] = useState('');
   const [assign, setAssign] = useState<User | null>(null);
   const load = useCallback(async () => setD(await api(`/admin`)), []);
+  const [edit, setEdit] = useState<(User & { telefon: string }) | null>(null);
   useEffect(() => void load(), [load]);
   const patch = (u: User, body: Partial<User>, ok: string) => run(async () => { await api(`/admin/users/${u.id}`, { method: 'PATCH', body }); await load(); }, ok);
   if (!d) return <p className="loading">Wird geladen …</p>;
@@ -60,6 +61,7 @@ export function AdminPage({ meId, run, onOpenProject }: { meId: string; run: Run
                   </span>
                   {u.id !== meId && (
                     <span className="actions">
+                      <button className="btn small plain" onClick={() => setEdit({ ...u, telefon: u.telefon ?? '' })}>Bearbeiten</button>
                       <button className="btn small" onClick={() => setAssign(u)}>Projekte</button>
                       {k === 'own' && (
                         <button className="btn small" onClick={() => void patch(u, { fahrtenbuch: !u.fahrtenbuch }, u.fahrtenbuch ? 'Fahrtenbuch abgeschaltet' : 'Fahrtenbuch freigeschaltet')}>
@@ -86,6 +88,17 @@ export function AdminPage({ meId, run, onOpenProject }: { meId: string; run: Run
             </div>
           </div>
         ))}
+        {edit && (
+          <Sheet title="Benutzer bearbeiten" primary="Sichern" primaryDisabled={edit.name.trim().length < 2} onCancel={() => setEdit(null)}
+            onPrimary={() => void patch(edit, { name: edit.name.trim(), telefon: edit.telefon.trim() || null } as Partial<User>, 'Gesichert').then(() => setEdit(null))}>
+            <div className="group">
+              <div className="row"><span className="k">Name</span><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
+              <div className="row"><span className="k">Telefon</span><input value={edit.telefon} onChange={(e) => setEdit({ ...edit, telefon: e.target.value })} /></div>
+              <div className="row"><span className="k">E-Mail</span><span className="v">{edit.email}</span></div>
+            </div>
+            <div className="footnote">Die E-Mail-Adresse ist die Anmeldung; für eine neue Adresse bitte neu einladen.</div>
+          </Sheet>
+        )}
         {assign && <AssignSheet u={d.users.find((x) => x.id === assign.id) ?? assign} projects={d.projects} onClose={() => setAssign(null)}
           run={async (fn, ok) => { await run(fn, ok); await load(); }} />}
         <div className="footnote">Jede Person sieht nur die Projekte, denen sie zugeordnet ist – mit der dort vergebenen Rolle. Einzelne Bereiche schaltet die Bauleitung des Projekts unter „Zugänge“ ab. Sperren meldet die Person auf allen Geräten ab; sie kann sich nicht mehr anmelden. Alle Änderungen stehen im Protokoll.</div>
