@@ -98,7 +98,7 @@ const bestellanforderung = new Table({
 }, { indexes: { p: ['project_id'] } });
 /** Fotodoku on plans (docs/fachkonzept/16): entries made offline; files follow via beleg_upload (kind 'fotodoku'). */
 const foto_doku = new Table({
-  project_id: column.text, plan_id: column.text, pin_page: column.integer, pin_x: column.real, pin_y: column.real, location_id: column.text, gewerk_id: column.text,
+  serie_id: column.text, project_id: column.text, plan_id: column.text, pin_page: column.integer, pin_x: column.real, pin_y: column.real, location_id: column.text, gewerk_id: column.text,
   kategorie: column.text, titel: column.text, notiz: column.text, ist_360: column.integer, file_key: column.text, width: column.integer, height: column.integer,
   taken_at: column.text, mangel_id: column.text, version: column.integer, created_by: column.text, created_at: column.text,
 }, { indexes: { plan: ['plan_id'] } });

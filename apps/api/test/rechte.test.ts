@@ -1476,3 +1476,17 @@ describe('Mein Konto und Projektarchiv', () => {
     expect((await call('uBauleitung', 'GET', '/me')).body.projects.find((p: any) => p.id === ID.otherProject).archiviert).toBe(true);
   });
 });
+
+describe('Fotodoku-Serien', () => {
+  it('Fotos an derselben Stelle bilden eine Serie (Position vom ersten Foto)', async () => {
+    const kopf = randomUUID(); const zwei = randomUUID();
+    await call('uPolier', 'POST', '/fotodoku', { id: kopf, project_id: ID.project, plan_id: ID.planEg, pin_x: 0.7, pin_y: 0.6, kategorie: 'schacht', taken_at: '2026-11-02T08:00:00.000Z' });
+    const r = await call('uPolier', 'POST', '/fotodoku', { id: zwei, serie_id: kopf, project_id: ID.project, kategorie: 'schacht', taken_at: '2026-11-09T08:00:00.000Z' });
+    expect(r.status).toBe(200);
+    expect([r.body.serie_id, r.body.plan_id, r.body.pin_x]).toEqual([kopf, ID.planEg, 0.7]);
+    // a third one attached via the second still lands in the first photo's series
+    const drei = (await call('uPolier', 'POST', '/fotodoku', { id: randomUUID(), serie_id: zwei, project_id: ID.project, kategorie: 'schacht' })).body;
+    expect(drei.serie_id).toBe(kopf);
+    expect((await call('uPolier', 'POST', '/fotodoku', { id: randomUUID(), serie_id: randomUUID(), project_id: ID.project, kategorie: 'schacht' })).status).toBe(422);
+  });
+});

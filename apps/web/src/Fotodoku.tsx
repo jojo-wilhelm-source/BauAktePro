@@ -26,7 +26,7 @@ function useKategorien() {
 }
 
 export interface DokuFoto {
-  id: string; project_id: string; plan_id: string | null; pin_page: number | null; pin_x: number | null; pin_y: number | null;
+  id: string; serie_id: string; project_id: string; plan_id: string | null; pin_page: number | null; pin_x: number | null; pin_y: number | null;
   location_id: string | null; ort: string | null; gewerk_id: string | null; kategorie: FotodokuKategorie; titel: string | null; notiz: string | null;
   ist_360: boolean; hochgeladen: boolean; width: number | null; height: number | null; taken_at: string; mangel_id: string | null; mangel_number: number | null;
   version: number; created_by: string; von: string; created_at: string;
@@ -47,12 +47,13 @@ function useBild(id: string | null, vorschau: boolean) {
   return url;
 }
 
-function Kachel({ f, onOpen }: { f: DokuFoto; onOpen: () => void }) {
+function Kachel({ f, onOpen, anzahl = 1 }: { f: DokuFoto; onOpen: () => void; anzahl?: number }) {
   const url = useBild(f.hochgeladen ? f.id : null, true);
   return (
     <button className="doku-kachel" onClick={onOpen} title={f.titel ?? FOTODOKU_LABEL[f.kategorie]}>
       {url ? <img src={url} alt="" loading="lazy" /> : <span className="sub">{f.hochgeladen ? '…' : 'wird hochgeladen'}</span>}
       {f.ist_360 && <span className="doku-360">360°</span>}
+      {anzahl > 1 && <span className="doku-serie" title="Fotos an dieser Stelle">{anzahl}</span>}
       <span className="doku-cap">{f.titel || FOTODOKU_LABEL[f.kategorie]}<small>{f.ort ? `${f.ort} · ` : ''}{formatDate(f.taken_at)}</small></span>
     </button>
   );
@@ -83,12 +84,23 @@ export function FotodokuPage({ info, run, onOpenMangel }: { info: ProjectInfo; r
   const [setzen, setSetzen] = useState(false);
   const [neu, setNeu] = useState<{ x: number; y: number } | null | 'ohne'>(null);
   const [offen, setOffen] = useState<string | null>(null);
+  const [serie, setSerie] = useState<{ id: string; start?: string } | null>(null);
+  const [neuInSerie, setNeuInSerie] = useState<string | null>(null);
   const load = useCallback(async () => setRows(await api<DokuFoto[]>(`/projects/${info.project.id}/fotodoku${kat ? `?kategorie=${kat}` : ''}`)), [info.project.id, kat]);
   useEffect(() => void load(), [load]);
   const runAndLoad: Run = async (fn, ok) => { await run(fn, ok); await load(); };
   const plan = plaene.find((p) => p.id === planId);
   const aufPlan = rows.filter((f) => f.plan_id === planId && f.pin_x != null && f.pin_y != null);
   const f = rows.find((x) => x.id === offen) ?? null;
+  // Series: photos at the same spot (serie_id) – one pin per spot, sorted by date in the viewer.
+  const serien = useMemo(() => {
+    const m = new Map<string, DokuFoto[]>();
+    for (const x of rows) m.set(x.serie_id, [...(m.get(x.serie_id) ?? []), x]);
+    for (const l of m.values()) l.sort((a, b) => a.taken_at.localeCompare(b.taken_at));
+    return m;
+  }, [rows]);
+  const oeffnen = (x: DokuFoto) => ((serien.get(x.serie_id)?.length ?? 1) > 1 ? setSerie({ id: x.serie_id, start: x.id }) : setOffen(x.id));
+  const pinSerien = [...serien.entries()].map(([id, l]) => ({ id, l, kopf: l.find((x) => x.plan_id === planId && x.pin_x != null) })).filter((s) => s.kopf);
   const zahl = useMemo(() => Object.fromEntries(FOTODOKU_KATEGORIEN.map((k) => [k, rows.filter((r) => r.kategorie === k).length])), [rows]);
   return (
     <>
@@ -111,29 +123,35 @@ export function FotodokuPage({ info, run, onOpenMangel }: { info: ProjectInfo; r
             <PlanView planId={plan.id} planIndex={plan.plan_index} maengel={[]} selectedId={offen} onSelect={() => {}}
               draft={neu && neu !== 'ohne' ? { page: 1, ...neu } : null}
               onPick={setzen ? (pos) => { setNeu({ x: pos.x, y: pos.y }); setSetzen(false); } : undefined}
-              extraPins={aufPlan.map((p) => ({ id: p.id, x: p.pin_x!, y: p.pin_y!, label: p.ist_360 ? '360' : '📷', title: p.titel ?? FOTODOKU_LABEL[p.kategorie], className: p.ist_360 ? 'doku pano-pin' : 'doku', onClick: () => setOffen(p.id) }))} />
+              extraPins={pinSerien.map(({ id, l, kopf }) => ({ id, x: kopf!.pin_x!, y: kopf!.pin_y!, label: l.length > 1 ? String(l.length) : kopf!.ist_360 ? '360' : '📷',
+                title: `${kopf!.titel ?? FOTODOKU_LABEL[kopf!.kategorie]}${l.length > 1 ? ` · ${l.length} Fotos ${formatDate(l[0]!.taken_at)} – ${formatDate(l[l.length - 1]!.taken_at)}` : ''}`,
+                className: l.some((x) => x.ist_360) ? 'doku pano-pin' : 'doku', onClick: () => (l.length > 1 ? setSerie({ id }) : setOffen(kopf!.id)) }))} />
           ) : <div className="empty">Noch kein freigegebener Plan – Fotos lassen sich trotzdem „ohne Planposition“ ablegen.</div>}
         </div>
         <div className="doku-galerie">
           <div className="group-title" style={{ marginTop: 0 }}>{plan ? `Auf diesem Plan (${aufPlan.length})` : 'Fotos'}</div>
-          <div className="doku-grid">{(plan ? aufPlan : rows).map((x) => <Kachel key={x.id} f={x} onOpen={() => setOffen(x.id)} />)}</div>
+          <div className="doku-grid">{(plan ? aufPlan : rows).map((x) => <Kachel key={x.id} f={x} anzahl={serien.get(x.serie_id)?.length ?? 1} onOpen={() => oeffnen(x)} />)}</div>
           {plan && rows.length > aufPlan.length && (
             <>
               <div className="group-title">Weitere ({rows.length - aufPlan.length}, andere Pläne oder ohne Position)</div>
-              <div className="doku-grid">{rows.filter((x) => !aufPlan.includes(x)).map((x) => <Kachel key={x.id} f={x} onOpen={() => setOffen(x.id)} />)}</div>
+              <div className="doku-grid">{rows.filter((x) => !aufPlan.includes(x)).map((x) => <Kachel key={x.id} f={x} anzahl={serien.get(x.serie_id)?.length ?? 1} onOpen={() => oeffnen(x)} />)}</div>
             </>
           )}
           {!rows.length && <div className="empty">Noch keine Fotos. „Foto auf Plan setzen“, auf die Stelle tippen und Fotos wählen – auch 360°-Fotos aus der Insta360-App.</div>}
         </div>
       </div>
       {neu && <HochladenSheet info={info} planId={neu === 'ohne' ? null : planId} pos={neu === 'ohne' ? null : neu} run={runAndLoad} onClose={() => setNeu(null)} />}
+      {neuInSerie && <HochladenSheet info={info} planId={null} pos={null} serieId={neuInSerie} run={runAndLoad} onClose={() => setNeuInSerie(null)} />}
+      {serie && !offen && !neuInSerie && serien.get(serie.id) && (
+        <SerieSheet fotos={serien.get(serie.id)!} start={serie.start} onClose={() => setSerie(null)} onDetails={(id) => setOffen(id)} onNeu={() => setNeuInSerie(serie.id)} />
+      )}
       {f && <FotoSheet f={f} info={info} run={runAndLoad} onClose={() => setOffen(null)} onOpenMangel={onOpenMangel} />}
     </>
   );
 }
 
 /** Upload one or more photos to a spot on the plan (or without a position). */
-function HochladenSheet({ info, planId, pos, run, onClose }: { info: ProjectInfo; planId: string | null; pos: { x: number; y: number } | null; run: Run; onClose: () => void }) {
+function HochladenSheet({ info, planId, pos, serieId, run, onClose }: { info: ProjectInfo; planId: string | null; pos: { x: number; y: number } | null; serieId?: string; run: Run; onClose: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [kat, setKat] = useState<FotodokuKategorie>('geschlossene_wand');
   const [titel, setTitel] = useState('');
@@ -141,13 +159,13 @@ function HochladenSheet({ info, planId, pos, run, onClose }: { info: ProjectInfo
   const [ort, setOrt] = useState('');
   const [fortschritt, setFortschritt] = useState<string | null>(null);
   return (
-    <Sheet title={pos ? 'Fotos an dieser Stelle' : 'Fotos ohne Planposition'} primary={fortschritt ?? `${files.length || ''} Hochladen`} primaryDisabled={!files.length || !!fortschritt} onCancel={onClose}
+    <Sheet title={serieId ? 'Neues Foto an dieser Stelle' : pos ? 'Fotos an dieser Stelle' : 'Fotos ohne Planposition'} primary={fortschritt ?? `${files.length || ''} Hochladen`} primaryDisabled={!files.length || !!fortschritt} onCancel={onClose}
       onPrimary={() => void run(async () => {
         let i = 0;
         for (const file of files) {
           setFortschritt(`${++i} von ${files.length} …`);
           const id = crypto.randomUUID();
-          await api('/fotodoku', { method: 'POST', body: { id, project_id: info.project.id, plan_id: planId, pin_page: pos ? 1 : null, pin_x: pos?.x ?? null, pin_y: pos?.y ?? null,
+          await api('/fotodoku', { method: 'POST', body: { id, serie_id: serieId ?? null, project_id: info.project.id, plan_id: planId, pin_page: pos ? 1 : null, pin_x: pos?.x ?? null, pin_y: pos?.y ?? null,
             kategorie: kat, titel: titel.trim() || null, notiz: notiz.trim() || null, location_id: ort || null, taken_at: new Date(file.lastModified || Date.now()).toISOString() } });
           const fd = new FormData();
           fd.append('file', file);
@@ -226,4 +244,48 @@ function FotoSheet({ f, info, run, onClose, onOpenMangel }: { f: DokuFoto; info:
       )}
     </Sheet>
   );
+}
+
+/** Series viewer: photos at one spot sorted by date – big view (360° or photo), previews below, arrows / keyboard. */
+function SerieSheet({ fotos, start, onClose, onDetails, onNeu }: { fotos: DokuFoto[]; start?: string; onClose: () => void; onDetails: (id: string) => void; onNeu: () => void }) {
+  const [i, setI] = useState(() => Math.max(0, start ? fotos.findIndex((f) => f.id === start) : fotos.length - 1));
+  const f = fotos[Math.min(i, fotos.length - 1)]!;
+  const url = useBild(f.hochgeladen ? f.id : null, false);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === 'ArrowLeft') setI((x) => Math.max(0, x - 1)); if (e.key === 'ArrowRight') setI((x) => Math.min(fotos.length - 1, x + 1)); };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [fotos.length]);
+  const tage = Math.round((new Date(fotos[fotos.length - 1]!.taken_at).getTime() - new Date(fotos[0]!.taken_at).getTime()) / 86_400_000);
+  return (
+    <Sheet title={`${f.titel || FOTODOKU_LABEL[f.kategorie]} · ${fotos.length} Fotos`} primary="Fertig" wide onCancel={onClose} onPrimary={onClose}>
+      <div className="serie-kopf">
+        <button className="btn" disabled={i === 0} onClick={() => setI(i - 1)} aria-label="Früher">‹</button>
+        <div><strong>{new Date(f.taken_at).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</strong>
+          <div className="sub">Foto {i + 1} von {fotos.length}{f.ort ? ` · ${f.ort}` : ''} · {f.von}{tage ? ` · Serie über ${tage} Tage` : ''}</div></div>
+        <button className="btn" disabled={i === fotos.length - 1} onClick={() => setI(i + 1)} aria-label="Später">›</button>
+      </div>
+      <div className="doku-bild">
+        {!url ? <p className="loading">{f.hochgeladen ? 'Foto wird geladen …' : 'Das Foto wird noch vom Gerät hochgeladen.'}</p>
+          : f.ist_360 ? <Pano360 key={f.id} url={url} /> : <img src={url} alt={f.titel ?? ''} />}
+      </div>
+      <div className="serie-leiste">
+        {fotos.map((x, j) => (
+          <button key={x.id} className={`serie-vorschau ${j === i ? 'on' : ''}`} onClick={() => setI(j)}>
+            <Vorschaubild f={x} />
+            <span>{new Date(x.taken_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+          </button>
+        ))}
+      </div>
+      <div className="meta-row" style={{ marginTop: 10 }}>
+        <button className="btn filled" onClick={onNeu}><Icon name="kamera" size={16} /> Neues Foto an dieser Stelle</button>
+        <button className="btn" onClick={() => onDetails(f.id)}>Details, Bearbeiten, Mangel daraus …</button>
+        <span className="spacer" /><span className="sub">← → zum Blättern</span>
+      </div>
+    </Sheet>
+  );
+}
+function Vorschaubild({ f }: { f: DokuFoto }) {
+  const url = useBild(f.hochgeladen ? f.id : null, true);
+  return url ? <img src={url} alt="" loading="lazy" /> : <span className="sub">…</span>;
 }

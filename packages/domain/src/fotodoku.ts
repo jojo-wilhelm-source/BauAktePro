@@ -27,6 +27,8 @@ export function ist360(width?: number | null, height?: number | null, xmp?: stri
 export const FotodokuInput = z.object({
   id: z.string().uuid(),
   project_id: z.string().uuid(),
+  /** Add to the series of an existing photo (same spot, other day); plan and pin are taken from it. */
+  serie_id: z.string().uuid().nullish(),
   plan_id: z.string().uuid().nullish(),
   pin_page: z.number().int().positive().nullish(),
   pin_x: z.number().min(0).max(1).nullish(),
@@ -40,4 +42,4 @@ export const FotodokuInput = z.object({
   taken_at: z.string().datetime({ offset: true }).optional(),
 });
 export type FotodokuInput = z.infer<typeof FotodokuInput>;
-export const FotodokuPatch = FotodokuInput.omit({ id: true, project_id: true, taken_at: true }).partial().extend({ base_version: z.number().int() });
+export const FotodokuPatch = FotodokuInput.omit({ id: true, project_id: true, taken_at: true, serie_id: true }).partial().extend({ base_version: z.number().int() });

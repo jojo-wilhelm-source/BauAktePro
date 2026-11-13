@@ -46,7 +46,7 @@ export function bildInfo(b: Buffer): { type: 'jpg' | 'png'; width: number | null
 }
 
 const LIST = (tx: TxSql) => tx`
-  f.id, f.project_id, f.plan_id, f.pin_page, f.pin_x, f.pin_y, f.location_id, l.name AS ort, f.gewerk_id, f.kategorie, f.titel, f.notiz, f.ist_360,
+  f.id, coalesce(f.serie_id, f.id) AS serie_id, f.project_id, f.plan_id, f.pin_page, f.pin_x, f.pin_y, f.location_id, l.name AS ort, f.gewerk_id, f.kategorie, f.titel, f.notiz, f.ist_360,
   f.file_key IS NOT NULL AS hochgeladen, f.width, f.height, f.taken_at, f.mangel_id, m.number AS mangel_number, f.version, f.created_by, u.name AS von, f.created_at`;
 
 export async function listFotodoku(tx: TxSql, userId: string, projectId: string, q: { plan?: string; kategorie?: string; ort?: string }) {
@@ -70,6 +70,12 @@ export async function createFotodoku(tx: TxSql, userId: string, input: unknown, 
   await requireIntern(tx, userId, d.project_id);
   const [dup] = await tx`SELECT id FROM foto_doku WHERE id = ${d.id}`;
   if (dup) return getOne(tx, d.id);
+  // Series: same spot as an existing photo – plan, pin and room come from the series' first photo.
+  if (d.serie_id) {
+    const [kopf] = await tx`SELECT coalesce(serie_id, id) AS kopf, plan_id, pin_page, pin_x, pin_y, location_id FROM foto_doku WHERE id = ${d.serie_id} AND project_id = ${d.project_id} AND deleted_at IS NULL`;
+    if (!kopf) throw new HttpError(422, 'Diese Fotoserie gibt es nicht (mehr)');
+    Object.assign(d, { serie_id: kopf.kopf, plan_id: kopf.plan_id, pin_page: kopf.pin_page, pin_x: kopf.pin_x, pin_y: kopf.pin_y, location_id: d.location_id ?? kopf.location_id });
+  }
   let location = d.location_id ?? null;
   if (!location && d.plan_id && d.pin_x != null && d.pin_y != null) {
     // Room from the pin (room areas on the plan), like for Mängel.
@@ -83,8 +89,8 @@ export async function createFotodoku(tx: TxSql, userId: string, input: unknown, 
     }
   }
   await tx`
-    INSERT INTO foto_doku (id, tenant_id, project_id, plan_id, pin_page, pin_x, pin_y, location_id, gewerk_id, kategorie, titel, notiz, ist_360, taken_at, created_by)
-    SELECT ${d.id}, tenant_id, ${d.project_id}, ${d.plan_id ?? null}, ${d.pin_page ?? (d.plan_id ? 1 : null)}, ${d.pin_x ?? null}, ${d.pin_y ?? null}, ${location},
+    INSERT INTO foto_doku (id, serie_id, tenant_id, project_id, plan_id, pin_page, pin_x, pin_y, location_id, gewerk_id, kategorie, titel, notiz, ist_360, taken_at, created_by)
+    SELECT ${d.id}, ${d.serie_id ?? null}, tenant_id, ${d.project_id}, ${d.plan_id ?? null}, ${d.pin_page ?? (d.plan_id ? 1 : null)}, ${d.pin_x ?? null}, ${d.pin_y ?? null}, ${location},
            ${d.gewerk_id ?? null}, ${d.kategorie}, ${d.titel ?? null}, ${d.notiz ?? null}, ${d.ist_360 ?? false}, ${d.taken_at ?? meta.occurredAt.toISOString()}, ${userId}
     FROM project WHERE id = ${d.project_id}`;
   await audit(tx, userId, d.project_id, d.id, 'erfasst', meta, { kategorie: d.kategorie, plan: d.plan_id ?? null });

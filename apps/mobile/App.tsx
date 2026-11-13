@@ -36,7 +36,7 @@ import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoU
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import { BautagebuchScreen } from './src/BautagebuchScreen';
 import { BestellungScreen } from './src/BestellungScreen';
-import { FotodokuDetail, FotodokuNew } from './src/FotodokuScreens';
+import { FotodokuNew, FotodokuSerie } from './src/FotodokuScreens';
 import { HeuteTab } from './src/HeuteTab';
 import { KontakteScreen } from './src/KontakteScreen';
 import { RaumScanner } from './src/RaumScanner';
@@ -273,10 +273,12 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number; planId: string } | null>(null);
   // Fotodoku: new photo at a plan spot, or an existing photo opened from its pin.
-  const [dokuPos, setDokuPos] = useState<{ planId: string; x: number; y: number } | null>(null);
+  const [dokuPos, setDokuPos] = useState<{ planId: string; x: number; y: number; serieId?: string } | null>(null);
   const [dokuOpen, setDokuOpen] = useState<string | null>(null);
-  const { data: fotos } = useQuery<{ id: string; plan_id: string; pin_x: number; pin_y: number; ist_360: number }>(
-    'SELECT id, plan_id, pin_x, pin_y, ist_360 FROM foto_doku WHERE project_id = ? AND plan_id IS NOT NULL AND pin_x IS NOT NULL', [membership?.project_id ?? '']);
+  // One pin per spot (series of photos from different days, docs/fachkonzept/16).
+  const { data: fotos } = useQuery<{ id: string; plan_id: string; pin_x: number; pin_y: number; ist_360: number; anzahl: number }>(
+    `SELECT coalesce(serie_id, id) AS id, min(plan_id) AS plan_id, min(pin_x) AS pin_x, min(pin_y) AS pin_y, max(ist_360) AS ist_360, count(*) AS anzahl
+     FROM foto_doku WHERE project_id = ? AND plan_id IS NOT NULL AND pin_x IS NOT NULL GROUP BY coalesce(serie_id, id)`, [membership?.project_id ?? '']);
   // New Mangel without a plan (from the list or a room QR code / link): optional room preselected.
   const [ohnePlan, setOhnePlan] = useState<{ room: string | null } | null>(null);
   useEffect(() => {
@@ -350,7 +352,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
         {dokuPos && <FotodokuNew projectId={pid} userId={session.userId} pos={dokuPos} onClose={() => setDokuPos(null)} />}
       </Modal>
       <Modal visible={!!dokuOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDokuOpen(null)}>
-        {dokuOpen && <FotodokuDetail id={dokuOpen} token={session.token} onClose={() => setDokuOpen(null)} />}
+        {dokuOpen && <FotodokuSerie serieId={dokuOpen} token={session.token} onClose={() => setDokuOpen(null)} onNeu={(p) => { setDokuOpen(null); setTimeout(() => setDokuPos(p), 400); }} />}
       </Modal>
       <Modal visible={!!draft} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDraft(null)}>
         {draft && <NewMangel projectId={pid} pos={draft} me={me} onClose={() => setDraft(null)} />}
@@ -457,7 +459,7 @@ function PlaeneTab(props: {
   downloading: boolean;
   onSelect: (id: string) => void;
   onPick: (p: { page: number; x: number; y: number; planId: string }) => void;
-  fotos: { id: string; plan_id: string; pin_x: number; pin_y: number; ist_360: number }[];
+  fotos: { id: string; plan_id: string; pin_x: number; pin_y: number; ist_360: number; anzahl: number }[];
   onFoto: (id: string) => void;
 }) {
   const [planIdx, setPlanIdx] = useState(0);

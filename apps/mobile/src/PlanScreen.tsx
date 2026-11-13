@@ -18,7 +18,7 @@ interface Props {
   onSelect: (id: string) => void;
   onPick: (pos: { page: number; x: number; y: number }) => void;
   /** Fotodoku photos on this plan (teal square pins, indigo for 360°). */
-  fotos?: { id: string; pin_x: number; pin_y: number; ist_360: number | boolean }[];
+  fotos?: { id: string; pin_x: number; pin_y: number; ist_360: number | boolean; anzahl?: number }[];
   onFoto?: (id: string) => void;
 }
 
@@ -92,7 +92,7 @@ export function PlanScreen({ planId, fileUri, downloading, maengel, ampel, onSel
               {fotos.map((f) => (
                 <Pressable key={f.id} hitSlop={8} onPress={() => onFoto?.(f.id)}
                   style={{ position: 'absolute', left: f.pin_x * width - 13, top: f.pin_y * height - 26 }}>
-                  <View style={[styles.foto, { backgroundColor: f.ist_360 ? TINT.indigo : TINT.teal }]}><Text style={styles.fotoText}>{f.ist_360 ? '360' : '📷'}</Text></View>
+                  <View style={[styles.foto, { backgroundColor: f.ist_360 ? TINT.indigo : TINT.teal }]}><Text style={styles.fotoText}>{(f.anzahl ?? 1) > 1 ? String(f.anzahl) : f.ist_360 ? '360' : '📷'}</Text></View>
                 </Pressable>
               ))}
             </Pressable>
