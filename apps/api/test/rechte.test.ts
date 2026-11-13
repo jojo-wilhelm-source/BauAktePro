@@ -1433,15 +1433,28 @@ describe('IT-Administration: Einstellungen, Systemübersicht, Protokoll', () => 
     const m = (await call('uBauleitung', 'GET', `/projects/${ID.project}/maengel`)).body.find((x: any) => x.id === id);
     const tage = Math.round((new Date(m.due_date).getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime()) / 86_400_000);
     expect(tage).toBe(5);
+    // audit log records the change, naming the changed areas (check before further settings changes below)
+    const p = (await call('uAdmin', 'GET', '/admin/protokoll?bereich=einstellungen')).body;
+    expect(p.eintraege[0].action).toBe('geaendert');
+    expect(p.eintraege[0].data.bereiche).toEqual(expect.arrayContaining(['maengel', 'freigabe']));
+    expect((await call('uElektro', 'GET', '/admin/protokoll')).status).toBe(403);
+    // the escalation threshold itself must also apply to the displayed stage, not just the default due date
+    const vorNeu = randomUUID();
+    const zehnTageUeberfaellig = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
+    await call('uBauleitung', 'POST', '/maengel', { id: vorNeu, project_id: ID.project, location_id: ID.raumBad, gewerk_id: ID.gwFliesen, description: 'Abdichtung fehlt', due_date: zehnTageUeberfaellig });
+    await call('uAdmin', 'PUT', '/admin/einstellungen', { ...neu, maengel: { ...neu.maengel, eskalation_tage: 365 } });
+    const listeHoch = (await call('uBauleitung', 'GET', `/projects/${ID.project}/maengel`)).body;
+    expect(listeHoch.find((x: any) => x.id === vorNeu).escalation.stage).toBe('ueberfaellig');
+    expect((await call('uPolier', 'GET', `/projects/${ID.project}/cockpit/polier`)).body.ueberfaellig.find((x: any) => x.id === vorNeu)?.esc.stage).toBe('ueberfaellig');
+    await call('uAdmin', 'PUT', '/admin/einstellungen', { ...neu, maengel: { ...neu.maengel, eskalation_tage: 3 } });
+    const listeNiedrig = (await call('uBauleitung', 'GET', `/projects/${ID.project}/maengel`)).body;
+    expect(listeNiedrig.find((x: any) => x.id === vorNeu).escalation.stage).toBe('an_bauleitung');
+    expect((await call('uPolier', 'GET', `/projects/${ID.project}/cockpit/polier`)).body.ueberfaellig.find((x: any) => x.id === vorNeu)?.esc.stage).toBe('an_bauleitung');
     // system overview and audit log: admin only
     expect((await call('uBauleitung', 'GET', '/admin/system')).status).toBe(403);
     const sys = (await call('uAdmin', 'GET', '/admin/system')).body;
     expect(sys.zahlen.benutzer_aktiv).toBeGreaterThanOrEqual(8);
     expect(Array.isArray(sys.speicher)).toBe(true);
-    const p = (await call('uAdmin', 'GET', '/admin/protokoll?bereich=einstellungen')).body;
-    expect(p.eintraege[0].action).toBe('geaendert');
-    expect(p.eintraege[0].data.bereiche).toEqual(expect.arrayContaining(['maengel', 'freigabe']));
-    expect((await call('uElektro', 'GET', '/admin/protokoll')).status).toBe(403);
   });
 });
 

@@ -5,7 +5,7 @@ import multipart from '@fastify/multipart';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { ZodError, z } from 'zod';
 import { asUser, ADMIN_URL, connect, type Sql } from '@bap/db';
-import { aktiveModule, allowedTransitions, escalation, type MangelStatus, type Priority, type ProjectRole } from '@bap/domain';
+import { aktiveModule, allowedTransitions, escalation, eskalationsRegeln, type MangelStatus, type Priority, type ProjectRole } from '@bap/domain';
 import { issueToken, jwks, verifyToken } from './auth';
 import { addFoto, fotoFile } from './foto-service';
 import { createFolder, decideDocument, documentFile, dokumenteTree, smartUpload, uploadDocument } from './dokumente-service';
@@ -388,6 +388,7 @@ export function buildApp(sql: Sql) {
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/maengel', async (req) =>
     asUser(sql, req.userId, async (tx) => {
       const actor = await actorFor(tx, req.userId, req.params.projectId);
+      const regeln = eskalationsRegeln(await ladeEinstellungen(tx));
       const rows = await tx`
         SELECT m.*, l.name AS location_name, g.name AS gewerk_name, c.name AS assigned_company_name, u.name AS created_by_name,
                an.id AS anzeige_id, an.number AS anzeige_number, an.status AS anzeige_status, an.sent_at AS anzeige_sent_at,
@@ -409,7 +410,7 @@ export function buildApp(sql: Sql) {
         : [];
       return rows.map((m) => ({
         ...m,
-        escalation: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }),
+        escalation: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }, undefined, regeln),
         allowed_transitions: allowedTransitions(
           { role: actor.role, userId: actor.userId, companyId: actor.companyId },
           { status: m.status as MangelStatus, createdBy: m.created_by as string, creatorRole: m.creator_role as ProjectRole, assignedCompanyId: m.assigned_company_id as string | null },

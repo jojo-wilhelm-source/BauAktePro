@@ -4,8 +4,9 @@
  * - Polier: "Heute auf der Baustelle" – today's report, Mängel to check, due Punkte, deliveries, photos.
  */
 import type { TxSql } from '@bap/db';
-import { escalation, punktNo, type MangelStatus, type Priority } from '@bap/domain';
+import { escalation, eskalationsRegeln, punktNo, type MangelStatus, type Priority } from '@bap/domain';
 import { actorFor, HttpError } from './mangel-service';
+import { ladeEinstellungen } from './system-service';
 import { startPage } from './start-service';
 import { angebotUrl } from './lv-service';
 
@@ -21,6 +22,7 @@ export async function polierCockpit(t: TxSql, userId: string, projectId: string)
            max(datum)::text AS letzter
     FROM tagesbericht WHERE project_id = ${projectId}`;
 
+  const regeln = eskalationsRegeln(await ladeEinstellungen(t));
   const maengel = await t`
     SELECT m.id, m.number, m.description, m.status, m.priority, m.due_date, m.nachfrist_date, l.name AS ort, c.name AS firma
     FROM mangel m JOIN location l ON l.id = m.location_id LEFT JOIN company c ON c.id = m.assigned_company_id
@@ -28,7 +30,7 @@ export async function polierCockpit(t: TxSql, userId: string, projectId: string)
   const mOut = maengel.map((m) => ({
     id: m.id as string, number: m.number as number, description: m.description as string, status: m.status as MangelStatus, ort: m.ort as string, firma: (m.firma as string) ?? null,
     due: iso(m.nachfrist_date ?? m.due_date),
-    esc: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }),
+    esc: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }, undefined, regeln),
   }));
   const pruefen = mOut.filter((m) => m.status === 'behoben_gemeldet').sort((x, y) => (x.due ?? '9').localeCompare(y.due ?? '9'));
   const ueberfaellig = mOut.filter((m) => m.esc.ampel === 'rot' && m.status !== 'behoben_gemeldet');

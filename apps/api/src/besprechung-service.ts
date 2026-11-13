@@ -17,6 +17,7 @@ import {
   besprechungNo,
   carriesOver,
   escalation,
+  eskalationsRegeln,
   formatDate,
   isPlausibleSignature,
   kalenderwoche,
@@ -37,6 +38,7 @@ import { sendMail } from './mailer';
 import { WEB_URL } from './anmeldung';
 import { LOGO_DIR } from './bautagebuch-service';
 import { actorFor, HttpError, type WriteMeta } from './mangel-service';
+import { ladeEinstellungen } from './system-service';
 
 const DIR = fileURLToPath(new URL('../../../storage/protokolle/', import.meta.url));
 
@@ -135,9 +137,10 @@ export async function besprechungDetails(tx: TxSql, userId: string, id: string) 
         FROM mangel m JOIN company c ON c.id = m.assigned_company_id
         WHERE m.project_id = ${b.project_id} AND m.deleted_at IS NULL AND m.assignment_confirmed AND m.assigned_company_id IN ${tx(nuIds)}`
     : [];
+  const regeln = maengelRows.length ? eskalationsRegeln(await ladeEinstellungen(tx)) : null;
   const maengel = (maengelRows as Record<string, unknown>[])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((m): Record<string, any> & { escalation: ReturnType<typeof escalation> } => ({ ...m, escalation: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }) }))
+    .map((m): Record<string, any> & { escalation: ReturnType<typeof escalation> } => ({ ...m, escalation: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }, undefined, regeln ?? undefined) }))
     .filter((m) => m.escalation.ampel === 'rot');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = b;

@@ -3,8 +3,9 @@
  * person's firm in one list – overdue first. Visibility comes from RLS (a NU only ever sees his own things).
  */
 import type { TxSql } from '@bap/db';
-import { anzeigeNo, escalation, punktNo, type MangelStatus, type Priority } from '@bap/domain';
+import { anzeigeNo, escalation, eskalationsRegeln, punktNo, type MangelStatus, type Priority } from '@bap/domain';
 import { actorFor } from './mangel-service';
+import { ladeEinstellungen } from './system-service';
 
 const iso = (v: unknown) => (v ? (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)) : null);
 
@@ -12,6 +13,7 @@ export async function startPage(tx: TxSql, userId: string, projectId: string) {
   const a = await actorFor(tx, userId, projectId);
   const nu = a.role === 'nu';
   const company = nu ? a.companyId : null;
+  const regeln = eskalationsRegeln(await ladeEinstellungen(tx));
 
   const maengel = await tx`
     SELECT m.id, m.number, m.description, m.status, m.priority, m.due_date, m.nachfrist_date, l.name AS location_name
@@ -22,7 +24,7 @@ export async function startPage(tx: TxSql, userId: string, projectId: string) {
     .map((m) => ({
       id: m.id, number: m.number, description: m.description, status: m.status, location: m.location_name,
       due: iso(m.nachfrist_date ?? m.due_date),
-      esc: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }),
+      esc: escalation({ status: m.status as MangelStatus, due_date: iso(m.due_date), nachfrist_date: iso(m.nachfrist_date), priority: m.priority as Priority }, undefined, regeln),
       // What the NU has to do next.
       todo: m.status === 'zugewiesen' ? 'Annehmen und beheben' : m.status === 'in_bearbeitung' || m.status === 'nicht_behoben' ? 'Beheben und mit Foto melden' : m.status === 'behoben_gemeldet' ? 'Wartet auf Prüfung' : m.status === 'strittig' ? 'In Klärung' : '',
     }))
