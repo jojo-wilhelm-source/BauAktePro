@@ -38,13 +38,15 @@ interface Props {
   onSelectPunkt?: (id: string) => void;
   /** Click on an empty spot: position relative to the page (0..1). */
   onPick?: (pos: { page: number; x: number; y: number }) => void;
+  /** Further pins, e.g. photos of the Fotodoku (camera symbol). */
+  extraPins?: { id: string; x: number; y: number; label: string; title: string; className?: string; onClick: () => void }[];
 }
 
 /**
  * Renders page 1 of a plan with PDF.js and overlays pins (relative coordinates).
  * Colours by status (docs/fachkonzept/03): red open, orange in progress, green done, blue info.
  */
-export function PlanView({ planId, planIndex, maengel, punkte = [], selectedId, draft, onSelect, onSelectPunkt, onPick }: Props) {
+export function PlanView({ planId, planIndex, maengel, punkte = [], selectedId, draft, onSelect, onSelectPunkt, onPick, extraPins = [] }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +123,14 @@ export function PlanView({ planId, planIndex, maengel, punkte = [], selectedId, 
             >
               <PinShape square />
               <span>{p.number ?? '•'}</span>
+            </button>
+          ))}
+        {size &&
+          extraPins.map((p) => (
+            <button key={p.id} className={`pin extra ${p.className ?? ''} ${p.id === selectedId ? 'selected' : ''}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} title={p.title}
+              onClick={(e) => { e.stopPropagation(); p.onClick(); }}>
+              <PinShape square />
+              <span>{p.label}</span>
             </button>
           ))}
         {size && draft && (

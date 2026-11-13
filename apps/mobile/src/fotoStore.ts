@@ -17,11 +17,12 @@ import { freshSession, type Session } from './session';
 const dir = new Directory(Paths.document, 'fotos');
 export const localFoto = (id: string) => new File(dir, `${id}.jpg`);
 
-export type Picked = { uri: string; takenAt: string };
+export type Picked = { uri: string; takenAt: string; width?: number; height?: number };
 
 /** Camera on a real device; the simulator has no camera, so it falls back to the photo library. */
-export async function pickFoto(source: 'camera' | 'library'): Promise<Picked | null> {
-  const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 0.6, exif: false };
+export async function pickFoto(source: 'camera' | 'library', voll = false): Promise<Picked | null> {
+  // voll: Fotodoku / 360° panoramas keep their full resolution (quality 0.9), Mängel photos are compressed.
+  const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: voll ? 0.9 : 0.6, exif: false };
   let res: ImagePicker.ImagePickerResult;
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -35,7 +36,8 @@ export async function pickFoto(source: 'camera' | 'library'): Promise<Picked | n
     res = await ImagePicker.launchImageLibraryAsync(opts);
   }
   if (res.canceled || !res.assets[0]) return null;
-  return { uri: res.assets[0].uri, takenAt: new Date().toISOString() };
+  const a = res.assets[0];
+  return { uri: a.uri, takenAt: new Date().toISOString(), width: a.width, height: a.height };
 }
 
 /** Copy the picked image into app storage and queue it for upload. Works offline. */
@@ -111,6 +113,13 @@ export async function queueBeleg(db: AbstractPowerSyncDatabase, kind: 'einkauf' 
   await db.execute('INSERT INTO beleg_upload (id, kind, entity_id, uri) VALUES (?, ?, ?, ?)', [id, kind, entityId, localFoto(id).uri]);
 }
 
+/** Fotodoku photo: kept on the device under the entry's id (shown offline), uploaded once the entry is on the server. */
+export async function queueDoku(db: AbstractPowerSyncDatabase, fotoId: string, picked: Picked) {
+  dir.create({ idempotent: true, intermediates: true });
+  new File(picked.uri).copy(localFoto(fotoId));
+  await db.execute('INSERT INTO beleg_upload (id, kind, entity_id, uri) VALUES (?, ?, ?, ?)', [Crypto.randomUUID(), 'fotodoku', fotoId, localFoto(fotoId).uri]);
+}
+
 /** Uploads receipt photos of entries that are already on the server (nothing left for them in the local write queue). */
 let belegBusy = false;
 export async function uploadQueuedBelege(db: AbstractPowerSyncDatabase, session: Session) {
@@ -124,7 +133,9 @@ export async function uploadQueuedBelege(db: AbstractPowerSyncDatabase, session:
     const s = await freshSession(session);
     for (const q of queue) {
       try {
-        const url = q.kind === 'punkt' ? `${API_URL}/besprechung-punkte/${q.entity_id}/fotos` : `${API_URL}/${q.kind === 'einkauf' ? 'einkaeufe' : 'tankvorgaenge'}/${q.entity_id}/beleg`;
+        const url = q.kind === 'punkt' ? `${API_URL}/besprechung-punkte/${q.entity_id}/fotos`
+          : q.kind === 'fotodoku' ? `${API_URL}/fotodoku/${q.entity_id}/datei`
+          : `${API_URL}/${q.kind === 'einkauf' ? 'einkaeufe' : 'tankvorgaenge'}/${q.entity_id}/beleg`;
         const res = await uploadAsync(url, q.uri, {
           httpMethod: 'POST', uploadType: FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: 'image/jpeg',
           headers: { authorization: `Bearer ${s.token}` }, parameters: { id: q.id },

@@ -1349,3 +1349,41 @@ describe('Bestellanforderung, Einkaufsportal, Mitteilungen', () => {
     expect(audit.map((a) => a.action)).toContain('status:bestellt');
   });
 });
+
+describe('Fotodokumentation', () => {
+  it('intern auf dem Plan; Raum aus Plan; 360° aus der Datei; Mangel aus Foto; NU/Bauherr/Einkauf ausgeschlossen', async () => {
+    const id = randomUUID();
+    const body = { id, project_id: ID.project, plan_id: ID.planEg, pin_x: 0.4, pin_y: 0.5, kategorie: 'geschlossene_wand', titel: 'Wand Bad vor Beplankung' };
+    for (const u of ['uElektro', 'uBauherr', 'uEinkauf'] as const) expect((await call(u, 'POST', '/fotodoku', { ...body, id: randomUUID() })).status).toBe(403);
+    const r = await call('uPolier', 'POST', '/fotodoku', body);
+    expect(r.status).toBe(200);
+    expect(r.body.location_id).not.toBeNull(); // from the plan
+    expect((await call('uPolier', 'POST', '/fotodoku', body)).status).toBe(200); // idempotent
+    // 360° JPEG header: SOF0 with 5760 x 2880
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x0b, 0x40, 0x16, 0x80, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xd9]);
+    const up = await upload('uPolier', `/fotodoku/${id}/datei`, {}, 'pano.jpg', jpg);
+    expect(up.status).toBe(200);
+    expect(up.body.ist_360).toBe(true);
+    expect(up.body.width).toBe(5760);
+    const list = (await call('uBauleitung', 'GET', `/projects/${ID.project}/fotodoku?plan=${ID.planEg}`)).body;
+    expect(list.map((f: any) => f.id)).toContain(id);
+    expect((await call('uElektro', 'GET', `/projects/${ID.project}/fotodoku`)).status).toBe(403);
+    expect((await app.inject({ method: 'GET', url: `/fotodoku/${id}/datei`, headers: { authorization: `Bearer ${tokens.uElektro}` } })).statusCode).toBe(404);
+    // Mangel from the photo: same pin, photo copied
+    const m = await call('uBauleitung', 'POST', `/fotodoku/${id}/mangel`, { description: 'Dämmung fehlt im Gefach', gewerk_id: ID.gwFliesen });
+    expect(m.status).toBe(200);
+    const mangel = (await call('uBauleitung', 'GET', `/projects/${ID.project}/maengel`)).body.find((x: any) => x.id === m.body.mangel_id);
+    expect(mangel.pin_x).toBeCloseTo(0.4);
+    expect((await call('uBauleitung', 'POST', `/fotodoku/${id}/mangel`, { description: 'x', gewerk_id: ID.gwFliesen })).status).toBe(409);
+    // trash: others' photos only the Bauleitung
+    const other = randomUUID();
+    await call('uBauleitung', 'POST', '/fotodoku', { ...body, id: other });
+    expect((await call('uPolier', 'DELETE', `/fotodoku/${other}`)).status).toBe(403);
+    expect((await call('uPolier', 'DELETE', `/fotodoku/${id}`)).status).toBe(200);
+    expect((await call('uBauleitung', 'GET', `/projects/${ID.project}/fotodoku`)).body.map((f: any) => f.id)).not.toContain(id);
+    // offline upload from the app
+    const off = randomUUID();
+    const res = await call('uPolier', 'POST', '/sync/upload', { ops: [{ op: 'PUT', table: 'foto_doku', id: off, data: { project_id: ID.project, plan_id: ID.planEg, pin_x: 0.1, pin_y: 0.1, pin_page: 1, kategorie: 'schacht', titel: null, notiz: null, ist_360: 0, location_id: null, gewerk_id: null, created_by: ID.uPolier, taken_at: '2026-11-12T08:00:00.000Z' } }] });
+    expect(res.body.results[0].ok).toBe(true);
+  });
+});

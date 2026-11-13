@@ -70,5 +70,7 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
 - [x] **D10 – Bautagebuch:** PDF-Format nach „Vorlage_Bautagesbericht" umgesetzt (12.11.2026, docs/vorlagen). Offen: Wetter automatisch (braucht Koordinaten und einen Wetterdienst; bis dahin Eingabe von Hand). → [07](fachkonzept/07-bautagebuch-bauzeitenplan.md)
 - [ ] **D11 – Nachträge über der Freigabegrenze:** Bisher „geht an die Geschäftsführung“. Die Geschäftsführung bekommt aber keinen Zugang (12.11.2026). Wer gibt Nachträge über 50.000 € frei – Projektleitung? → [11](fachkonzept/11-rechnungen-nachtraege-budget.md)
 - [x] **D12 – NU-Besprechung-Konzept:** umgesetzt (12.11.2026, Datei liegt in docs/vorlagen). Ursprünglich: Die Datei NU-Besprechung_Konzept_5.html liegt in OneDrive; macOS gibt sie für Claude nicht frei. Bitte in den Projektordner kopieren, dann wird die Besprechung daran angeglichen. → [09](fachkonzept/09-besprechungen.md)
+- [ ] **D13 – Fotodokumentation für Bauherr/NU:** Bisher nur intern (Bauleitung, Polier). Sollen Bauherr oder NU einzelne Fotos sehen (z. B. freigegebene Fotos je Gewerk)? ANNAHME: nein. → [16](fachkonzept/16-fotodokumentation.md)
+- [ ] **D14 – Insta360 direkt verbinden:** Heute Import über die Insta360-App („In Fotos speichern“). Direktverbindung braucht das Insta360-Kamera-SDK (Antrag beim Hersteller, Bilder über das Kamera-WLAN, Bluetooth nur zum Koppeln) und einen App-Neubau. Welches Modell (X3, X4, ONE RS …)? Antrag stellen? → [16](fachkonzept/16-fotodokumentation.md)
   **Entscheidung:**
 

@@ -17,6 +17,9 @@ interface Props {
   ampel: (m: MangelRow) => 'gruen' | 'gelb' | 'rot' | 'grau';
   onSelect: (id: string) => void;
   onPick: (pos: { page: number; x: number; y: number }) => void;
+  /** Fotodoku photos on this plan (teal square pins, indigo for 360°). */
+  fotos?: { id: string; pin_x: number; pin_y: number; ist_360: number | boolean }[];
+  onFoto?: (id: string) => void;
 }
 
 const PIN = 30;
@@ -35,7 +38,7 @@ function Pin({ color, label }: { color: string; label: string }) {
  * relative coordinates. Zoom + pins comes with the native PDFKit view (next step, docs/fachkonzept/04).
  * The file comes from the device (planStore), so the plan works without network.
  */
-export function PlanScreen({ planId, fileUri, downloading, maengel, ampel, onSelect, onPick }: Props) {
+export function PlanScreen({ planId, fileUri, downloading, maengel, ampel, onSelect, onPick, fotos = [], onFoto }: Props) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const [ratio, setRatio] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +89,12 @@ export function PlanScreen({ planId, fileUri, downloading, maengel, ampel, onSel
                     <Pin color={TONE_HEX[MANGEL_TONE[(m.status ?? 'neu') as MangelStatus]]} label={m.number ? String(m.number) : '•'} />
                   </Pressable>
                 ))}
+              {fotos.map((f) => (
+                <Pressable key={f.id} hitSlop={8} onPress={() => onFoto?.(f.id)}
+                  style={{ position: 'absolute', left: f.pin_x * width - 13, top: f.pin_y * height - 26 }}>
+                  <View style={[styles.foto, { backgroundColor: f.ist_360 ? TINT.indigo : TINT.teal }]}><Text style={styles.fotoText}>{f.ist_360 ? '360' : '📷'}</Text></View>
+                </Pressable>
+              ))}
             </Pressable>
           )}
         </View>
@@ -115,5 +124,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 2 },
   },
+  foto: { width: 26, height: 26, borderRadius: 6, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
+  fotoText: { color: '#fff', fontWeight: '700', fontSize: 9 },
   pinText: { color: '#fff', fontWeight: '700', fontSize: 12, transform: [{ rotate: '-45deg' }] },
 });

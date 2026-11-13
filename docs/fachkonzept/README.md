@@ -20,3 +20,4 @@
 | [15-design.md](15-design.md) | Gestaltung im Apple-Stil (iOS und Web) | alle |
 
 Stellen mit **❓ OFFEN** sind ungeklärt. Bis zur Klärung gilt die genannte Annahme oder es wird nachgefragt. Gesammelt in [../offene-punkte.md](../offene-punkte.md).
+- [16 Fotodokumentation auf Plänen (inkl. 360°)](16-fotodokumentation.md)

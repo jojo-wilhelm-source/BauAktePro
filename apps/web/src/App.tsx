@@ -24,6 +24,7 @@ import type { PunktPin } from './PlanView';
 import { PlanView } from './PlanView';
 import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { EinkaufShell } from './EinkaufShell';
+import { FotodokuPage } from './Fotodoku';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -32,7 +33,7 @@ import { PageHeader, Sheet, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -209,6 +210,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {has('besprechungen') && nav('besprechungen', 'besprechung', 'Besprechungen')}
         {has('plaene') && nav('plaene', 'plan', 'Pläne', <span className="count">{info?.plans.length ?? ''}</span>)}
         {has('dokumente') && nav('dokumente', 'ordner', 'Dokumente')}
+        {info && (info.role === 'bauleitung' || info.role === 'polier') && nav('fotodoku', 'kamera', 'Fotodokumentation')}
         {info && info.role !== 'bauherr' && info.role !== 'einkauf' && nav('nachunternehmer', 'firmen', 'Nachunternehmer')}
         {info && info.role !== 'bauherr' && info.role !== 'einkauf' && has('stunden') && nav('stunden', 'kosten', 'Stundenzettel')}
         {info && (info.role === 'bauleitung' || info.role === 'nu') && has('nachtraege') && nav('einreichungen', 'rechnung', 'Nachträge & Rechnungen')}
@@ -333,6 +335,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'ausschreibung' && <AusschreibungPage key={lvOpen ?? 'liste'} info={info} run={run} initialLv={lvOpen} />}
+            {module === 'fotodoku' && <FotodokuPage info={info} run={run} onOpenMangel={(id) => { setSelected(id); setModule('maengel'); }} />}
             {module === 'bestellungen' && <BestellungenPage key={banfOpen ?? 'liste'} info={info} run={run} meId={me.user.id} openId={banfOpen} onOpenLv={(lv) => gehe(projectId, { module: 'ausschreibung', lv })} />}
             {module === 'mitteilungen' && <MitteilungenPage onChange={() => void ladeUngelesen()} onOpen={(m: Mitteilung) => {
               if (m.entity === 'bestellanforderung' && m.project_id && m.entity_id) gehe(m.project_id, { module: 'bestellungen', banf: m.entity_id });

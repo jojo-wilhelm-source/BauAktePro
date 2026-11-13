@@ -12,3 +12,5 @@ export * from './rechte';
 export * from './lv';
 export * from './etiketten';
 export * from './bestellung';
+export * from './fotodoku';
+export * from './pano';

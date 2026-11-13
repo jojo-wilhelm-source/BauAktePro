@@ -14,6 +14,7 @@ import { editEinkauf, editFahrt, editTanken, addFahrt, addFahrzeug, addTanken, a
 import { decideEinreichung, einreichungFile, listEinreichungen, submitEinreichung } from './einreichung-service';
 import { anzeigeDetails, anzeigePdf, maengelBericht, PLAN_DIR, createAnzeige, patchAnzeige, sendAnzeige } from './anzeige-service';
 import { etikettenPdf, getFormat as getEtikettenFormat, saveFormat as saveEtikettenFormat } from './etiketten-service';
+import { createFotodoku, editFotodoku, fotodokuDatei, fotodokuFile, listFotodoku, mangelAusFoto, removeFotodoku } from './fotodoku-service';
 import { anzahlUngelesen, banfZuLv, createBanf, editBanf, einkaufsportal, getBanf, listBanf, listNachrichten, nachrichtGelesen, statusBanf } from './bestellung-service';
 import { erfasseAngebot, lvPdfIntern, publicLvPdf, saveKalkulation, copyLv, listOrdner, listStamm, removeOrdner, removeStamm, saveOrdner, saveStamm, angebotPdf, getLv, listLv, lvPreisspiegel, publicAnfrage, saveLv, sendAnfragen, submitAngebot, vergeben } from './lv-service';
 import { listKontakte, removeKontakt, saveKontakt } from './kontakt-service';
@@ -216,6 +217,22 @@ export function buildApp(sql: Sql) {
   app.put('/stammleistungen', async (req) => asUser(sql, req.userId, (tx) => saveStamm(tx, req.userId, req.body)));
   app.delete<{ Params: { id: string } }>('/stammleistungen/:id', async (req) => asUser(sql, req.userId, (tx) => removeStamm(tx, req.params.id)));
   app.get<{ Params: { id: string } }>('/lv/:id/preisspiegel', async (req) => asUser(sql, req.userId, (tx) => lvPreisspiegel(tx, req.userId, req.params.id)));
+  // --- Fotodokumentation (docs/fachkonzept/16) ---------------------------------------------
+  app.get<{ Params: { id: string }; Querystring: { plan?: string; kategorie?: string; ort?: string } }>('/projects/:id/fotodoku', async (req) => asUser(sql, req.userId, (tx) => listFotodoku(tx, req.userId, req.params.id, req.query)));
+  app.post('/fotodoku', async (req) => asUser(sql, req.userId, (tx) => createFotodoku(tx, req.userId, req.body, meta(req))));
+  app.patch<{ Params: { id: string } }>('/fotodoku/:id', async (req) => asUser(sql, req.userId, (tx) => editFotodoku(tx, req.userId, req.params.id, req.body, meta(req))));
+  app.delete<{ Params: { id: string } }>('/fotodoku/:id', async (req) => asUser(sql, req.userId, (tx) => removeFotodoku(tx, req.userId, req.params.id, meta(req))));
+  app.post<{ Params: { id: string } }>('/fotodoku/:id/datei', async (req) => {
+    const u = await readUpload(req);
+    return asUser(sql, req.userId, (tx) => fotodokuDatei(tx, req.userId, req.params.id, u.bytes));
+  });
+  app.get<{ Params: { id: string }; Querystring: { vorschau?: string } }>('/fotodoku/:id/datei', async (req, reply) => {
+    const f = await asUser(sql, req.userId, (tx) => fotodokuFile(tx, req.params.id, req.query.vorschau === '1'));
+    reply.header('content-type', f.type).header('cache-control', 'private, max-age=604800, immutable');
+    return reply.send(f.bytes);
+  });
+  app.post<{ Params: { id: string } }>('/fotodoku/:id/mangel', async (req) => asUser(sql, req.userId, (tx) => mangelAusFoto(tx, req.userId, req.params.id, req.body, meta(req))));
+
   // --- Bestellanforderungen, Einkaufsportal, Mitteilungen (docs/fachkonzept/12, 04) -------------------
   app.get<{ Params: { id: string } }>('/projects/:id/bestellanforderungen', async (req) => asUser(sql, req.userId, (tx) => listBanf(tx, req.userId, req.params.id)));
   app.post('/bestellanforderungen', async (req) => asUser(sql, req.userId, (tx) => createBanf(tx, req.userId, req.body, meta(req))));
@@ -694,6 +711,12 @@ export function buildApp(sql: Sql) {
             rest.besprechung_id ??= rest.first_besprechung_id; // local column name on the device
             const created = meta(req, (data.occurred_at ?? data.created_at) as string | undefined);
             return addPunkt(tx, req.userId, { ...rest, id: op.id }, created);
+          }
+          // Fotodoku entry made on the phone (offline); the file follows via /fotodoku/:id/datei.
+          if (op.table === 'foto_doku' && op.op === 'PUT') {
+            const { created_at: _c, ist_360, pin_page, ...rest } = data as Record<string, unknown>;
+            const clean = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null));
+            return { ok: true, foto_doku: await createFotodoku(tx, req.userId, { ...clean, id: op.id, ist_360: ist_360 === 1 || ist_360 === true, pin_page: pin_page ?? undefined }, meta(req)) };
           }
           // Bestellanforderung made on the phone (offline): created once, idempotent by id.
           if (op.table === 'bestellanforderung' && op.op === 'PUT') {

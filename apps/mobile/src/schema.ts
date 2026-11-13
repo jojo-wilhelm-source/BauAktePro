@@ -96,6 +96,12 @@ const bestellanforderung = new Table({
   gewerk_id: column.text, benoetigt_am: column.text, dringend: column.integer, status: column.text, lieferant: column.text, bestell_nr: column.text,
   liefertermin: column.text, bemerkung_einkauf: column.text, created_by: column.text, created_at: column.text,
 }, { indexes: { p: ['project_id'] } });
+/** Fotodoku on plans (docs/fachkonzept/16): entries made offline; files follow via beleg_upload (kind 'fotodoku'). */
+const foto_doku = new Table({
+  project_id: column.text, plan_id: column.text, pin_page: column.integer, pin_x: column.real, pin_y: column.real, location_id: column.text, gewerk_id: column.text,
+  kategorie: column.text, titel: column.text, notiz: column.text, ist_360: column.integer, file_key: column.text, width: column.integer, height: column.integer,
+  taken_at: column.text, mangel_id: column.text, version: column.integer, created_by: column.text, created_at: column.text,
+}, { indexes: { plan: ['plan_id'] } });
 /** Receipt photos waiting for upload (einkauf / tankvorgang). Never synced. */
 const beleg_upload = new Table({ kind: column.text, entity_id: column.text, uri: column.text }, { localOnly: true });
 /** Dateiablage (docs/fachkonzept/03, 05): folders, documents and their released revisions; files are downloaded by offline.ts. */
@@ -153,7 +159,7 @@ export const AppSchema = new Schema({
   besprechung_punkt_foto,
   company_kontakt,
   tagesbericht, tagesbericht_nachtrag, tagesbericht_action, tagesbericht_lokal,
-  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, bestellanforderung, fahrzeug, fahrt, tankvorgang, beleg_upload, folder, document, document_revision, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
+  project, project_member, company, location, location_area, gewerk, gewerk_company, plan, mangel, mangel_note, mangel_foto, foto_upload, einkauf, bestellanforderung, foto_doku, fahrzeug, fahrt, tankvorgang, beleg_upload, folder, document, document_revision, mangelanzeige, mangelanzeige_position, besprechung, besprechung_punkt, besprechung_eintrag, punkt_action, pending_punkt, sync_conflict, mangel_action, pending_action,
 });
 export type Database = (typeof AppSchema)['types'];
 export type MangelRow = Database['mangel'];

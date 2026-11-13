@@ -1,6 +1,6 @@
 import '@azure/core-asynciterator-polyfill';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, Image, Linking, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, FlatList, Image, Linking, LogBox, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
 import { BlurView } from 'expo-blur';
@@ -36,6 +36,7 @@ import { clearFotos, fotoSource, pickFoto, queueFoto, useBelegUploader, useFotoU
 import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import { BautagebuchScreen } from './src/BautagebuchScreen';
 import { BestellungScreen } from './src/BestellungScreen';
+import { FotodokuDetail, FotodokuNew } from './src/FotodokuScreens';
 import { KontakteScreen } from './src/KontakteScreen';
 import { RaumScanner } from './src/RaumScanner';
 import type { MangelRow } from './src/schema';
@@ -266,6 +267,11 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   const [tab, setTab] = useState<Tab>('maengel');
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number; planId: string } | null>(null);
+  // Fotodoku: new photo at a plan spot, or an existing photo opened from its pin.
+  const [dokuPos, setDokuPos] = useState<{ planId: string; x: number; y: number } | null>(null);
+  const [dokuOpen, setDokuOpen] = useState<string | null>(null);
+  const { data: fotos } = useQuery<{ id: string; plan_id: string; pin_x: number; pin_y: number; ist_360: number }>(
+    'SELECT id, plan_id, pin_x, pin_y, ist_360 FROM foto_doku WHERE project_id = ? AND plan_id IS NOT NULL AND pin_x IS NOT NULL', [membership?.project_id ?? '']);
   // New Mangel without a plan (from the list or a room QR code / link): optional room preselected.
   const [ohnePlan, setOhnePlan] = useState<{ room: string | null } | null>(null);
   useEffect(() => {
@@ -297,7 +303,14 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {tab === 'maengel' && <MaengelTab project={membership.name} maengel={maengel} pending={pending} onSelect={setSelected} onNew={me.role === 'bauherr' ? undefined : () => setOhnePlan({ room: null })} />}
-      {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} files={planFiles} downloading={plansLoading} onSelect={setSelected} onPick={setDraft} />}
+      {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} files={planFiles} downloading={plansLoading} onSelect={setSelected}
+        fotos={me.role === 'bauleitung' || me.role === 'polier' ? fotos : []} onFoto={setDokuOpen}
+        onPick={(p) => {
+          // Internal roles choose: Mangel or Fotodoku at this spot; others record a Mangel directly.
+          if (me.role !== 'bauleitung' && me.role !== 'polier') return setDraft(p);
+          ActionSheetIOS.showActionSheetWithOptions({ options: ['Mangel erfassen', 'Foto dokumentieren', 'Abbrechen'], cancelButtonIndex: 2, title: 'An dieser Stelle' },
+            (i) => { if (i === 0) setDraft(p); if (i === 1) setDokuPos({ planId: p.planId, x: p.x, y: p.y }); });
+        }} />}
       {tab === 'besprechung' && (
         <BesprechungTab
           projectId={pid}
@@ -325,6 +338,12 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
       </Modal>
       <Modal visible={!!current} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelected(null)}>
         {current && <Detail m={current} me={me} token={session.token} pendingFor={pending.find((p) => p.mangel_id === current.id)} onClose={() => setSelected(null)} />}
+      </Modal>
+      <Modal visible={!!dokuPos} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDokuPos(null)}>
+        {dokuPos && <FotodokuNew projectId={pid} userId={session.userId} pos={dokuPos} onClose={() => setDokuPos(null)} />}
+      </Modal>
+      <Modal visible={!!dokuOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDokuOpen(null)}>
+        {dokuOpen && <FotodokuDetail id={dokuOpen} token={session.token} onClose={() => setDokuOpen(null)} />}
       </Modal>
       <Modal visible={!!draft} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDraft(null)}>
         {draft && <NewMangel projectId={pid} pos={draft} me={me} onClose={() => setDraft(null)} />}
@@ -431,6 +450,8 @@ function PlaeneTab(props: {
   downloading: boolean;
   onSelect: (id: string) => void;
   onPick: (p: { page: number; x: number; y: number; planId: string }) => void;
+  fotos: { id: string; plan_id: string; pin_x: number; pin_y: number; ist_360: number }[];
+  onFoto: (id: string) => void;
 }) {
   const [planIdx, setPlanIdx] = useState(0);
   const plan = props.plans[planIdx] ?? props.plans[0];
@@ -442,7 +463,7 @@ function PlaeneTab(props: {
         )}
         {plan && (
           <Text style={T.footnote}>
-            {plan.name} · Index {plan.plan_index} · Tippen auf eine freie Stelle erfasst einen Mangel
+            {plan.name} · Index {plan.plan_index} · Tippen auf eine freie Stelle: Mangel oder Foto
           </Text>
         )}
       </LargeHeader>
@@ -456,6 +477,8 @@ function PlaeneTab(props: {
             ampel={(m) => escOf(m).ampel}
             onSelect={props.onSelect}
             onPick={(p) => props.onPick({ ...p, planId: plan.id })}
+            fotos={props.fotos.filter((f) => f.plan_id === plan.id)}
+            onFoto={props.onFoto}
           />
         </View>
       ) : (

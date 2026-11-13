@@ -18,6 +18,7 @@ const PATHS = {
   haken: 'M5 12l5 5 9-10',
   stift: 'M4 20h4L19 9l-4-4L4 16v4Z',
   kalender: 'M4 6h16v14H4V6Zm0 4h16M8 3v4m8-4v4',
+  kamera: 'M4 8h3l2-3h6l2 3h3v11H4V8Zm8 9a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
   paket: 'M3 7l9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4M12 11v10',
   portal: 'M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z',
   nachricht: 'M3 6h18v12H3V6Zm0 0 9 7 9-7',
