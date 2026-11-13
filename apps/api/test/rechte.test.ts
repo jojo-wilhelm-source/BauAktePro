@@ -1387,3 +1387,13 @@ describe('Fotodokumentation', () => {
     expect(res.body.results[0].ok).toBe(true);
   });
 });
+
+describe('Startseiten je Rolle', () => {
+  it('Polier: Heute auf der Baustelle; NU/Bauherr/Einkauf nicht', async () => {
+    const r = await call('uPolier', 'GET', `/projects/${ID.project}/cockpit/polier`);
+    expect(r.status).toBe(200);
+    expect(r.body.zahlen.offen).toBeGreaterThan(0);
+    expect(r.body.heute).toBeNull();
+    for (const u of ['uElektro', 'uBauherr', 'uEinkauf'] as const) expect((await call(u, 'GET', `/projects/${ID.project}/cockpit/polier`)).status).toBe(403);
+  });
+});

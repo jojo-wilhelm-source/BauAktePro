@@ -25,6 +25,7 @@ import { PlanView } from './PlanView';
 import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { EinkaufShell } from './EinkaufShell';
 import { FotodokuPage } from './Fotodoku';
+import { PolierCockpit } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -33,7 +34,7 @@ import { PageHeader, Sheet, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku' | 'heute';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -118,7 +119,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
   });
   // NU-Portal starts with "Was ist zu tun?", internal roles with the Mängel list (the Einkauf has its own EinkaufShell).
   const startRole = me.projects.find((p) => p.id === projectId)?.role;
-  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : 'maengel'));
+  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'polier' ? 'heute' : 'maengel'));
   const [lvOpen, setLvOpen] = useState<string | null>(ziel?.lv ?? null);
   const [banfOpen, setBanfOpen] = useState<string | null>(ziel?.banf ?? null);
   const [ungelesen, setUngelesen] = useState(0);
@@ -204,6 +205,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {nav('mitteilungen', 'nachricht', 'Mitteilungen', ungelesen > 0 ? <span className="badge">{ungelesen}</span> : undefined)}
         <div className="side-section">Baustelle</div>
         {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
+        {info && info.role === 'polier' && nav('heute', 'haken', 'Heute')}
         {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
         {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'bauherr') && has('bautagebuch') && nav('bautagebuch', 'kalender', 'Bautagebuch')}
@@ -335,6 +337,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'nachunternehmer' && <NachunternehmerPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'ausschreibung' && <AusschreibungPage key={lvOpen ?? 'liste'} info={info} run={run} initialLv={lvOpen} />}
+            {module === 'heute' && <PolierCockpit info={info} onMangel={(id) => { setSelected(id); setModule('maengel'); }} onOpen={(z, id) => { if (z === 'bestellungen') setBanfOpen(id ?? null); setModule(z); }} />}
             {module === 'fotodoku' && <FotodokuPage info={info} run={run} onOpenMangel={(id) => { setSelected(id); setModule('maengel'); }} />}
             {module === 'bestellungen' && <BestellungenPage key={banfOpen ?? 'liste'} info={info} run={run} meId={me.user.id} openId={banfOpen} onOpenLv={(lv) => gehe(projectId, { module: 'ausschreibung', lv })} />}
             {module === 'mitteilungen' && <MitteilungenPage onChange={() => void ladeUngelesen()} onOpen={(m: Mitteilung) => {

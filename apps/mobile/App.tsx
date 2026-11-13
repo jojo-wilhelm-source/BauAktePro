@@ -37,6 +37,7 @@ import { EinkaufScreen, FahrtenbuchScreen } from './src/BetriebScreens';
 import { BautagebuchScreen } from './src/BautagebuchScreen';
 import { BestellungScreen } from './src/BestellungScreen';
 import { FotodokuDetail, FotodokuNew } from './src/FotodokuScreens';
+import { HeuteTab } from './src/HeuteTab';
 import { KontakteScreen } from './src/KontakteScreen';
 import { RaumScanner } from './src/RaumScanner';
 import type { MangelRow } from './src/schema';
@@ -187,8 +188,9 @@ function LargeHeader({ eyebrow, title, right, children }: { eyebrow?: string; ti
   );
 }
 
-type Tab = 'maengel' | 'plaene' | 'besprechung' | 'hinweise' | 'mehr';
+type Tab = 'heute' | 'maengel' | 'plaene' | 'besprechung' | 'hinweise' | 'mehr';
 const TABS: [Tab, SFSymbol, string][] = [
+  ['heute', 'sun.max', 'Heute'],
   ['maengel', 'exclamationmark.triangle', 'Mängel'],
   ['plaene', 'map', 'Pläne'],
   ['besprechung', 'person.2', 'Besprechung'],
@@ -265,6 +267,9 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
   }, [pending, maengel, myConflicts, db]);
 
   const [tab, setTab] = useState<Tab>('maengel');
+  // The Polier starts with "Heute" (own start page per role); once per project switch.
+  const startRole = membership?.role;
+  useEffect(() => { if (startRole === 'polier') setTab('heute'); }, [startRole, membership?.project_id]);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ page: number; x: number; y: number; planId: string } | null>(null);
   // Fotodoku: new photo at a plan spot, or an existing photo opened from its pin.
@@ -302,6 +307,8 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
+      {tab === 'heute' && <HeuteTab projectId={pid} project={membership.name} userId={session.userId} role={me.role} header={<LargeHeader title="Heute" right={<SyncPill />} />}
+        onMangel={setSelected} onTab={setTab} />}
       {tab === 'maengel' && <MaengelTab project={membership.name} maengel={maengel} pending={pending} onSelect={setSelected} onNew={me.role === 'bauherr' ? undefined : () => setOhnePlan({ room: null })} />}
       {tab === 'plaene' && <PlaeneTab project={membership.name} plans={plans} maengel={maengel} files={planFiles} downloading={plansLoading} onSelect={setSelected}
         fotos={me.role === 'bauleitung' || me.role === 'polier' ? fotos : []} onFoto={setDokuOpen}
@@ -331,7 +338,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
         />
       )}
       <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }}
-        hidden={[...(membership?.m_plaene === 0 ? ['plaene' as const] : []), ...(membership?.m_besprechungen === 0 ? ['besprechung' as const] : [])]} />
+        hidden={[...(me.role === 'polier' ? [] : ['heute' as const]), ...(membership?.m_plaene === 0 ? ['plaene' as const] : []), ...(membership?.m_besprechungen === 0 ? ['besprechung' as const] : [])]} />
 
       <Modal visible={sync.centerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => sync.openCenter(false)}>
         <SyncCenter onClose={() => sync.openCenter(false)} />
