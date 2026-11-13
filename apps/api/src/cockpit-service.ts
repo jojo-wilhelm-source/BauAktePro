@@ -102,3 +102,39 @@ export async function leitungCockpit(t: TxSql) {
     },
   };
 }
+
+/**
+ * Bauherr: "Mein Bauvorhaben" – what was released to him and what waits for his countersignature. RLS limits
+ * everything to released reports/protocols, Mängel marked for the Bauherr and released plans/documents.
+ */
+export async function bauherrCockpit(t: TxSql, userId: string, projectId: string) {
+  const a = await actorFor(t, userId, projectId);
+  if (a.role !== 'bauherr' && a.role !== 'bauleitung') throw new HttpError(403, 'Diese Startseite ist für den Bauherrn');
+  const berichte = await t`
+    SELECT id, datum::text AS datum, blatt_nr, bauherr_signed_at FROM tagesbericht
+    WHERE project_id = ${projectId} AND bauherr_freigabe ORDER BY datum DESC LIMIT 8`;
+  const protokolle = await t`
+    SELECT id, number, title, held_at, bauherr_signed_at FROM besprechung
+    WHERE project_id = ${projectId} AND bauherr_freigabe ORDER BY held_at DESC LIMIT 8`;
+  const maengel = await t`
+    SELECT m.id, m.number, m.description, m.status, coalesce(m.nachfrist_date, m.due_date)::text AS due, l.name AS ort
+    FROM mangel m JOIN location l ON l.id = m.location_id
+    WHERE m.project_id = ${projectId} AND m.deleted_at IS NULL ORDER BY (m.status = 'abgenommen'), m.number`;
+  const plaene = await t`
+    SELECT r.id, p.id AS plan_id, p.name, r.plan_index, r.decided_at FROM plan_revision r JOIN plan p ON p.id = r.plan_id
+    WHERE p.project_id = ${projectId} AND r.status = 'freigegeben' ORDER BY r.decided_at DESC NULLS LAST LIMIT 6`;
+  const dokumente = await t`
+    SELECT r.id, d.name, r.decided_at FROM document_revision r JOIN document d ON d.id = r.document_id
+    WHERE d.project_id = ${projectId} AND r.status = 'freigegeben' ORDER BY r.decided_at DESC NULLS LAST LIMIT 6`;
+  const [termin] = await t`SELECT next_at FROM besprechung WHERE project_id = ${projectId} AND next_at >= now() ORDER BY next_at LIMIT 1`;
+  const offen = maengel.filter((m) => m.status !== 'abgenommen');
+  return {
+    zahlen: {
+      berichte_zeichnen: berichte.filter((b) => !b.bauherr_signed_at).length,
+      protokolle_zeichnen: protokolle.filter((p) => !p.bauherr_signed_at).length,
+      maengel_offen: offen.length, maengel_erledigt: maengel.length - offen.length,
+    },
+    berichte, protokolle, maengel: offen.slice(0, 10), plaene, dokumente,
+    termin: (termin?.next_at as string) ?? null,
+  };
+}

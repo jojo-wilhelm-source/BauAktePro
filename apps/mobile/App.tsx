@@ -338,7 +338,7 @@ function Main({ session, onLogout }: { session: Session; onLogout: () => void })
         />
       )}
       <TabBar tab={tab} onTab={setTab} badges={{ hinweise: conflicts.length }}
-        hidden={[...(me.role === 'polier' ? [] : ['heute' as const]), ...(membership?.m_plaene === 0 ? ['plaene' as const] : []), ...(membership?.m_besprechungen === 0 ? ['besprechung' as const] : [])]} />
+        hidden={[...(me.role === 'polier' || me.role === 'bauleitung' ? [] : ['heute' as const]), ...(membership?.m_plaene === 0 ? ['plaene' as const] : []), ...(membership?.m_besprechungen === 0 ? ['besprechung' as const] : [])]} />
 
       <Modal visible={sync.centerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => sync.openCenter(false)}>
         <SyncCenter onClose={() => sync.openCenter(false)} />

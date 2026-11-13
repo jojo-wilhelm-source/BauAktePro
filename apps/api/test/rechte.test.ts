@@ -1407,3 +1407,14 @@ describe('Startseite Leitung', () => {
     for (const u of ['uPolier', 'uElektro', 'uBauherr', 'uEinkauf'] as const) expect((await call(u, 'GET', '/cockpit/leitung')).body.projekte).toHaveLength(0);
   });
 });
+
+describe('Startseite Bauherr', () => {
+  it('nur freigegebene Inhalte und eigene Mängel; NU/Polier nicht', async () => {
+    const r = await call('uBauherr', 'GET', `/projects/${ID.project}/cockpit/bauherr`);
+    expect(r.status).toBe(200);
+    const alle = (await call('uBauleitung', 'GET', `/projects/${ID.project}/maengel`)).body.filter((m: any) => m.status !== 'abgenommen').length;
+    expect(r.body.zahlen.maengel_offen).toBeLessThan(alle); // only Mängel marked for the Bauherr
+    expect(r.body.berichte.every((b: any) => b.id)).toBe(true);
+    for (const u of ['uElektro', 'uPolier'] as const) expect((await call(u, 'GET', `/projects/${ID.project}/cockpit/bauherr`)).status).toBe(403);
+  });
+});

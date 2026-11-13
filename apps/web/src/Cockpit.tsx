@@ -195,3 +195,85 @@ export function LeitungCockpit({ onOpen, onNeu }: { onOpen: (projectId: string, 
     </>
   );
 }
+
+interface BauherrDaten {
+  zahlen: { berichte_zeichnen: number; protokolle_zeichnen: number; maengel_offen: number; maengel_erledigt: number };
+  berichte: { id: string; datum: string; blatt_nr: number | null; bauherr_signed_at: string | null }[];
+  protokolle: { id: string; number: number; title: string | null; held_at: string; bauherr_signed_at: string | null }[];
+  maengel: { id: string; number: number; description: string; status: string; due: string | null; ort: string }[];
+  plaene: { id: string; plan_id: string; name: string; plan_index: string; decided_at: string | null }[];
+  dokumente: { id: string; name: string; decided_at: string | null }[];
+  termin: string | null;
+}
+export type BauherrZiel = 'bautagebuch' | 'besprechungen' | 'maengel' | 'plaene' | 'dokumente';
+
+/** Bauherr: "Mein Bauvorhaben" – released reports and protocols to countersign, his Mängel, new plans. */
+export function BauherrCockpit({ info, onOpen, onMangel }: { info: ProjectInfo; onOpen: (z: BauherrZiel) => void; onMangel: (id: string) => void }) {
+  const [d, setD] = useState<BauherrDaten | null>(null);
+  useEffect(() => void api<BauherrDaten>(`/projects/${info.project.id}/cockpit/bauherr`).then(setD), [info.project.id]);
+  if (!d) return <p className="loading">Wird geladen …</p>;
+  const z = d.zahlen;
+  const gesamt = z.maengel_offen + z.maengel_erledigt;
+  return (
+    <>
+      <PageHeader eyebrow="Mein Bauvorhaben" title={info.project.name} />
+      <div className="list-pad cockpit">
+        {(z.berichte_zeichnen > 0 || z.protokolle_zeichnen > 0) && (
+          <div className="hinweis-band">
+            <Icon name="stift" size={18} />
+            {z.berichte_zeichnen > 0 && <span>{z.berichte_zeichnen} Tagesbericht{z.berichte_zeichnen > 1 ? 'e' : ''} zur Gegenzeichnung.</span>}
+            {z.protokolle_zeichnen > 0 && <span>{z.protokolle_zeichnen} Protokoll{z.protokolle_zeichnen > 1 ? 'e' : ''} zur Gegenzeichnung.</span>}
+          </div>
+        )}
+        <div className="kpi-row">
+          <Kachel n={z.berichte_zeichnen} label="Tagesberichte gegenzeichnen" tone="var(--orange)" onClick={() => onOpen('bautagebuch')} />
+          <Kachel n={z.protokolle_zeichnen} label="Protokolle gegenzeichnen" tone="var(--orange)" onClick={() => onOpen('besprechungen')} />
+          <Kachel n={z.maengel_offen} label="Mängel offen" tone="var(--red)" onClick={() => onOpen('maengel')} />
+          <Kachel n={gesamt ? `${Math.round((z.maengel_erledigt / gesamt) * 100)} %` : '–'} label="Mängel erledigt" tone="var(--green)" onClick={() => onOpen('maengel')} />
+          <Kachel n={d.termin ? new Date(d.termin).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : '–'} label="nächste Besprechung" onClick={() => onOpen('besprechungen')} />
+        </div>
+        <div className="cockpit-grid">
+          <Abschnitt titel="Bautagebuch" onMehr={() => onOpen('bautagebuch')}>
+            {d.berichte.map((b) => (
+              <button key={b.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen('bautagebuch')}>
+                <span className="k">Tagesbericht {formatDate(b.datum)}{b.blatt_nr ? ` · Blatt ${b.blatt_nr}` : ''}</span>
+                {b.bauherr_signed_at ? <span className="pill c-green">gegengezeichnet</span> : <span className="pill c-orange">zu zeichnen</span>}
+              </button>
+            ))}
+            {!d.berichte.length && <div className="empty">Noch keine Tagesberichte freigegeben.</div>}
+          </Abschnitt>
+          <Abschnitt titel="Besprechungsprotokolle" onMehr={() => onOpen('besprechungen')}>
+            {d.protokolle.map((p) => (
+              <button key={p.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen('besprechungen')}>
+                <span className="k">Nr. {p.number}{p.title ? ` · ${p.title}` : ''}<div className="sub">{formatDate(p.held_at)}</div></span>
+                {p.bauherr_signed_at ? <span className="pill c-green">gegengezeichnet</span> : <span className="pill c-orange">zu zeichnen</span>}
+              </button>
+            ))}
+            {!d.protokolle.length && <div className="empty">Noch keine Protokolle freigegeben.</div>}
+          </Abschnitt>
+          <Abschnitt titel="Offene Mängel" onMehr={() => onOpen('maengel')}>
+            {d.maengel.map((m) => (
+              <button key={m.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onMangel(m.id)}>
+                <span className="k"><strong className="tabular">{mNo(m.number)}</strong> {m.description}<div className="sub">{m.ort}{m.due ? ` · Frist ${formatDate(m.due)}` : ''}</div></span>
+              </button>
+            ))}
+            {!d.maengel.length && <div className="empty">Keine offenen Mängel.</div>}
+          </Abschnitt>
+          <Abschnitt titel="Neue Pläne und Dokumente" onMehr={() => onOpen('plaene')}>
+            {d.plaene.map((p) => (
+              <button key={p.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen('plaene')}>
+                <span className="k">{p.name}<div className="sub">Plan · Index {p.plan_index}</div></span><span className="v">{p.decided_at ? formatDate(p.decided_at) : ''}</span>
+              </button>
+            ))}
+            {d.dokumente.map((x) => (
+              <button key={x.id} className="row action" style={{ color: 'var(--label)' }} onClick={() => onOpen('dokumente')}>
+                <span className="k">{x.name}<div className="sub">Dokument</div></span><span className="v">{x.decided_at ? formatDate(x.decided_at) : ''}</span>
+              </button>
+            ))}
+            {!d.plaene.length && !d.dokumente.length && <div className="empty">Noch nichts freigegeben.</div>}
+          </Abschnitt>
+        </div>
+      </div>
+    </>
+  );
+}

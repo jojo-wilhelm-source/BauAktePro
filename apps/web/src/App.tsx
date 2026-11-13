@@ -25,7 +25,7 @@ import { PlanView } from './PlanView';
 import { BestellungenPage, MitteilungenPage, type Mitteilung } from './Bestellungen';
 import { EinkaufShell } from './EinkaufShell';
 import { FotodokuPage } from './Fotodoku';
-import { LeitungCockpit, PolierCockpit } from './Cockpit';
+import { BauherrCockpit, LeitungCockpit, PolierCockpit } from './Cockpit';
 import { Icon, type IconName } from './ui/Icon';
 import { AmpelPill, initials, mNo, StatusPill } from './ui/status';
 import { Foto } from './ui/Foto';
@@ -34,7 +34,7 @@ import { PageHeader, Sheet, type Run } from './ui/layout';
 
 const PRIORITY_LABELS: Record<Priority, string> = { kritisch: 'Kritisch', normal: 'Normal', gering: 'Gering' };
 
-type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku' | 'heute' | 'uebersicht';
+type Module = 'start' | 'admin' | 'struktur' | 'zugaenge' | 'maengel' | 'anzeigen' | 'plaene' | 'besprechungen' | 'dokumente' | 'stunden' | 'einreichungen' | 'nachunternehmer' | 'einkaeufe' | 'fahrtenbuch' | 'kosten' | 'hinweise' | 'bautagebuch' | 'kontakte' | 'ausschreibung' | 'etiketten' | 'bestellungen' | 'mitteilungen' | 'fotodoku' | 'heute' | 'uebersicht' | 'bauvorhaben';
 
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null;
@@ -119,7 +119,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
   });
   // NU-Portal starts with "Was ist zu tun?", internal roles with the Mängel list (the Einkauf has its own EinkaufShell).
   const startRole = me.projects.find((p) => p.id === projectId)?.role;
-  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'polier' ? 'heute' : (startRole === 'bauleitung' || me.isAdmin) ? 'uebersicht' : 'maengel'));
+  const [module, setModule] = useState<Module>(ziel?.module ?? (startRole === 'nu' ? 'start' : startRole === 'polier' ? 'heute' : startRole === 'bauherr' ? 'bauvorhaben' : (startRole === 'bauleitung' || me.isAdmin) ? 'uebersicht' : 'maengel'));
   const [lvOpen, setLvOpen] = useState<string | null>(ziel?.lv ?? null);
   const [banfOpen, setBanfOpen] = useState<string | null>(ziel?.banf ?? null);
   const [ungelesen, setUngelesen] = useState(0);
@@ -220,6 +220,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
         {nav('mitteilungen', 'nachricht', 'Mitteilungen', ungelesen > 0 ? <span className="badge">{ungelesen}</span> : undefined)}
         {gruppe('baustelle', 'Baustelle', <>
           {info && info.role === 'nu' && nav('start', 'haken', 'Was ist zu tun?')}
+          {info && info.role === 'bauherr' && nav('bauvorhaben', 'haken', 'Mein Bauvorhaben')}
           {info && (info.role === 'polier' || info.role === 'bauleitung') && nav('heute', 'haken', info.role === 'polier' ? 'Heute' : 'Heute im Projekt')}
           {nav('maengel', 'mangel', 'Mängel', <span className="count">{open}</span>)}
           {info && (info.role === 'bauleitung' || info.role === 'polier' || info.role === 'nu') && nav('anzeigen', 'anzeige', 'Mangelanzeigen')}
@@ -344,6 +345,7 @@ function ProjectShell({ me, projectId, onProject, onLogout, onMeReload }: { me: 
             {module === 'etiketten' && <EtikettenPage info={info} run={run} onReload={() => void reload()} />}
             {module === 'ausschreibung' && <AusschreibungPage key={lvOpen ?? 'liste'} info={info} run={run} initialLv={lvOpen} />}
             {module === 'uebersicht' && <LeitungCockpit onNeu={me.canCreateProject ? () => setNewProject(true) : undefined} onOpen={(pid, z) => gehe(pid, { module: z })} />}
+            {module === 'bauvorhaben' && <BauherrCockpit info={info} onMangel={(id) => { setSelected(id); setModule('maengel'); }} onOpen={setModule} />}
             {module === 'heute' && <PolierCockpit info={info} onMangel={(id) => { setSelected(id); setModule('maengel'); }} onOpen={(z, id) => { if (z === 'bestellungen') setBanfOpen(id ?? null); setModule(z); }} />}
             {module === 'fotodoku' && <FotodokuPage info={info} run={run} onOpenMangel={(id) => { setSelected(id); setModule('maengel'); }} />}
             {module === 'bestellungen' && <BestellungenPage key={banfOpen ?? 'liste'} info={info} run={run} meId={me.user.id} openId={banfOpen} onOpenLv={(lv) => gehe(projectId, { module: 'ausschreibung', lv })} />}
