@@ -8,7 +8,13 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "de.bauaktepro.dev"
+      "bundleIdentifier": "de.bauaktepro.dev",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Bau Akte Pro verbindet sich über das WLAN der Insta360-Kamera, um 360°-Fotos direkt aufzunehmen."
+      }
     },
     "android": {
       "adaptiveIcon": {

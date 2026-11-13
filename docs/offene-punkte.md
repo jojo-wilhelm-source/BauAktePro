@@ -71,6 +71,6 @@ Antwort direkt hinter **Entscheidung:** eintragen. Ist ein Punkt geklärt, die E
 - [ ] **D11 – Nachträge über der Freigabegrenze:** Bisher „geht an die Geschäftsführung“. Die Geschäftsführung bekommt aber keinen Zugang (12.11.2026). Wer gibt Nachträge über 50.000 € frei – Projektleitung? → [11](fachkonzept/11-rechnungen-nachtraege-budget.md)
 - [x] **D12 – NU-Besprechung-Konzept:** umgesetzt (12.11.2026, Datei liegt in docs/vorlagen). Ursprünglich: Die Datei NU-Besprechung_Konzept_5.html liegt in OneDrive; macOS gibt sie für Claude nicht frei. Bitte in den Projektordner kopieren, dann wird die Besprechung daran angeglichen. → [09](fachkonzept/09-besprechungen.md)
 - [ ] **D13 – Fotodokumentation für Bauherr/NU:** Bisher nur intern (Bauleitung, Polier). Sollen Bauherr oder NU einzelne Fotos sehen (z. B. freigegebene Fotos je Gewerk)? ANNAHME: nein. → [16](fachkonzept/16-fotodokumentation.md)
-- [ ] **D14 – Insta360 direkt verbinden:** Heute Import über die Insta360-App („In Fotos speichern“). Direktverbindung braucht das Insta360-Kamera-SDK (Antrag beim Hersteller, Bilder über das Kamera-WLAN, Bluetooth nur zum Koppeln) und einen App-Neubau. Welches Modell (X3, X4, ONE RS …)? Antrag stellen? → [16](fachkonzept/16-fotodokumentation.md)
+- [ ] **D14 – Insta360:** Direktaufnahme über das Kamera-WLAN (OSC) ist umgesetzt (13.11.2026), Test mit echter Kamera steht aus – welches Modell genau? Reines Bluetooth (Koppeln/Wecken) bräuchte das Insta360-SDK (Antrag beim Hersteller): gewünscht? → [16](fachkonzept/16-fotodokumentation.md)
   **Entscheidung:**
 

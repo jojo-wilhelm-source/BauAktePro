@@ -12,6 +12,8 @@ import { usePowerSync, useQuery } from '@powersync/react';
 import { FOTODOKU_KATEGORIEN, FOTODOKU_LABEL, ist360, panoHtml, type FotodokuKategorie } from '@bap/domain';
 import { API_URL } from './config';
 import { localFoto, pickFoto, queueDoku, type Picked } from './fotoStore';
+import { aufnehmen, kameraAdresse, setKameraAdresse, verbinden, type KameraInfo } from './insta360';
+import { Modal } from 'react-native';
 import { C, T } from './theme';
 import { Row, Section, SheetBar } from './ui';
 
@@ -23,6 +25,7 @@ export function FotodokuNew({ projectId, userId, pos, onClose }: { projectId: st
   const [titel, setTitel] = useState('');
   const [notiz, setNotiz] = useState('');
   const [foto, setFoto] = useState<Picked | null>(null);
+  const [kamera, setKamera] = useState(false);
   const pano = !!foto && ist360(foto.width, foto.height);
   const save = async () => {
     if (!foto) return;
@@ -43,6 +46,7 @@ export function FotodokuNew({ projectId, userId, pos, onClose }: { projectId: st
           {foto && <Image source={{ uri: foto.uri }} style={{ width: '100%', height: pano ? 160 : 220 }} resizeMode="cover" />}
           <Row icon="camera" iconBg="blue" label={foto ? 'Neu aufnehmen' : 'Foto aufnehmen'} tone="accent" onPress={() => void pickFoto('camera', true).then((p) => p && setFoto(p))} />
           <Row icon="photo.on.rectangle" iconBg="indigo" label="Aus Fotos (auch 360°)" tone="accent" onPress={() => void pickFoto('library', true).then((p) => p && setFoto(p))} />
+          <Row icon="camera.aperture" iconBg="purple" label="Mit Insta360 aufnehmen" tone="accent" chevron onPress={() => setKamera(true)} />
         </Section>
         <Section title="Kategorie">
           {FOTODOKU_KATEGORIEN.map((k) => <Row key={k} label={FOTODOKU_LABEL[k]} checked={kat === k} onPress={() => setKat(k)} />)}
@@ -50,6 +54,49 @@ export function FotodokuNew({ projectId, userId, pos, onClose }: { projectId: st
         <Section title="Beschreibung" footer="Der Raum ergibt sich aus der Stelle auf dem Plan. Ohne Netz wird alles später automatisch hochgeladen.">
           <TextInput style={input} placeholder="Titel (z. B. Vorwand Bad vor Beplankung)" placeholderTextColor={C.label3 as unknown as string} value={titel} onChangeText={setTitel} />
           <TextInput style={[input, { minHeight: 70 }]} multiline placeholder="Notiz (Leitungsführung, Abstände …)" placeholderTextColor={C.label3 as unknown as string} value={notiz} onChangeText={setNotiz} />
+        </Section>
+      </ScrollView>
+      <Modal visible={kamera} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setKamera(false)}>
+        <Insta360Sheet onClose={() => setKamera(false)} onFoto={(p) => { setFoto(p); setKamera(false); }} />
+      </Modal>
+    </View>
+  );
+}
+
+/** Connect to the Insta360 over its Wi-Fi and take a 360° photo straight into the Fotodoku. */
+function Insta360Sheet({ onClose, onFoto }: { onClose: () => void; onFoto: (p: Picked) => void }) {
+  const [adresse, setAdresse] = useState('');
+  const [info, setInfo] = useState<KameraInfo | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [fehler, setFehler] = useState<string | null>(null);
+  useEffect(() => void kameraAdresse().then(setAdresse), []);
+  const verbindenJetzt = async () => {
+    setFehler(null); setStatus('Verbinde …');
+    try { await setKameraAdresse(adresse); setInfo(await verbinden()); } catch (e) { setInfo(null); setFehler((e as Error).message); }
+    setStatus(null);
+  };
+  const ausloesen = async () => {
+    setFehler(null);
+    try { onFoto(await aufnehmen(setStatus)); } catch (e) { setFehler((e as Error).message); }
+    setStatus(null);
+  };
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <SheetBar title="Insta360" left="Abbrechen" onLeft={onClose} />
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+        <Section title="So geht's" footer="Die Kamera braucht kein Internet. In der Kamera „Stitching in der Kamera“ einschalten, damit fertige 360°-Fotos kommen.">
+          <Text style={[T.body, { padding: 16 }]}>1. Kamera einschalten, WLAN an der Kamera aktivieren.{'\n'}2. iPhone/iPad: Einstellungen → WLAN → „Insta360 …“ wählen (Passwort steht in der Kamera).{'\n'}3. Zurück in Bau Akte Pro: Verbinden, dann Auslösen.</Text>
+        </Section>
+        <Section title="Kamera">
+          <Row label={info ? info.model : 'Nicht verbunden'} subtitle={info ? `Akku ${info.batterie != null ? Math.round(info.batterie * 100) + ' %' : 'unbekannt'}` : undefined}
+            value={status ? <ActivityIndicator /> : undefined} />
+          <Row icon="wifi" iconBg="blue" label={info ? 'Erneut verbinden' : 'Verbinden'} tone="accent" onPress={status ? undefined : () => void verbindenJetzt()} />
+          {info && <Row icon="camera.aperture" iconBg="purple" label="Auslösen" tone="accent" onPress={status ? undefined : () => void ausloesen()} />}
+        </Section>
+        {status && <Text style={[T.subhead, { textAlign: 'center', marginBottom: 12 }]}>{status}</Text>}
+        {fehler && <Text style={[T.subhead, { color: C.red, textAlign: 'center', marginBottom: 12 }]}>{fehler}</Text>}
+        <Section title="Erweitert" footer="Nur ändern, wenn die Kamera eine andere Adresse hat (Standard 192.168.42.1).">
+          <TextInput style={input} value={adresse} onChangeText={setAdresse} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
         </Section>
       </ScrollView>
     </View>

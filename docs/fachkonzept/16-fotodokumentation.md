@@ -12,7 +12,13 @@ Zweck: Zustände festhalten, bevor sie verschlossen werden – Wände vor dem Be
 - Erkannt am Seitenverhältnis 2:1 (equirectangular, ab 2000 px Breite) oder an XMP „ProjectionType equirectangular“; von Hand umschaltbar.
 - Anzeige als Rundumansicht (eigener WebGL-Viewer, gleiche Logik in Web und App, offline): ziehen/wischen zum Umsehen, Mausrad/zwei Finger zum Zoomen.
 - **Heute:** In der Insta360-App das Foto als 360°-Foto exportieren (in „Fotos“ speichern) und in Bau Akte Pro „Aus Fotos (auch 360°)“ wählen.
-- **Direkte Kameraverbindung:** offen (D14). Insta360-Kameras werden per Bluetooth gekoppelt/geweckt, die Bilder kommen aber über das WLAN der Kamera; dafür braucht es das Insta360-Kamera-SDK (Zugang auf Antrag bei Insta360) und ein natives Modul in der App.
+- **Direkt mit der Insta360 aufnehmen (13.11.2026):** In der App „Mit Insta360 aufnehmen“: iPhone/iPad mit dem WLAN der Kamera verbinden, „Verbinden“ (zeigt Modell und Akku), „Auslösen“ – die App löst über die offizielle OSC-Schnittstelle aus (X3, X4, X5, ONE RS …, Adresse 192.168.42.1), wartet, bis die Kamera das 360°-Bild zusammengesetzt hat, und überträgt es direkt an die Stelle auf dem Plan. Ohne Internet. In der Kamera muss „Stitching in der Kamera“ an sein. Getestet mit einem Kamera-Simulator (`scripts/osc-kamera-simulator.mjs`); Test mit echter Kamera steht aus.
+- Reines Bluetooth (Koppeln/Wecken der Kamera) bräuchte das Insta360-SDK auf Antrag (D14); die Bilder kommen auch dort über das Kamera-WLAN.
+- Normale Fotos weiterhin mit der iPhone-Kamera oder aus „Fotos“, im Web per Hochladen (mehrere auf einmal).
+
+## Serien an derselben Stelle (13.11.2026)
+- Fotos an derselben Stelle von verschiedenen Tagen bilden eine Serie (`serie_id` = erstes Foto). Auf dem Plan ein Pin je Stelle mit Anzahl.
+- Klick auf den Pin: Serienansicht – oben groß das gewählte Foto (360° oder normal), darunter alle Fotos als Vorschau mit Datum, blättern mit ‹ › oder Pfeiltasten. „Neues Foto an dieser Stelle“ hängt das nächste Foto an (Position und Raum vom ersten Foto).
 
 ## Rechte und Daten
 - Sichtbar und bearbeitbar für Bauleitung/Projektleitung und Polier (RLS `app.is_internal`, Sync-Stream „intern“). ANNAHME: Bauherr und NU sehen die Fotodokumentation nicht (D13).
